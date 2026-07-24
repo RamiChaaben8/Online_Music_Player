@@ -34,6 +34,10 @@ dependencies:
 
   # Icons
   cupertino_icons: ^1.0.8
+  path_provider: ^2.1.6
+  permission_handler: ^12.0.3
+  fl_chart: ^1.2.0
+  shared_preferences: ^2.5.5
 
 dev_dependencies:
   flutter_test:

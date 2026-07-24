@@ -19,6 +19,8 @@ import '../providers/player_provider.dart';
 import '../providers/library_provider.dart';
 import '../widgets/seek_bar.dart';
 import '../screens/queue_screen.dart';
+import '../providers/download_provider.dart';
+import '../widgets/add_to_playlist_sheet.dart';
 
 class NowPlayingScreen extends ConsumerWidget {
   const NowPlayingScreen({super.key});
@@ -138,7 +140,52 @@ class NowPlayingScreen extends ConsumerWidget {
                     color: isLiked ? const Color(0xFF1DB954) : Colors.white,
                     size: 28,
                   ),
-                  onPressed: () => ref.read(libraryProvider.notifier).toggleLike(song),
+                  onPressed: () async {
+                    try {
+                      await ref.read(libraryProvider.notifier).toggleLike(song);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).clearSnackBars();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(!isLiked ? 'Added to Liked Songs' : 'Removed from Liked Songs'),
+                            duration: const Duration(seconds: 1),
+                            backgroundColor: const Color(0xFF1DB954),
+                          ),
+                        );
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Failed to like song: $e'), backgroundColor: Colors.red),
+                        );
+                      }
+                    }
+                  },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.playlist_add, color: Colors.white, size: 28),
+                  onPressed: () {
+                    showModalBottomSheet(
+                      context: context,
+                      builder: (c) => AddToPlaylistSheet(song: song),
+                    );
+                  },
+                ),
+                Consumer(
+                  builder: (context, ref, child) {
+                    final downloading = ref.watch(downloadProvider).contains(song.id);
+                    return IconButton(
+                      icon: downloading
+                          ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.download, color: Colors.white, size: 28),
+                      onPressed: downloading
+                          ? null
+                          : () {
+                              ref.read(downloadProvider.notifier).downloadSong(song);
+                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Downloading...')));
+                            },
+                    );
+                  },
                 ),
               ],
             ),

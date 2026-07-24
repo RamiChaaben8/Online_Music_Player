@@ -11,6 +11,7 @@ import '../providers/player_provider.dart';
 import '../widgets/song_tile.dart';
 import '../widgets/section_header.dart';
 import '../widgets/horizontal_song_card.dart';
+import '../widgets/listening_dashboard.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -76,7 +77,12 @@ class HomeScreen extends ConsumerWidget {
           ],
           if (recent.isEmpty && liked.isEmpty)
             SliverFillRemaining(
+              hasScrollBody: false,
               child: _emptyState(context),
+            )
+          else
+            const SliverToBoxAdapter(
+              child: ListeningDashboard(),
             ),
           // Bottom padding for mini-player
           const SliverToBoxAdapter(child: SizedBox(height: 16)),

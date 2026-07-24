@@ -10,8 +10,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/song.dart';
 import '../providers/player_provider.dart';
-import '../providers/library_provider.dart';
 import '../widgets/song_tile.dart';
+import '../providers/download_provider.dart';
+import '../providers/library_provider.dart';
 
 class PlaylistScreen extends ConsumerWidget {
   final String title;
@@ -48,17 +49,41 @@ class PlaylistScreen extends ConsumerWidget {
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                child: ElevatedButton.icon(
-                  onPressed: () => ref
-                      .read(playerProvider.notifier)
-                      .playSong(songs.first, queue: songs),
-                  icon: const Icon(Icons.play_arrow, color: Colors.black),
-                  label: const Text('Play all', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1DB954),
-                    minimumSize: const Size(double.infinity, 48),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                  ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () => ref
+                            .read(playerProvider.notifier)
+                            .playSong(songs.first, queue: songs),
+                        icon: const Icon(Icons.play_arrow, color: Colors.black),
+                        label: const Text('Play all', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF1DB954),
+                          minimumSize: const Size(double.infinity, 48),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        // Assuming playlist Key maps to a Playlist model
+                        // since we only get a list of songs and title, let's just loop songs and download
+                        for (final song in songs) {
+                          ref.read(downloadProvider.notifier).downloadSong(song);
+                        }
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Downloading playlist...')));
+                      },
+                      icon: const Icon(Icons.download, color: Colors.white),
+                      label: const Text('Download', style: TextStyle(color: Colors.white)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF282828),
+                        minimumSize: const Size(0, 48),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),

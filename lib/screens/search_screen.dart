@@ -19,6 +19,7 @@ import '../providers/player_provider.dart';
 import '../providers/library_provider.dart';
 import '../widgets/error_banner.dart';
 import '../screens/now_playing_screen.dart';
+import '../providers/search_history_provider.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
@@ -39,10 +40,14 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   /// Fires search — called on Enter key or search icon tap.
-  void _doSearch() {
-    final query = _controller.text.trim();
+  void _doSearch([String? overrideQuery]) {
+    final query = overrideQuery ?? _controller.text.trim();
     if (query.isEmpty) return;
+    if (overrideQuery != null) {
+      _controller.text = overrideQuery;
+    }
     _focusNode.unfocus(); // dismiss keyboard
+    ref.read(searchHistoryProvider.notifier).addQuery(query);
     ref.read(searchProvider.notifier).search(query);
   }
 
@@ -163,7 +168,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             // ── Video result cards ────────────────────────────────────────
             Expanded(
               child: searchState.results.isEmpty && !searchState.isLoading
-                  ? _EmptyPrompt(query: searchState.query, onSearch: _doSearch)
+                  ? _SearchHistoryOrEmpty(query: searchState.query, onSearch: _doSearch)
                   : ListView.builder(
                       itemCount: searchState.results.length,
                       padding: const EdgeInsets.only(bottom: 16),
@@ -384,7 +389,17 @@ class _VideoOptionsMenu extends ConsumerWidget {
             _snack(context, '+ Added to queue');
             break;
           case 'like':
-            await ref.read(libraryProvider.notifier).toggleLike(song);
+            try {
+              await ref.read(libraryProvider.notifier).toggleLike(song);
+              if (context.mounted) {
+                final isLiked = ref.read(libraryProvider).isLiked(song.id);
+                _snack(context, isLiked ? 'Removed from Liked Songs' : 'Added to Liked Songs');
+              }
+            } catch (e) {
+              if (context.mounted) {
+                _snack(context, 'Failed to like song: $e');
+              }
+            }
             break;
           case 'playlist':
             _showAddToPlaylist(context, ref);
@@ -502,15 +517,40 @@ class _VideoOptionsMenu extends ConsumerWidget {
 
 // ─── Empty / prompt state ─────────────────────────────────────────────────────
 
-class _EmptyPrompt extends StatelessWidget {
+class _SearchHistoryOrEmpty extends ConsumerWidget {
   final String query;
-  final VoidCallback onSearch;
+  final Function(String) onSearch;
 
-  const _EmptyPrompt({required this.query, required this.onSearch});
+  const _SearchHistoryOrEmpty({required this.query, required this.onSearch});
 
   @override
-  Widget build(BuildContext context) {
-    if (query.isEmpty) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (query.isNotEmpty) {
+      // Has query but no results
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.search_off, size: 56, color: Color(0xFF3A3A3A)),
+            const SizedBox(height: 16),
+            Text(
+              'No results for\n"$query"',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Color(0xFFB3B3B3), fontSize: 16),
+            ),
+            const SizedBox(height: 16),
+            TextButton.icon(
+              onPressed: () => onSearch(query),
+              icon: const Icon(Icons.refresh, color: Color(0xFF1DB954)),
+              label: const Text('Try again', style: TextStyle(color: Color(0xFF1DB954))),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final history = ref.watch(searchHistoryProvider);
+    if (history.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -538,7 +578,7 @@ class _EmptyPrompt extends StatelessWidget {
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 40),
               child: Text(
-                'Type a song name, artist, or video title\nthen tap  to find it',
+                'Type a song name, artist, or video title\nthen tap search to find it',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Color(0xFF6A6A6A), fontSize: 14, height: 1.5),
               ),
@@ -548,26 +588,38 @@ class _EmptyPrompt extends StatelessWidget {
       );
     }
 
-    // Has query but no results
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.search_off, size: 56, color: Color(0xFF3A3A3A)),
-          const SizedBox(height: 16),
-          Text(
-            'No results for\n"$query"',
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Color(0xFFB3B3B3), fontSize: 16),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Recent searches',
+                style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              TextButton(
+                onPressed: () => ref.read(searchHistoryProvider.notifier).clearHistory(),
+                child: const Text('Clear', style: TextStyle(color: Color(0xFF1DB954))),
+              ),
+            ],
           ),
-          const SizedBox(height: 16),
-          TextButton.icon(
-            onPressed: onSearch,
-            icon: const Icon(Icons.refresh, color: Color(0xFF1DB954)),
-            label: const Text('Try again', style: TextStyle(color: Color(0xFF1DB954))),
+        ),
+        Expanded(
+          child: ListView.builder(
+            itemCount: history.length,
+            itemBuilder: (ctx, i) {
+              return ListTile(
+                leading: const Icon(Icons.history, color: Color(0xFFB3B3B3)),
+                title: Text(history[i], style: const TextStyle(color: Colors.white)),
+                onTap: () => onSearch(history[i]),
+              );
+            },
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

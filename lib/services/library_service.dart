@@ -26,7 +26,7 @@ class LibraryService {
 
   bool isLiked(String songId) => _likedBox.containsKey(songId);
 
-  Future<void> likeSong(Song song) => _likedBox.put(song.id, song);
+  Future<void> likeSong(Song song) => _likedBox.put(song.id, _clone(song));
 
   Future<void> unlikeSong(String songId) => _likedBox.delete(songId);
 
@@ -52,7 +52,7 @@ class LibraryService {
       await _recentBox.delete(oldest);
     }
 
-    await _recentBox.put(song.id, song);
+    await _recentBox.put(song.id, _clone(song));
   }
 
   // ── Playlists ─────────────────────────────────────────────────────────────
@@ -77,7 +77,7 @@ class LibraryService {
   Future<void> addSongToPlaylist(int playlistKey, Song song) async {
     final playlist = _playlistsBox.get(playlistKey);
     if (playlist != null && !playlist.songs.any((s) => s.id == song.id)) {
-      playlist.songs.add(song);
+      playlist.songs.add(_clone(song));
       await playlist.save();
     }
   }
@@ -89,4 +89,15 @@ class LibraryService {
       await playlist.save();
     }
   }
+
+  // Clone to avoid Hive "Object already in another box" exception
+  Song _clone(Song s) => Song(
+        id: s.id,
+        title: s.title,
+        channelName: s.channelName,
+        thumbnailUrl: s.thumbnailUrl,
+        duration: s.duration,
+        streamUrl: s.streamUrl,
+        streamUrlFetchedAt: s.streamUrlFetchedAt,
+      );
 }

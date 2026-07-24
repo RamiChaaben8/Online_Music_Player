@@ -23,7 +23,7 @@ class SongAdapter extends TypeAdapter<Song> {
       title: fields[1] as String,
       channelName: fields[2] as String,
       thumbnailUrl: fields[3] as String,
-      duration: fields[4] as Duration,
+      duration: Duration(milliseconds: fields[4] as int),
       streamUrl: fields[5] as String?,
       streamUrlFetchedAt: fields[6] as DateTime?,
     );
@@ -42,7 +42,7 @@ class SongAdapter extends TypeAdapter<Song> {
       ..writeByte(3)
       ..write(obj.thumbnailUrl)
       ..writeByte(4)
-      ..write(obj.duration)
+      ..write(obj.duration.inMilliseconds)
       ..writeByte(5)
       ..write(obj.streamUrl)
       ..writeByte(6)
