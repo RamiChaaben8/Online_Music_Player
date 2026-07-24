@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Allows the app to make cleartext (HTTP) requests to YouTube CDN servers
+    on Android 9+ (Pie), where HTTPS-only is the default.
+    YouTube stream URLs are HTTPS but ExoPlayer sometimes follows redirects
+    to HTTP CDN endpoints, which this config allows explicitly.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
