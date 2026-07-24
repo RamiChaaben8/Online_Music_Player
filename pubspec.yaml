@@ -1,0 +1,44 @@
+name: testf
+description: "A Spotify-like music streaming app that plays audio from YouTube."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State management
+  flutter_riverpod: ^2.6.1
+
+  # YouTube data extraction (no API key needed)
+  youtube_explode_dart: ^3.1.0
+
+  # Audio playback
+  just_audio: ^0.9.40
+  just_audio_background: ^0.0.1-beta.12
+  audio_service: ^0.18.15
+
+  # Local storage with Hive
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+
+  # UI utilities
+  cached_network_image: ^3.4.1
+  shimmer: ^3.0.0
+  flutter_animate: ^4.5.0
+  palette_generator: ^0.3.3+3
+
+  # Icons
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true

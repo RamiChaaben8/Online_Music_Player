@@ -1,0 +1,160 @@
+// ============================================================
+// app.dart — Root widget, theme, and navigation scaffold
+// ============================================================
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import 'screens/search_screen.dart';
+import 'screens/library_screen.dart';
+import 'screens/home_screen.dart';
+import 'widgets/mini_player.dart';
+import 'providers/player_provider.dart';
+
+class TuneifyApp extends StatelessWidget {
+  const TuneifyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Tuneify',
+      debugShowCheckedModeBanner: false,
+      theme: _buildDarkTheme(),
+      home: const AppShell(),
+    );
+  }
+
+  ThemeData _buildDarkTheme() {
+    const bgColor = Color(0xFF0A0A0A);
+    const surfaceColor = Color(0xFF121212);
+    const cardColor = Color(0xFF1A1A1A);
+    const accentGreen = Color(0xFF1DB954);
+    const onSurface = Color(0xFFFFFFFF);
+    const subtext = Color(0xFFB3B3B3);
+
+    return ThemeData(
+      useMaterial3: true,
+      brightness: Brightness.dark,
+      scaffoldBackgroundColor: bgColor,
+      colorScheme: const ColorScheme.dark(
+        primary: accentGreen,
+        secondary: accentGreen,
+        surface: surfaceColor,
+        onSurface: onSurface,
+        onPrimary: Colors.black,
+      ),
+      cardColor: cardColor,
+      dividerColor: const Color(0xFF282828),
+      textTheme: TextTheme(
+        displayLarge: const TextStyle(color: onSurface, fontWeight: FontWeight.bold),
+        displayMedium: const TextStyle(color: onSurface, fontWeight: FontWeight.bold),
+        headlineLarge: const TextStyle(color: onSurface, fontWeight: FontWeight.bold),
+        headlineMedium: const TextStyle(color: onSurface, fontWeight: FontWeight.w700),
+        titleLarge: const TextStyle(color: onSurface, fontWeight: FontWeight.w600),
+        titleMedium: const TextStyle(color: onSurface, fontWeight: FontWeight.w500),
+        bodyLarge: const TextStyle(color: onSurface),
+        bodyMedium: const TextStyle(color: subtext),
+        labelLarge: const TextStyle(color: onSurface, fontWeight: FontWeight.w600),
+      ),
+      appBarTheme: const AppBarTheme(
+        backgroundColor: bgColor,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        foregroundColor: onSurface,
+        centerTitle: false,
+      ),
+      navigationBarTheme: NavigationBarThemeData(
+        backgroundColor: const Color(0xFF0D0D0D),
+        indicatorColor: accentGreen.withOpacity(0.2),
+        labelTextStyle: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return const TextStyle(color: accentGreen, fontSize: 12, fontWeight: FontWeight.w600);
+          }
+          return const TextStyle(color: subtext, fontSize: 12);
+        }),
+        iconTheme: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return const IconThemeData(color: accentGreen);
+          }
+          return const IconThemeData(color: subtext);
+        }),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: const Color(0xFF2A2A2A),
+        hintStyle: const TextStyle(color: subtext),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide.none,
+        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      ),
+      iconTheme: const IconThemeData(color: onSurface),
+      progressIndicatorTheme: const ProgressIndicatorThemeData(color: accentGreen),
+      sliderTheme: SliderThemeData(
+        activeTrackColor: accentGreen,
+        inactiveTrackColor: const Color(0xFF3A3A3A),
+        thumbColor: Colors.white,
+        overlayColor: accentGreen.withOpacity(0.2),
+        trackHeight: 3,
+        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+      ),
+    );
+  }
+}
+
+// ─── App Shell (bottom nav + mini-player) ─────────────────────────────────
+class AppShell extends ConsumerStatefulWidget {
+  const AppShell({super.key});
+
+  @override
+  ConsumerState<AppShell> createState() => _AppShellState();
+}
+
+class _AppShellState extends ConsumerState<AppShell> {
+  int _currentIndex = 0;
+
+  final List<Widget> _screens = const [
+    HomeScreen(),
+    SearchScreen(),
+    LibraryScreen(),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final playerState = ref.watch(playerProvider);
+    final hasSong = playerState.currentSong != null;
+
+    return Scaffold(
+      body: _screens[_currentIndex],
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Mini-player sits above the nav bar when a song is playing
+          if (hasSong) const MiniPlayer(),
+          NavigationBar(
+            selectedIndex: _currentIndex,
+            onDestinationSelected: (i) => setState(() => _currentIndex = i),
+            destinations: const [
+              NavigationDestination(
+                icon: Icon(Icons.home_outlined),
+                selectedIcon: Icon(Icons.home),
+                label: 'Home',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.search_outlined),
+                selectedIcon: Icon(Icons.search),
+                label: 'Search',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.library_music_outlined),
+                selectedIcon: Icon(Icons.library_music),
+                label: 'Library',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
