@@ -1,44 +1,71 @@
 // ============================================================
 // services/youtube_service.dart
+//
+// Two-level stream URL cache:
+//   L1 — in-memory Map  (instant, lost on restart)
+//   L2 — Hive box       (fast disk read, survives restarts)
+//
+// Resolution order on getAudioStreamUrl(id):
+//   1. L1 hit  → return immediately (0 ms)
+//   2. L2 hit  → populate L1, return (< 1 ms)
+//   3. Miss    → fetch manifest (~2–4 s), write to both caches, return
+//
+// This means songs the user played before will start with zero manifest
+// round-trip, exactly like YT Music's behaviour.
 // ============================================================
 
+import 'package:hive/hive.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart';
+
 import '../models/song.dart';
 
-/// Cached stream URL with a 5-hour TTL.
-const _kUrlTtl = Duration(hours: 5);
+const _kTtl = Duration(hours: 5);
+const _kHiveBox = 'stream_url_cache';
 
 class _CachedUrl {
   final String url;
   final DateTime fetchedAt;
-  _CachedUrl(this.url) : fetchedAt = DateTime.now();
-  bool get isExpired => DateTime.now().difference(fetchedAt) > _kUrlTtl;
+  _CachedUrl(this.url, this.fetchedAt);
+  bool get isExpired => DateTime.now().difference(fetchedAt) > _kTtl;
 }
 
 class YoutubeService {
   final YoutubeExplode _yt = YoutubeExplode();
 
-  /// Resolved URL cache: videoId → url + timestamp.
-  final Map<String, _CachedUrl> _urlCache = {};
+  // L1 — in-memory
+  final Map<String, _CachedUrl> _mem = {};
 
-  /// In-flight manifest requests: videoId → Future.
-  /// Prevents launching duplicate fetches for the same video while one is
-  /// already in progress (e.g. prefetch + user tap racing each other).
+  // In-flight deduplication
   final Map<String, Future<String>> _inflight = {};
 
-  /// Exposes the underlying client so DownloadService can reuse it.
   YoutubeExplode get yt => _yt;
 
-  // ── Search ──────────────────────────────────────────────────────────────
+  // ── Hive helpers ─────────────────────────────────────────────────────────
+
+  Box get _hive => Hive.box(_kHiveBox);
+
+  _CachedUrl? _readHive(String id) {
+    final map = _hive.get(id);
+    if (map == null) return null;
+    final ts = map['ts'] as int?;
+    final url = map['url'] as String?;
+    if (ts == null || url == null || url.isEmpty) return null;
+    return _CachedUrl(url, DateTime.fromMillisecondsSinceEpoch(ts));
+  }
+
+  Future<void> _writeHive(String id, String url) async {
+    await _hive.put(id, {
+      'url': url,
+      'ts': DateTime.now().millisecondsSinceEpoch,
+    });
+  }
+
+  // ── Search ───────────────────────────────────────────────────────────────
 
   Future<List<Song>> search(String query, {int maxResults = 20}) async {
     try {
       final results = await _yt.search.search(query);
-      final songs = <Song>[];
-      for (final video in results.take(maxResults)) {
-        songs.add(_videoToSong(video));
-      }
-      return songs;
+      return results.take(maxResults).map(_videoToSong).toList();
     } on VideoUnavailableException catch (e) {
       throw YoutubeServiceException('Video unavailable: ${e.message}');
     } catch (e) {
@@ -46,59 +73,57 @@ class YoutubeService {
     }
   }
 
-  // ── Stream URL resolution ────────────────────────────────────────────────
+  // ── URL resolution ────────────────────────────────────────────────────────
 
-  /// Returns the stream URL for [videoId].
-  ///
-  /// - If already cached and fresh → returns instantly (no network).
-  /// - If a fetch is already in-flight (e.g. triggered by prefetch) → awaits
-  ///   that same Future instead of launching a second one.
-  /// - Otherwise → launches a new manifest fetch.
   Future<String> getAudioStreamUrl(String videoId) async {
-    final cached = _urlCache[videoId];
-    if (cached != null && !cached.isExpired) return cached.url;
+    // L1 — memory
+    final mem = _mem[videoId];
+    if (mem != null && !mem.isExpired) return mem.url;
 
-    // Reuse an existing in-flight fetch
-    if (_inflight.containsKey(videoId)) {
-      return _inflight[videoId]!;
+    // L2 — Hive (fast disk read, survives restarts)
+    final hive = _readHive(videoId);
+    if (hive != null && !hive.isExpired) {
+      _mem[videoId] = hive; // promote to L1
+      return hive.url;
     }
 
-    final future = _fetchUrl(videoId);
+    // Already fetching — reuse the same Future
+    if (_inflight.containsKey(videoId)) return _inflight[videoId]!;
+
+    final future = _fetchAndCache(videoId);
     _inflight[videoId] = future;
     try {
-      final url = await future;
-      return url;
+      return await future;
     } finally {
       _inflight.remove(videoId);
     }
   }
 
-  Future<String> _fetchUrl(String videoId) async {
+  Future<String> _fetchAndCache(String videoId) async {
     try {
-      final manifest =
-          await _yt.videos.streamsClient.getManifest(videoId);
+      final manifest = await _yt.videos.streamsClient.getManifest(videoId);
 
-      // Prefer MP4 muxed (works without PO token); fall back to any muxed
       var streams = manifest.muxed
           .where((s) => s.container.name == 'mp4')
           .toList();
       if (streams.isEmpty) streams = manifest.muxed.toList();
       if (streams.isEmpty) {
-        throw YoutubeServiceException(
-            'No playable streams found for $videoId');
+        throw YoutubeServiceException('No streams found for $videoId');
       }
 
-      // Lowest bitrate = least bandwidth wasted on video data we don't need
       streams.sort((a, b) => a.bitrate.compareTo(b.bitrate));
       final url = streams.first.url.toString();
-      _urlCache[videoId] = _CachedUrl(url);
+
+      // Write to both caches
+      final cached = _CachedUrl(url, DateTime.now());
+      _mem[videoId] = cached;
+      _writeHive(videoId, url).catchError((_) {}); // non-blocking disk write
+
       return url;
     } on VideoRequiresPurchaseException {
-      throw YoutubeServiceException(
-          'This video requires a purchase and cannot be played.');
+      throw YoutubeServiceException('This video requires a purchase.');
     } on VideoUnplayableException catch (e) {
-      throw YoutubeServiceException(
-          'Video unplayable (unavailable/age-restricted/region-blocked): ${e.message}');
+      throw YoutubeServiceException('Video unplayable: ${e.message}');
     } catch (e) {
       if (e is YoutubeServiceException) rethrow;
       throw YoutubeServiceException('Failed to get stream URL: $e');
@@ -107,25 +132,39 @@ class YoutubeService {
 
   // ── Prefetch ─────────────────────────────────────────────────────────────
 
-  /// Fire-and-forget URL resolution — errors are silently ignored.
-  /// Call this as soon as you know a song *might* be played soon
-  /// (e.g. right after search results arrive, or after a song starts playing).
   void prefetchUrl(String videoId) {
-    final cached = _urlCache[videoId];
-    if (cached != null && !cached.isExpired) return; // already warm
-    if (_inflight.containsKey(videoId)) return;      // already fetching
+    final mem = _mem[videoId];
+    if (mem != null && !mem.isExpired) return;
+    final hive = _readHive(videoId);
+    if (hive != null && !hive.isExpired) {
+      _mem[videoId] = hive;
+      return; // already cached — no network needed
+    }
+    if (_inflight.containsKey(videoId)) return;
     getAudioStreamUrl(videoId).catchError((_) => '');
   }
 
-  /// Prefetch URLs for a batch of video IDs concurrently.
-  /// Use after search results load to warm the cache for visible songs.
-  /// [maxConcurrent] limits parallel manifest requests to avoid hammering
-  /// YouTube's servers (which can cause rate-limiting / 429s).
+  /// Seed the memory cache directly from a [Song]'s stored [Song.streamUrl]
+  /// field (written by AudioPlayerService after each play).
+  /// This is zero-cost — no Hive read, no network.
+  void seedFromSong(Song song) {
+    if (song.streamUrl != null &&
+        song.streamUrlFetchedAt != null &&
+        !song.isStreamUrlExpired) {
+      _mem[song.id] ??= _CachedUrl(song.streamUrl!, song.streamUrlFetchedAt!);
+    }
+  }
+
   void prefetchBatch(List<String> videoIds, {int maxConcurrent = 3}) {
-    // Only prefetch IDs that aren't already cached or in-flight
     final needed = videoIds.where((id) {
-      final cached = _urlCache[id];
-      return (cached == null || cached.isExpired) && !_inflight.containsKey(id);
+      final mem = _mem[id];
+      if (mem != null && !mem.isExpired) return false;
+      final hive = _readHive(id);
+      if (hive != null && !hive.isExpired) {
+        _mem[id] = hive; // warm L1 from L2 for free
+        return false;
+      }
+      return !_inflight.containsKey(id);
     }).take(maxConcurrent).toList();
 
     for (final id in needed) {
@@ -133,12 +172,11 @@ class YoutubeService {
     }
   }
 
-  // ── Video info ───────────────────────────────────────────────────────────
+  // ── Video info ────────────────────────────────────────────────────────────
 
   Future<Song> getVideoInfo(String videoId) async {
     try {
-      final video = await _yt.videos.get(videoId);
-      return _videoToSong(video);
+      return _videoToSong(await _yt.videos.get(videoId));
     } catch (e) {
       throw YoutubeServiceException('Failed to fetch video info: $e');
     }

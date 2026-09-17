@@ -207,7 +207,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
 // ─── YouTube-style video card ─────────────────────────────────────────────────
 
-class _VideoCard extends ConsumerWidget {
+class _VideoCard extends ConsumerStatefulWidget {
   final Song song;
   final bool isCurrentlyPlaying;
   final bool isSelected;
@@ -221,9 +221,33 @@ class _VideoCard extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_VideoCard> createState() => _VideoCardState();
+}
+
+class _VideoCardState extends ConsumerState<_VideoCard> {
+  @override
+  void initState() {
+    super.initState();
+    // ListView.builder calls initState only when the card scrolls into view.
+    // Fire a background URL prefetch immediately — by the time the user taps,
+    // the manifest is already resolved and playback starts instantly.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ref
+            .read(youtubeServiceProvider)
+            .prefetchUrl(widget.song.id);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final song = widget.song;
+    final isCurrentlyPlaying = widget.isCurrentlyPlaying;
+    final isSelected = widget.isSelected;
+
     return GestureDetector(
-      onTap: onTap,
+      onTap: widget.onTap,
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(

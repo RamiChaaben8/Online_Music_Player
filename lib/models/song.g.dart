@@ -26,13 +26,15 @@ class SongAdapter extends TypeAdapter<Song> {
       duration: Duration(milliseconds: fields[4] as int),
       streamUrl: fields[5] as String?,
       streamUrlFetchedAt: fields[6] as DateTime?,
+      isLocal: fields[7] == true,       // default false for old records
+      localPath: fields[8] as String?,
     );
   }
 
   @override
   void write(BinaryWriter writer, Song obj) {
     writer
-      ..writeByte(7)
+      ..writeByte(9)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -46,7 +48,11 @@ class SongAdapter extends TypeAdapter<Song> {
       ..writeByte(5)
       ..write(obj.streamUrl)
       ..writeByte(6)
-      ..write(obj.streamUrlFetchedAt);
+      ..write(obj.streamUrlFetchedAt)
+      ..writeByte(7)
+      ..write(obj.isLocal)
+      ..writeByte(8)
+      ..write(obj.localPath);
   }
 
   @override

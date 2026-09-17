@@ -92,12 +92,16 @@ class NowPlayingScreen extends ConsumerWidget {
                 ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(12),
-                  child: CachedNetworkImage(
-                    imageUrl: song.thumbnailUrl,
-                    fit: BoxFit.cover,
-                    placeholder: (_, __) => Container(color: const Color(0xFF1A1A1A)),
-                    errorWidget: (_, __, ___) => const _AlbumPlaceholder(),
-                  ),
+                  child: song.isLocal || song.thumbnailUrl.isEmpty
+                      ? const _AlbumPlaceholder()
+                      : CachedNetworkImage(
+                          imageUrl: song.thumbnailUrl,
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) =>
+                              Container(color: const Color(0xFF1A1A1A)),
+                          errorWidget: (_, __, ___) =>
+                              const _AlbumPlaceholder(),
+                        ),
                 ),
               ),
             ),

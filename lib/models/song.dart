@@ -9,7 +9,7 @@ part 'song.g.dart';
 @HiveType(typeId: 0)
 class Song extends HiveObject {
   @HiveField(0)
-  final String id; // YouTube video ID
+  final String id; // YouTube video ID (or file path for local songs)
 
   @HiveField(1)
   final String title;
@@ -29,6 +29,12 @@ class Song extends HiveObject {
   @HiveField(6)
   final DateTime? streamUrlFetchedAt; // For expiry checks
 
+  @HiveField(7)
+  final bool isLocal; // true = downloaded file on device
+
+  @HiveField(8)
+  final String? localPath; // absolute path to the local file
+
   Song({
     required this.id,
     required this.title,
@@ -37,12 +43,15 @@ class Song extends HiveObject {
     required this.duration,
     this.streamUrl,
     this.streamUrlFetchedAt,
+    this.isLocal = false,
+    this.localPath,
   });
 
-  /// Returns a copy with updated fields.
   Song copyWith({
     String? streamUrl,
     DateTime? streamUrlFetchedAt,
+    bool? isLocal,
+    String? localPath,
   }) {
     return Song(
       id: id,
@@ -52,10 +61,11 @@ class Song extends HiveObject {
       duration: duration,
       streamUrl: streamUrl ?? this.streamUrl,
       streamUrlFetchedAt: streamUrlFetchedAt ?? this.streamUrlFetchedAt,
+      isLocal: isLocal ?? this.isLocal,
+      localPath: localPath ?? this.localPath,
     );
   }
 
-  /// Stream URLs expire after ~6 hours; check before using cached URL.
   bool get isStreamUrlExpired {
     if (streamUrl == null || streamUrlFetchedAt == null) return true;
     return DateTime.now().difference(streamUrlFetchedAt!) > const Duration(hours: 5);

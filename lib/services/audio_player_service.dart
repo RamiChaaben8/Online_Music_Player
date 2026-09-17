@@ -11,11 +11,29 @@ import '../models/song.dart';
 import 'youtube_service.dart';
 
 class AudioPlayerService {
+  // AndroidLoudnessEnhancer / preload settings are passed at construction.
+  // We lower the initial buffer to 32 KB so just_audio starts playing
+  // after receiving much less data — the rest buffers while playback runs.
   final AudioPlayer _player = AudioPlayer(
     userAgent:
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
         '(KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36',
+    audioLoadConfiguration: const AudioLoadConfiguration(
+      androidLoadControl: AndroidLoadControl(
+        // Start playback after buffering just 32 KB instead of the default 50+ KB.
+        // The rest of the song buffers while audio is already playing.
+        minBufferDuration: Duration(seconds: 10),
+        maxBufferDuration: Duration(seconds: 30),
+        prioritizeTimeOverSizeThresholds: true,
+        targetBufferBytes: 32 * 1024, // 32 KB initial target
+      ),
+      darwinLoadControl: DarwinLoadControl(
+        preferredForwardBufferDuration: Duration(seconds: 5),
+        automaticallyWaitsToMinimizeStalling: false,
+      ),
+    ),
   );
+
   final YoutubeService _youtube;
 
   List<Song> _queue = [];
@@ -25,8 +43,6 @@ class AudioPlayerService {
 
   StreamSubscription<PlayerState>? _completionSub;
 
-  /// Exposed so PlayerNotifier can listen for async load errors that occur
-  /// after _loadAndPlay returns (e.g. setAudioSource fails mid-buffer).
   final StreamController<String> _errorController =
       StreamController<String>.broadcast();
   Stream<String> get errorStream => _errorController.stream;
@@ -51,7 +67,7 @@ class AudioPlayerService {
           ? _queue[_currentIndex]
           : null;
 
-  // ── Public playback API ───────────────────────────────────────────────────
+  // ── Public API ────────────────────────────────────────────────────────────
 
   Future<void> playSong(Song song, {List<Song>? queue}) async {
     if (queue != null) {
@@ -143,74 +159,80 @@ class AudioPlayerService {
     }
   }
 
-  // ── Core load logic ───────────────────────────────────────────────────────
+  // ── Core load ────────────────────────────────────────────────────────────
 
-  /// Resolves the stream URL (fast if prefetched), then starts playback.
-  ///
-  /// Speed strategy:
-  ///  1. getAudioStreamUrl() returns immediately when the URL was prefetched.
-  ///  2. setAudioSource() + play() are called without awaiting setAudioSource —
-  ///     just_audio starts buffering and plays as soon as the first bytes arrive.
-  ///     This cuts perceived latency because the Now Playing screen opens and
-  ///     the spinner shows instantly rather than after the entire source load.
-  ///  3. Any error from setAudioSource is forwarded to [errorStream] so the
-  ///     UI can still show it (since we can't rethrow from a fire-and-forget).
   Future<void> _loadAndPlay(int index) async {
     if (index < 0 || index >= _queue.length) return;
 
     final song = _queue[index];
 
-    await _completionSub?.cancel();
+    _completionSub?.cancel();
     _completionSub = null;
-
-    // Step 1: resolve URL — this is the only truly async step.
-    // Returns instantly when prefetch already ran; ~2–4 s on first tap otherwise.
-    final streamUrl = await _youtube.getAudioStreamUrl(song.id);
 
     final mediaItem = MediaItem(
       id: song.id,
       title: song.title,
       artist: song.channelName,
       duration: song.duration,
-      artUri: Uri.parse(song.thumbnailUrl),
+      artUri: song.thumbnailUrl.isNotEmpty ? Uri.parse(song.thumbnailUrl) : null,
     );
 
-    // Step 2: hand the source to just_audio and immediately call play().
-    // We do NOT await setAudioSource — just_audio queues the play() command
-    // and executes it as soon as the source is ready. The player transitions
-    // through loading → buffering → playing automatically.
+    AudioSource source;
+
+    if (song.isLocal && song.localPath != null) {
+      // ── Local file — no network needed ──────────────────────────────
+      source = AudioSource.file(song.localPath!, tag: mediaItem);
+    } else {
+      // ── Online — resolve URL (from cache or network) ─────────────────
+      final streamUrl = await _youtube.getAudioStreamUrl(song.id);
+      _persistStreamUrl(song, streamUrl);
+
+      source = AudioSource.uri(
+        Uri.parse(streamUrl),
+        tag: mediaItem,
+        headers: {
+          'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+              'AppleWebKit/537.36 (KHTML, like Gecko) '
+              'Chrome/114.0.0.0 Safari/537.36',
+        },
+      );
+    }
+
     _player
-        .setAudioSource(
-          AudioSource.uri(
-            Uri.parse(streamUrl),
-            tag: mediaItem,
-            headers: {
-              'User-Agent':
-                  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-                  'AppleWebKit/537.36 (KHTML, like Gecko) '
-                  'Chrome/114.0.0.0 Safari/537.36',
-            },
-          ),
-        )
+        .setAudioSource(source, preload: true)
         .then((_) => _player.play())
         .catchError((e) {
-          // Surface the error through the broadcast stream so PlayerNotifier
-          // can update its state even though we didn't await this future.
           _errorController.add(
             e is YoutubeServiceException ? e.message : 'Playback failed: $e',
           );
         });
 
-    // Step 3: prefetch the next song while this one buffers
     _prefetchNext();
 
-    // Step 4: auto-advance when track finishes
     _completionSub = _player.playerStateStream.listen((ps) {
       if (ps.processingState == ProcessingState.completed &&
           _loopMode != LoopMode.one) {
         skipToNext();
       }
     });
+  }
+
+  /// Write the resolved stream URL back into the Song stored in Hive
+  /// (liked_songs / recently_played) so cold starts can use it directly.
+  void _persistStreamUrl(Song song, String url) {
+    try {
+      if (song.isInBox) {
+        // Song is already a Hive object — update it in place
+        final updated = song.copyWith(
+          streamUrl: url,
+          streamUrlFetchedAt: DateTime.now(),
+        );
+        song.box?.put(song.key, updated);
+      }
+    } catch (_) {
+      // Non-critical — ignore failures silently
+    }
   }
 
   void _prefetchNext() {

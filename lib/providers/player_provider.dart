@@ -112,33 +112,34 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   }
 
   /// Start playing [song], optionally with a surrounding [queue].
-  Future<void> playSong(Song song, {List<Song>? queue}) async {
+  ///
+  /// Returns immediately after updating UI state — URL resolution and
+  /// buffering happen in the background so the Now Playing screen opens
+  /// with zero perceived delay. Progress is reflected via playerStateStream.
+  void playSong(Song song, {List<Song>? queue}) {
+    // Update UI instantly: show the song + loading spinner right away.
     state = state.copyWith(
       currentSong: song,
       isLoading: true,
+      isPlaying: false,
       clearError: true,
     );
 
-    try {
-      await _service.playSong(song, queue: queue);
-
-      // Track in recently played
-      await _library.addToRecentlyPlayed(song);
-
+    // Fire URL resolution + audio load without blocking the caller.
+    _service.playSong(song, queue: queue).then((_) {
       state = state.copyWith(
         currentSong: _service.currentSong,
         queue: _service.queue,
         currentIndex: _service.currentIndex,
-        isLoading: false,
       );
-    } on YoutubeServiceException catch (e) {
-      state = state.copyWith(isLoading: false, error: e.message);
-    } catch (e) {
+      // Fire-and-forget Hive write — never block playback on disk I/O.
+      _library.addToRecentlyPlayed(song).catchError((_) {});
+    }).catchError((e) {
       state = state.copyWith(
         isLoading: false,
-        error: 'Playback failed: $e',
+        error: e is YoutubeServiceException ? e.message : 'Playback failed: $e',
       );
-    }
+    });
   }
 
   Future<void> play() async {
@@ -170,7 +171,8 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       isLoading: false,
     );
     if (_service.currentSong != null) {
-      await _library.addToRecentlyPlayed(_service.currentSong!);
+      // Fire-and-forget — don't block on Hive write
+      _library.addToRecentlyPlayed(_service.currentSong!).catchError((_) {});
     }
   }
 

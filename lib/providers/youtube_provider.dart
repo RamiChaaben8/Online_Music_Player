@@ -69,8 +69,8 @@ class SearchNotifier extends StateNotifier<SearchState> {
       // cached, so playback starts without waiting for a network round-trip.
       // maxConcurrent=3 avoids hammering YouTube and triggering rate-limits.
       _youtube.prefetchBatch(
-        results.take(5).map((s) => s.id).toList(),
-        maxConcurrent: 3,
+        results.take(6).map((s) => s.id).toList(),
+        maxConcurrent: 4,
       );
     } on YoutubeServiceException catch (e) {
       state = state.copyWith(isLoading: false, error: e.message);

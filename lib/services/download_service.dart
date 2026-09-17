@@ -1,18 +1,9 @@
 // ============================================================
 // services/download_service.dart
 //
-// Downloads songs from YouTube to device storage.
-//
-// WHY youtube_explode's stream client (not dart:io HttpClient):
-//   YouTube stream URLs are signed and require the exact same User-Agent,
-//   cookies, and headers that youtube_explode sends.  A plain HttpClient
-//   request gets a 403 Forbidden because Google's CDN rejects unauthenticated
-//   direct-download attempts.  By piping through _yt.videos.streamsClient we
-//   inherit all the correct headers automatically.
-//
-// File extension: muxed streams are MP4 containers (H.264 + AAC), so we save
-//   as .mp4.  Most media players on Android recognise this correctly; saving
-//   as .mp3 causes metadata parsing to fail.
+// Downloads songs to /Music/Tuneify on the device.
+// Creates the folder if it doesn't exist.
+// Uses youtube_explode's own HTTP client to avoid 403 errors.
 // ============================================================
 
 import 'dart:io';
@@ -30,62 +21,92 @@ class DownloadService {
 
   DownloadService(this._ytService);
 
-  Future<void> downloadSong(Song song) async {
-    // ── 1. Permissions (Android only) ────────────────────────────────────
+  /// Returns the Tuneify music folder, creating it if needed.
+  static Future<Directory> getTuneifyDir() async {
+    Directory? base;
+
     if (Platform.isAndroid) {
-      var status = await Permission.storage.request();
-      if (!status.isGranted) {
-        status = await Permission.manageExternalStorage.request();
+      // /storage/emulated/0/Music/Tuneify — visible in Files app
+      try {
+        final ext = await getExternalStorageDirectory();
+        // getExternalStorageDirectory() returns something like
+        // /storage/emulated/0/Android/data/…/files — walk up to the root
+        if (ext != null) {
+          // Go up 4 levels: files → data → Android → emulated/0
+          Directory root = ext;
+          for (int i = 0; i < 4; i++) {
+            final parent = root.parent;
+            if (parent.path == root.path) break;
+            root = parent;
+          }
+          base = Directory('${root.path}/Music/Tuneify');
+        }
+      } catch (_) {}
+      base ??= Directory('/storage/emulated/0/Music/Tuneify');
+    } else if (Platform.isIOS) {
+      final docs = await getApplicationDocumentsDirectory();
+      base = Directory('${docs.path}/Music/Tuneify');
+    } else {
+      final docs = await getApplicationDocumentsDirectory();
+      base = Directory('${docs.path}/Music/Tuneify');
+    }
+
+    if (!await base.exists()) {
+      await base.create(recursive: true);
+    }
+
+    return base;
+  }
+
+  Future<String> downloadSong(Song song) async {
+    // ── 1. Permissions ────────────────────────────────────────────────────
+    if (Platform.isAndroid) {
+      // Android 13+ (SDK 33) removed READ_EXTERNAL_STORAGE; use audio/video
+      // permissions instead. permission_handler handles the split automatically.
+      bool granted = false;
+
+      // Try the modern granular permissions first (Android 13+)
+      final audioStatus = await Permission.audio.request();
+      if (audioStatus.isGranted) {
+        granted = true;
+      } else {
+        // Fallback for Android 10-12
+        var status = await Permission.storage.request();
+        if (!status.isGranted) {
+          status = await Permission.manageExternalStorage.request();
+        }
+        granted = status.isGranted;
       }
-      // On Android 13+ the storage permission is split; if still denied, bail
-      if (!status.isGranted) {
+
+      if (!granted) {
         throw Exception('Storage permission denied — cannot save file');
       }
     }
 
-    // ── 2. Resolve save directory ─────────────────────────────────────────
-    Directory? dir;
-    if (Platform.isAndroid) {
-      dir = await getExternalStorageDirectory();
-    } else {
-      dir = await getApplicationDocumentsDirectory();
-    }
-    dir ??= await getApplicationDocumentsDirectory();
-
-    // ── 3. Build the output file path (.mp4, not .mp3) ────────────────────
-    //   Muxed YouTube streams are MP4 containers (H.264 video + AAC audio).
-    //   Saving as .mp3 confuses media players because the container signature
-    //   does not match.  .mp4 works correctly on both Android and iOS.
+    // ── 2. Resolve the Tuneify directory ──────────────────────────────────
+    final dir = await getTuneifyDir();
     final safeTitle = song.title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
-    final file = File('${dir.path}/$safeTitle.mp4');
+    final filePath = '${dir.path}/$safeTitle.mp4';
+    final file = File(filePath);
 
-    if (await file.exists()) return; // already downloaded
+    if (await file.exists()) return filePath; // already downloaded
 
-    // ── 4. Resolve the best stream info ───────────────────────────────────
-    //   We use youtube_explode's streamsClient so the request goes through
-    //   the same authenticated HTTP client that avoids 403 errors.
+    // ── 3. Fetch stream via youtube_explode (avoids 403) ─────────────────
     try {
-      final yt = _ytService.yt; // shared YoutubeExplode instance
-      final manifest =
-          await yt.videos.streamsClient.getManifest(song.id);
+      final yt = _ytService.yt;
+      final manifest = await yt.videos.streamsClient.getManifest(song.id);
 
-      // Prefer MP4 muxed; fall back to any muxed stream
-      var muxedStreams = manifest.muxed
+      var muxed = manifest.muxed
           .where((s) => s.container.name == 'mp4')
           .toList();
-      if (muxedStreams.isEmpty) {
-        muxedStreams = manifest.muxed.toList();
-      }
-      if (muxedStreams.isEmpty) {
-        throw Exception('No downloadable streams found for "${song.title}"');
+      if (muxed.isEmpty) muxed = manifest.muxed.toList();
+      if (muxed.isEmpty) {
+        throw Exception('No downloadable streams for "${song.title}"');
       }
 
-      // Pick the lowest-quality stream to save bandwidth on download
-      muxedStreams.sort((a, b) => a.bitrate.compareTo(b.bitrate));
-      final streamInfo = muxedStreams.first;
+      muxed.sort((a, b) => a.bitrate.compareTo(b.bitrate));
+      final streamInfo = muxed.first;
 
-      // ── 5. Pipe the stream directly to disk ────────────────────────────
-      //   youtube_explode's get(streamInfo) handles all headers/auth for us.
       final stream = yt.videos.streamsClient.get(streamInfo);
       final sink = file.openWrite();
       try {
@@ -94,11 +115,10 @@ class DownloadService {
         await sink.flush();
         await sink.close();
       }
+
+      return filePath;
     } catch (e) {
-      // Remove partial file on failure
-      if (await file.exists()) {
-        await file.delete().catchError((_) => file);
-      }
+      if (await file.exists()) await file.delete().catchError((_) => file);
       rethrow;
     }
   }

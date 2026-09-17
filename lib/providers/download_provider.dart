@@ -5,19 +5,16 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/download_service.dart';
 import 'youtube_provider.dart';
+import 'local_music_provider.dart';
 import '../models/song.dart';
 import '../models/playlist.dart';
 
 final downloadServiceProvider = Provider<DownloadService>((ref) {
-  final ytService = ref.watch(youtubeServiceProvider);
-  return DownloadService(ytService);
+  return DownloadService(ref.watch(youtubeServiceProvider));
 });
 
 class DownloadState {
-  /// Song IDs currently being downloaded.
   final Set<String> downloading;
-
-  /// Last error message (null when idle / successful).
   final String? error;
 
   const DownloadState({this.downloading = const {}, this.error});
@@ -38,11 +35,11 @@ class DownloadState {
 
 class DownloadNotifier extends StateNotifier<DownloadState> {
   final DownloadService _service;
+  final Ref _ref;
 
-  DownloadNotifier(this._service) : super(const DownloadState());
+  DownloadNotifier(this._service, this._ref) : super(const DownloadState());
 
   Future<void> downloadSong(Song song) async {
-    // Mark as downloading
     state = state.copyWith(
       downloading: {...state.downloading, song.id},
       clearError: true,
@@ -50,12 +47,13 @@ class DownloadNotifier extends StateNotifier<DownloadState> {
 
     try {
       await _service.downloadSong(song);
+      // Re-scan local music so the new file appears immediately
+      _ref.read(localMusicProvider.notifier).scan();
     } catch (e) {
       state = state.copyWith(
         error: 'Download failed: ${e.toString().replaceAll('Exception: ', '')}',
       );
     } finally {
-      // Always remove from the in-progress set
       state = state.copyWith(
         downloading: state.downloading.difference({song.id}),
       );
@@ -73,5 +71,5 @@ class DownloadNotifier extends StateNotifier<DownloadState> {
 
 final downloadProvider =
     StateNotifierProvider<DownloadNotifier, DownloadState>((ref) {
-  return DownloadNotifier(ref.watch(downloadServiceProvider));
+  return DownloadNotifier(ref.watch(downloadServiceProvider), ref);
 });
