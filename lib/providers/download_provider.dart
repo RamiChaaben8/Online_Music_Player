@@ -13,17 +13,52 @@ final downloadServiceProvider = Provider<DownloadService>((ref) {
   return DownloadService(ytService);
 });
 
-class DownloadNotifier extends StateNotifier<Set<String>> {
+class DownloadState {
+  /// Song IDs currently being downloaded.
+  final Set<String> downloading;
+
+  /// Last error message (null when idle / successful).
+  final String? error;
+
+  const DownloadState({this.downloading = const {}, this.error});
+
+  DownloadState copyWith({
+    Set<String>? downloading,
+    String? error,
+    bool clearError = false,
+  }) {
+    return DownloadState(
+      downloading: downloading ?? this.downloading,
+      error: clearError ? null : (error ?? this.error),
+    );
+  }
+
+  bool isDownloading(String songId) => downloading.contains(songId);
+}
+
+class DownloadNotifier extends StateNotifier<DownloadState> {
   final DownloadService _service;
-  
-  DownloadNotifier(this._service) : super({});
+
+  DownloadNotifier(this._service) : super(const DownloadState());
 
   Future<void> downloadSong(Song song) async {
-    state = {...state, song.id};
+    // Mark as downloading
+    state = state.copyWith(
+      downloading: {...state.downloading, song.id},
+      clearError: true,
+    );
+
     try {
       await _service.downloadSong(song);
+    } catch (e) {
+      state = state.copyWith(
+        error: 'Download failed: ${e.toString().replaceAll('Exception: ', '')}',
+      );
     } finally {
-      state = state.difference({song.id});
+      // Always remove from the in-progress set
+      state = state.copyWith(
+        downloading: state.downloading.difference({song.id}),
+      );
     }
   }
 
@@ -32,8 +67,11 @@ class DownloadNotifier extends StateNotifier<Set<String>> {
       await downloadSong(song);
     }
   }
+
+  void clearError() => state = state.copyWith(clearError: true);
 }
 
-final downloadProvider = StateNotifierProvider<DownloadNotifier, Set<String>>((ref) {
+final downloadProvider =
+    StateNotifierProvider<DownloadNotifier, DownloadState>((ref) {
   return DownloadNotifier(ref.watch(downloadServiceProvider));
 });

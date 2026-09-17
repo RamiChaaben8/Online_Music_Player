@@ -1,13 +1,8 @@
 // ============================================================
 // services/audio_player_service.dart
-//
-// Wraps just_audio + just_audio_background.
-// Handles:
-//  - Playback of a single song
-//  - Queue management (skip, previous, shuffle, repeat)
-//  - Stream URL refresh when URLs expire
-//  - Background/lock-screen media controls via AudioServiceTask
 // ============================================================
+
+import 'dart:async';
 
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
@@ -17,19 +12,28 @@ import 'youtube_service.dart';
 
 class AudioPlayerService {
   final AudioPlayer _player = AudioPlayer(
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36',
+    userAgent:
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+        '(KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36',
   );
   final YoutubeService _youtube;
 
-  // Current queue managed by this service
   List<Song> _queue = [];
   int _currentIndex = -1;
   bool _shuffle = false;
   LoopMode _loopMode = LoopMode.off;
 
+  StreamSubscription<PlayerState>? _completionSub;
+
+  /// Exposed so PlayerNotifier can listen for async load errors that occur
+  /// after _loadAndPlay returns (e.g. setAudioSource fails mid-buffer).
+  final StreamController<String> _errorController =
+      StreamController<String>.broadcast();
+  Stream<String> get errorStream => _errorController.stream;
+
   AudioPlayerService(this._youtube);
 
-  // ── Expose underlying player streams ──────────────────────────────────────
+  // ── Streams ───────────────────────────────────────────────────────────────
 
   Stream<PlayerState> get playerStateStream => _player.playerStateStream;
   Stream<Duration> get positionStream => _player.positionStream;
@@ -37,18 +41,18 @@ class AudioPlayerService {
   Stream<int?> get currentIndexStream => _player.currentIndexStream;
 
   AudioPlayer get player => _player;
-
   List<Song> get queue => List.unmodifiable(_queue);
   int get currentIndex => _currentIndex;
   bool get shuffle => _shuffle;
   LoopMode get loopMode => _loopMode;
 
   Song? get currentSong =>
-      (_currentIndex >= 0 && _currentIndex < _queue.length) ? _queue[_currentIndex] : null;
+      (_currentIndex >= 0 && _currentIndex < _queue.length)
+          ? _queue[_currentIndex]
+          : null;
 
-  // ── Playback control ──────────────────────────────────────────────────────
+  // ── Public playback API ───────────────────────────────────────────────────
 
-  /// Play [song] immediately, optionally replacing the queue.
   Future<void> playSong(Song song, {List<Song>? queue}) async {
     if (queue != null) {
       _queue = List.from(queue);
@@ -58,7 +62,6 @@ class AudioPlayerService {
         _currentIndex = 0;
       }
     } else {
-      // If queue is empty or song not in queue, reset to single-song queue
       if (!_queue.any((s) => s.id == song.id)) {
         _queue = [song];
         _currentIndex = 0;
@@ -66,32 +69,25 @@ class AudioPlayerService {
         _currentIndex = _queue.indexWhere((s) => s.id == song.id);
       }
     }
-
     await _loadAndPlay(_currentIndex);
   }
 
-  /// Add [song] to end of queue.
   void addToQueue(Song song) {
-    if (!_queue.any((s) => s.id == song.id)) {
-      _queue.add(song);
-    }
+    if (!_queue.any((s) => s.id == song.id)) _queue.add(song);
   }
 
-  /// Insert [song] right after the current track (play next).
   void playNext(Song song) {
     _queue.removeWhere((s) => s.id == song.id);
     final insertAt = (_currentIndex + 1).clamp(0, _queue.length);
     _queue.insert(insertAt, song);
   }
 
-  /// Remove a song from the queue by index.
   void removeFromQueue(int index) {
     if (index < 0 || index >= _queue.length) return;
     _queue.removeAt(index);
     if (index < _currentIndex) _currentIndex--;
   }
 
-  /// Reorder queue: move item from [oldIndex] to [newIndex].
   void reorderQueue(int oldIndex, int newIndex) {
     if (oldIndex < newIndex) newIndex--;
     final song = _queue.removeAt(oldIndex);
@@ -111,25 +107,20 @@ class AudioPlayerService {
 
   Future<void> skipToNext() async {
     if (_queue.isEmpty) return;
-    int next;
-    if (_shuffle) {
-      next = (DateTime.now().millisecondsSinceEpoch % _queue.length);
-    } else {
-      next = (_currentIndex + 1) % _queue.length;
-    }
+    final next = _shuffle
+        ? (DateTime.now().millisecondsSinceEpoch % _queue.length)
+        : (_currentIndex + 1) % _queue.length;
     _currentIndex = next;
     await _loadAndPlay(_currentIndex);
   }
 
   Future<void> skipToPrevious() async {
     if (_queue.isEmpty) return;
-    // If more than 3 seconds in, restart current song
-    if ((_player.position.inSeconds) > 3) {
+    if (_player.position.inSeconds > 3) {
       await _player.seek(Duration.zero);
       return;
     }
-    final prev = (_currentIndex - 1 + _queue.length) % _queue.length;
-    _currentIndex = prev;
+    _currentIndex = (_currentIndex - 1 + _queue.length) % _queue.length;
     await _loadAndPlay(_currentIndex);
   }
 
@@ -152,52 +143,86 @@ class AudioPlayerService {
     }
   }
 
-  // ── Internal: load a song at [index] and start playing ───────────────────
+  // ── Core load logic ───────────────────────────────────────────────────────
 
+  /// Resolves the stream URL (fast if prefetched), then starts playback.
+  ///
+  /// Speed strategy:
+  ///  1. getAudioStreamUrl() returns immediately when the URL was prefetched.
+  ///  2. setAudioSource() + play() are called without awaiting setAudioSource —
+  ///     just_audio starts buffering and plays as soon as the first bytes arrive.
+  ///     This cuts perceived latency because the Now Playing screen opens and
+  ///     the spinner shows instantly rather than after the entire source load.
+  ///  3. Any error from setAudioSource is forwarded to [errorStream] so the
+  ///     UI can still show it (since we can't rethrow from a fire-and-forget).
   Future<void> _loadAndPlay(int index) async {
     if (index < 0 || index >= _queue.length) return;
 
     final song = _queue[index];
 
-    try {
-      // Fetch a fresh stream URL (YouTube URLs expire ~6h)
-      final streamUrl = await _youtube.getAudioStreamUrl(song.id);
+    await _completionSub?.cancel();
+    _completionSub = null;
 
-      // Build MediaItem for the notification/lock-screen
-      final mediaItem = MediaItem(
-        id: song.id,
-        title: song.title,
-        artist: song.channelName,
-        duration: song.duration,
-        artUri: Uri.parse(song.thumbnailUrl),
-      );
+    // Step 1: resolve URL — this is the only truly async step.
+    // Returns instantly when prefetch already ran; ~2–4 s on first tap otherwise.
+    final streamUrl = await _youtube.getAudioStreamUrl(song.id);
 
-      await _player.setAudioSource(
-        AudioSource.uri(
-          Uri.parse(streamUrl),
-          tag: mediaItem,
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36',
-          },
-        ),
-      );
+    final mediaItem = MediaItem(
+      id: song.id,
+      title: song.title,
+      artist: song.channelName,
+      duration: song.duration,
+      artUri: Uri.parse(song.thumbnailUrl),
+    );
 
-      await _player.play();
+    // Step 2: hand the source to just_audio and immediately call play().
+    // We do NOT await setAudioSource — just_audio queues the play() command
+    // and executes it as soon as the source is ready. The player transitions
+    // through loading → buffering → playing automatically.
+    _player
+        .setAudioSource(
+          AudioSource.uri(
+            Uri.parse(streamUrl),
+            tag: mediaItem,
+            headers: {
+              'User-Agent':
+                  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                  'AppleWebKit/537.36 (KHTML, like Gecko) '
+                  'Chrome/114.0.0.0 Safari/537.36',
+            },
+          ),
+        )
+        .then((_) => _player.play())
+        .catchError((e) {
+          // Surface the error through the broadcast stream so PlayerNotifier
+          // can update its state even though we didn't await this future.
+          _errorController.add(
+            e is YoutubeServiceException ? e.message : 'Playback failed: $e',
+          );
+        });
 
-      // Auto-skip to next when track ends (unless looping one)
-      _player.playerStateStream.listen((state) {
-        if (state.processingState == ProcessingState.completed &&
-            _loopMode != LoopMode.one) {
-          skipToNext();
-        }
-      });
-    } catch (e) {
-      // Rethrow so the UI provider can catch and show an error
-      rethrow;
-    }
+    // Step 3: prefetch the next song while this one buffers
+    _prefetchNext();
+
+    // Step 4: auto-advance when track finishes
+    _completionSub = _player.playerStateStream.listen((ps) {
+      if (ps.processingState == ProcessingState.completed &&
+          _loopMode != LoopMode.one) {
+        skipToNext();
+      }
+    });
+  }
+
+  void _prefetchNext() {
+    if (_queue.length <= 1) return;
+    final nextIndex = (_currentIndex + 1) % _queue.length;
+    if (nextIndex == _currentIndex) return;
+    _youtube.prefetchUrl(_queue[nextIndex].id);
   }
 
   void dispose() {
+    _completionSub?.cancel();
+    _errorController.close();
     _player.dispose();
     _youtube.dispose();
   }

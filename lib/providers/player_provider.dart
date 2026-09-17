@@ -96,13 +96,18 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       if (dur != null) state = state.copyWith(duration: dur);
     }));
 
-    // Play/pause state
+    // Play/pause + loading state
     _subs.add(_service.playerStateStream.listen((ps) {
       state = state.copyWith(
         isPlaying: ps.playing,
         isLoading: ps.processingState == ProcessingState.loading ||
             ps.processingState == ProcessingState.buffering,
       );
+    }));
+
+    // Async errors from fire-and-forget setAudioSource calls
+    _subs.add(_service.errorStream.listen((msg) {
+      state = state.copyWith(isLoading: false, error: msg);
     }));
   }
 

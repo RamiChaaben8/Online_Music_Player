@@ -173,16 +173,51 @@ class NowPlayingScreen extends ConsumerWidget {
                 ),
                 Consumer(
                   builder: (context, ref, child) {
-                    final downloading = ref.watch(downloadProvider).contains(song.id);
+                    final dlState = ref.watch(downloadProvider);
+                    final downloading = dlState.isDownloading(song.id);
+
+                    // Show error snackbar if a download just failed
+                    ref.listen(downloadProvider, (prev, next) {
+                      if (next.error != null && next.error != prev?.error) {
+                        ScaffoldMessenger.of(context).clearSnackBars();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(next.error!),
+                            backgroundColor: Colors.red,
+                            duration: const Duration(seconds: 4),
+                            action: SnackBarAction(
+                              label: 'Dismiss',
+                              textColor: Colors.white,
+                              onPressed: () =>
+                                  ref.read(downloadProvider.notifier).clearError(),
+                            ),
+                          ),
+                        );
+                      }
+                    });
+
                     return IconButton(
                       icon: downloading
-                          ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Icon(Icons.download, color: Colors.white, size: 28),
+                          ? const SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.download,
+                              color: Colors.white, size: 28),
                       onPressed: downloading
                           ? null
                           : () {
-                              ref.read(downloadProvider.notifier).downloadSong(song);
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Downloading...')));
+                              ref
+                                  .read(downloadProvider.notifier)
+                                  .downloadSong(song);
+                              ScaffoldMessenger.of(context)
+                                  .clearSnackBars();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Downloading…'),
+                                  duration: Duration(seconds: 2),
+                                ),
+                              );
                             },
                     );
                   },

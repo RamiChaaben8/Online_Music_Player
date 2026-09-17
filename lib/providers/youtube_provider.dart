@@ -63,6 +63,15 @@ class SearchNotifier extends StateNotifier<SearchState> {
     try {
       final results = await _youtube.search(query);
       state = state.copyWith(results: results, isLoading: false);
+
+      // Immediately start resolving stream URLs for the top results in the
+      // background. By the time the user taps a song the manifest is already
+      // cached, so playback starts without waiting for a network round-trip.
+      // maxConcurrent=3 avoids hammering YouTube and triggering rate-limits.
+      _youtube.prefetchBatch(
+        results.take(5).map((s) => s.id).toList(),
+        maxConcurrent: 3,
+      );
     } on YoutubeServiceException catch (e) {
       state = state.copyWith(isLoading: false, error: e.message);
     } catch (e) {
