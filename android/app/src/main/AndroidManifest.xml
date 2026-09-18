@@ -18,6 +18,11 @@
     <!-- Android 13+ (SDK 33) granular media permissions -->
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"/>
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/>
+    <!-- Android 11+ (SDK 30): allows scanning the whole storage tree.
+         Google Play allows this for media-manager apps. Without it the
+         scanner still works but is limited to the app's own folder and
+         directories that READ_MEDIA_AUDIO covers. -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>
 
     <application
         android:label="Tuneify"
@@ -27,7 +32,7 @@
         android:networkSecurityConfig="@xml/network_security_config">
 
         <activity
-            android:name="com.ryanheise.audioservice.AudioServiceActivity"
+            android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
             android:taskAffinity=""
@@ -61,6 +66,17 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MEDIA_BUTTON"/>
+            </intent-filter>
+        </receiver>
+
+        <!-- Marquee notification button receiver -->
+        <receiver
+            android:name=".MarqueeButtonReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.example.testf.marquee.PREV"/>
+                <action android:name="com.example.testf.marquee.PP"/>
+                <action android:name="com.example.testf.marquee.NEXT"/>
             </intent-filter>
         </receiver>
 

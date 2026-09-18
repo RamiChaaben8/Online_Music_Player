@@ -3,11 +3,13 @@
 // ============================================================
 
 import 'dart:async';
+import 'dart:io';
 
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../models/song.dart';
+import 'download_service.dart';
 import 'youtube_service.dart';
 
 class AudioPlayerService {
@@ -46,6 +48,12 @@ class AudioPlayerService {
   final StreamController<String> _errorController =
       StreamController<String>.broadcast();
   Stream<String> get errorStream => _errorController.stream;
+
+  /// Emits the new current song's id every time the track changes
+  /// (auto-skip, manual skip, or play a new song).
+  final StreamController<Song> _songChangeController =
+      StreamController<Song>.broadcast();
+  Stream<Song> get songChangeStream => _songChangeController.stream;
 
   AudioPlayerService(this._youtube);
 
@@ -179,11 +187,14 @@ class AudioPlayerService {
 
     AudioSource source;
 
-    if (song.isLocal && song.localPath != null) {
-      // ── Local file — no network needed ──────────────────────────────
-      source = AudioSource.file(song.localPath!, tag: mediaItem);
+    // Check if song is local OR if we have a downloaded copy on disk
+    final localPath = song.isLocal && song.localPath != null
+        ? song.localPath
+        : await _findDownloadedFile(song);
+
+    if (localPath != null) {
+      source = AudioSource.file(localPath, tag: mediaItem);
     } else {
-      // ── Online — resolve URL (from cache or network) ─────────────────
       final streamUrl = await _youtube.getAudioStreamUrl(song.id);
       _persistStreamUrl(song, streamUrl);
 
@@ -208,14 +219,40 @@ class AudioPlayerService {
           );
         });
 
+    // Notify listeners that the song has changed (cover art, title, etc.)
+    _songChangeController.add(song);
+
     _prefetchNext();
 
+    // ── Skip on natural completion ────────────────────────────────
+    // Fires when just_audio reaches the end of the track.
     _completionSub = _player.playerStateStream.listen((ps) {
       if (ps.processingState == ProcessingState.completed &&
           _loopMode != LoopMode.one) {
         skipToNext();
       }
     });
+  }
+
+  /// Checks the Tuneify download folder for a file matching this song's title.
+  /// Returns the absolute path if found, null otherwise.
+  Future<String?> _findDownloadedFile(Song song) async {
+    try {
+      final dir = await DownloadService.getTuneifyDir();
+      if (!await dir.exists()) return null;
+
+      final safeTitle = song.title
+          .replaceAll(RegExp(r'[\\/:*?"<>|]'), '_')
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .trim();
+
+      // Check both .mp4 (current) and .mp3 (legacy) extensions
+      for (final ext in ['.mp4', '.mp3', '.m4a', '.webm']) {
+        final f = File('${dir.path}/$safeTitle$ext');
+        if (await f.exists()) return f.path;
+      }
+    } catch (_) {}
+    return null;
   }
 
   /// Write the resolved stream URL back into the Song stored in Hive
@@ -245,6 +282,7 @@ class AudioPlayerService {
   void dispose() {
     _completionSub?.cancel();
     _errorController.close();
+    _songChangeController.close();
     _player.dispose();
     _youtube.dispose();
   }

@@ -4,12 +4,15 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'dart:io';
 
 import 'screens/search_screen.dart';
 import 'screens/library_screen.dart';
 import 'screens/home_screen.dart';
 import 'widgets/mini_player.dart';
 import 'providers/player_provider.dart';
+import 'providers/local_music_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class TuneifyApp extends StatelessWidget {
   const TuneifyApp({super.key});
@@ -111,8 +114,59 @@ class AppShell extends ConsumerStatefulWidget {
   ConsumerState<AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends ConsumerState<AppShell> {
+class _AppShellState extends ConsumerState<AppShell> with WidgetsBindingObserver {
   int _currentIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // Request storage permission then scan for local music on first frame
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _requestStoragePermission();
+      if (mounted) {
+        ref.read(localMusicProvider.notifier).scan();
+      }
+    });
+  }
+
+  /// Request the appropriate storage/audio permission for the platform.
+  /// On Android 11+ we also try to get MANAGE_EXTERNAL_STORAGE so the
+  /// scanner can see the whole phone — the user is sent to the OS settings
+  /// page for this one since it can't be requested inline.
+  Future<void> _requestStoragePermission() async {
+    if (!Platform.isAndroid) return;
+    try {
+      // Android 13+: granular audio permission
+      final audio = await Permission.audio.request();
+
+      // Android 10-12: legacy storage
+      final storage = await Permission.storage.request();
+
+      // Android 11+ (SDK 30): request broad storage access.
+      // isGranted is false until the user enables it in Settings.
+      // We request it silently — if denied we still scan what we can.
+      final manageStatus = await Permission.manageExternalStorage.status;
+      if (!manageStatus.isGranted) {
+        await Permission.manageExternalStorage.request();
+      }
+    } catch (_) {
+      // Non-fatal; worst case local scan returns only app-dir files
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      ref.read(localMusicProvider.notifier).scan();
+    }
+  }
 
   final List<Widget> _screens = const [
     HomeScreen(),

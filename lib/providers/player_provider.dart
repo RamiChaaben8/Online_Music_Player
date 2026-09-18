@@ -2,20 +2,24 @@
 // providers/player_provider.dart
 //
 // Central playback state provider.
-// Exposes current song, play/pause state, queue, position, etc.
-// Delegates actual audio work to AudioPlayerService.
+// ALL playback is delegated to TuneifyAudioHandler so that
+// audio_service starts its foreground service and the OS
+// notification + lock-screen controls appear correctly.
 // ============================================================
 
 import 'dart:async';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../models/song.dart';
+import '../services/audio_handler.dart';
 import '../services/audio_player_service.dart';
 import '../services/youtube_service.dart';
-import 'youtube_provider.dart';
 import 'library_provider.dart';
+
+const _marqueeChannel = MethodChannel('com.example.testf/marquee');
 
 // ─── State class ─────────────────────────────────────────────────────────────
 
@@ -76,12 +80,17 @@ class PlayerState {
 // ─── Notifier ────────────────────────────────────────────────────────────────
 
 class PlayerNotifier extends StateNotifier<PlayerState> {
-  final AudioPlayerService _service;
+  // The handler IS the single audio authority — it owns AudioPlayerService
+  // internally and drives the OS notification / foreground service.
+  final TuneifyAudioHandler _handler;
   final LibraryNotifier _library;
+
+  // Convenience getter — exposes the underlying service for stream access
+  AudioPlayerService get _service => _handler.service;
 
   final List<StreamSubscription> _subs = [];
 
-  PlayerNotifier(this._service, this._library) : super(const PlayerState()) {
+  PlayerNotifier(this._handler, this._library) : super(const PlayerState()) {
     _subscribeToPlayerStreams();
   }
 
@@ -96,28 +105,41 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       if (dur != null) state = state.copyWith(duration: dur);
     }));
 
-    // Play/pause + loading state
+    // Play/pause + loading state + marquee icon sync
     _subs.add(_service.playerStateStream.listen((ps) {
       state = state.copyWith(
         isPlaying: ps.playing,
         isLoading: ps.processingState == ProcessingState.loading ||
             ps.processingState == ProcessingState.buffering,
       );
+      if (!state.isLoading) _pushMarquee();
     }));
 
     // Async errors from fire-and-forget setAudioSource calls
     _subs.add(_service.errorStream.listen((msg) {
       state = state.copyWith(isLoading: false, error: msg);
     }));
+
+    // Song changes triggered internally by the service (auto-next, etc.)
+    // This ensures the UI (thumbnail, title, marquee) updates immediately.
+    _subs.add(_service.songChangeStream.listen((song) {
+      state = state.copyWith(
+        currentSong: song,
+        currentIndex: _service.currentIndex,
+        queue: _service.queue,
+        isLoading: true,
+        isPlaying: false,
+        clearError: true,
+      );
+      _handler.updateCurrentSong();
+      _pushMarquee();
+      _library.addToRecentlyPlayed(song).catchError((_) {});
+    }));
   }
 
-  /// Start playing [song], optionally with a surrounding [queue].
-  ///
-  /// Returns immediately after updating UI state — URL resolution and
-  /// buffering happen in the background so the Now Playing screen opens
-  /// with zero perceived delay. Progress is reflected via playerStateStream.
+  // ── Playback ─────────────────────────────────────────────────────────────
+
   void playSong(Song song, {List<Song>? queue}) {
-    // Update UI instantly: show the song + loading spinner right away.
     state = state.copyWith(
       currentSong: song,
       isLoading: true,
@@ -125,14 +147,15 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       clearError: true,
     );
 
-    // Fire URL resolution + audio load without blocking the caller.
     _service.playSong(song, queue: queue).then((_) {
       state = state.copyWith(
         currentSong: _service.currentSong,
         queue: _service.queue,
         currentIndex: _service.currentIndex,
       );
-      // Fire-and-forget Hive write — never block playback on disk I/O.
+      // Tell the handler to push the new MediaItem to the notification
+      _handler.updateCurrentSong();
+      _pushMarquee();
       _library.addToRecentlyPlayed(song).catchError((_) {});
     }).catchError((e) {
       state = state.copyWith(
@@ -143,12 +166,12 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   }
 
   Future<void> play() async {
-    await _service.play();
+    await _handler.play();
     state = state.copyWith(isPlaying: true);
   }
 
   Future<void> pause() async {
-    await _service.pause();
+    await _handler.pause();
     state = state.copyWith(isPlaying: false);
   }
 
@@ -160,30 +183,33 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     }
   }
 
-  Future<void> seek(Duration position) => _service.seek(position);
+  Future<void> seek(Duration position) => _handler.seek(position);
 
   Future<void> skipToNext() async {
     state = state.copyWith(isLoading: true, clearError: true);
-    await _service.skipToNext();
+    await _handler.skipToNext();
     state = state.copyWith(
       currentSong: _service.currentSong,
       currentIndex: _service.currentIndex,
       isLoading: false,
     );
+    _handler.updateCurrentSong();
+    _pushMarquee();
     if (_service.currentSong != null) {
-      // Fire-and-forget — don't block on Hive write
       _library.addToRecentlyPlayed(_service.currentSong!).catchError((_) {});
     }
   }
 
   Future<void> skipToPrevious() async {
     state = state.copyWith(isLoading: true, clearError: true);
-    await _service.skipToPrevious();
+    await _handler.skipToPrevious();
     state = state.copyWith(
       currentSong: _service.currentSong,
       currentIndex: _service.currentIndex,
       isLoading: false,
     );
+    _handler.updateCurrentSong();
+    _pushMarquee();
   }
 
   void addToQueue(Song song) {
@@ -221,28 +247,52 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
 
   void clearError() => state = state.copyWith(clearError: true);
 
+  /// The song that will play after the current one, or null.
+  Song? get nextSong {
+    final q = state.queue;
+    final idx = state.currentIndex;
+    if (q.length <= 1 || idx < 0) return null;
+    return q[(idx + 1) % q.length];
+  }
+
+  // ── Marquee notification ──────────────────────────────────────────────
+
+  /// Posts to the native MarqueeNotificationHelper via MethodChannel.
+  /// Called from the main UI isolate — the only place MethodChannel works.
+  void _pushMarquee() {
+    final song = state.currentSong;
+    if (song == null) return;
+    final next = nextSong;
+    final nextLine = next != null ? 'Next: ${next.title}' : '';
+    _marqueeChannel.invokeMethod<void>('update', {
+      'title':     song.title,
+      'artist':    song.channelName,
+      'nextLine':  nextLine,
+      'artUrl':    song.thumbnailUrl,
+      'isPlaying': state.isPlaying,
+    }).catchError((_) {});
+  }
+
   @override
   void dispose() {
     for (final sub in _subs) {
       sub.cancel();
     }
-    _service.dispose();
     super.dispose();
   }
 }
 
 // ─── Providers ───────────────────────────────────────────────────────────────
 
-final audioPlayerServiceProvider = Provider<AudioPlayerService>((ref) {
-  final youtube = ref.watch(youtubeServiceProvider);
-  final service = AudioPlayerService(youtube);
-  ref.onDispose(service.dispose);
-  return service;
+/// Holds the single TuneifyAudioHandler instance created in main().
+/// Overridden in ProviderScope so the same object is shared everywhere.
+final audioHandlerProvider = Provider<TuneifyAudioHandler>((ref) {
+  throw UnimplementedError('audioHandlerProvider must be overridden in main()');
 });
 
 final playerProvider = StateNotifierProvider<PlayerNotifier, PlayerState>((ref) {
   return PlayerNotifier(
-    ref.watch(audioPlayerServiceProvider),
+    ref.watch(audioHandlerProvider),
     ref.watch(libraryProvider.notifier),
   );
 });

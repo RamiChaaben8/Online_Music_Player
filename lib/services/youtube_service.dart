@@ -73,6 +73,17 @@ class YoutubeService {
     }
   }
 
+  /// Fetch a section of songs by a curated query string.
+  /// Used for home feed sections (trending, new releases, mood, etc.)
+  Future<List<Song>> searchSection(String query, {int maxResults = 10}) async {
+    try {
+      final results = await _yt.search.search(query);
+      return results.take(maxResults).map(_videoToSong).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   // ── URL resolution ────────────────────────────────────────────────────────
 
   Future<String> getAudioStreamUrl(String videoId) async {

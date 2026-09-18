@@ -9,7 +9,8 @@ import '../models/song.dart';
 import '../providers/player_provider.dart';
 import '../providers/download_provider.dart';
 import '../providers/library_provider.dart';
-import '../screens/library_screen.dart'; // SongFilter, applyFilter
+import '../screens/library_screen.dart';
+import '../screens/now_playing_screen.dart';
 import '../widgets/song_tile.dart';
 
 class PlaylistScreen extends ConsumerStatefulWidget {
@@ -43,6 +44,23 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
   }
 
   List<Song> get _filtered => applyFilter(widget.songs, _filter);
+
+  void _playSong(Song song, List<Song> queue) {
+    ref.read(playerProvider.notifier).playSong(song, queue: queue);
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        pageBuilder: (_, __, ___) => const NowPlayingScreen(),
+        transitionsBuilder: (_, animation, __, child) => SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, 1),
+            end: Offset.zero,
+          ).animate(
+              CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
+          child: child,
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -101,55 +119,138 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: () => ref
-                            .read(playerProvider.notifier)
-                            .playSong(filtered.first, queue: filtered),
-                        icon: const Icon(Icons.play_arrow, color: Colors.black),
-                        label: const Text('Play all',
-                            style: TextStyle(
-                                color: Colors.black,
-                                fontWeight: FontWeight.bold)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF1DB954),
-                          minimumSize: const Size(double.infinity, 48),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(24)),
+                child: Consumer(
+                  builder: (context, ref, _) {
+                    final dlState = ref.watch(downloadProvider);
+                    final onlineSongs =
+                        filtered.where((s) => !s.isLocal).toList();
+                    final hasOnline = onlineSongs.isNotEmpty;
+
+                    // Count how many are done / in-progress
+                    final doneCount = hasOnline
+                        ? onlineSongs
+                            .where((s) => dlState.isDownloaded(s.id))
+                            .length
+                        : 0;
+                    final anyDownloading = hasOnline &&
+                        onlineSongs.any((s) => dlState.isDownloading(s.id));
+                    final allDownloaded =
+                        hasOnline && doneCount == onlineSongs.length;
+                    final overallProgress =
+                        hasOnline ? doneCount / onlineSongs.length : 0.0;
+
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          children: [
+                            // ── Play all ──────────────────────────────
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: () => _playSong(
+                                    filtered.first, filtered),
+                                icon: const Icon(Icons.play_arrow,
+                                    color: Colors.black),
+                                label: const Text('Play all',
+                                    style: TextStyle(
+                                        color: Colors.black,
+                                        fontWeight: FontWeight.bold)),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF1DB954),
+                                  minimumSize:
+                                      const Size(double.infinity, 48),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius:
+                                          BorderRadius.circular(24)),
+                                ),
+                              ),
+                            ),
+
+                            // ── Download button (only for online songs) ──
+                            if (hasOnline) ...[
+                              const SizedBox(width: 8),
+                              ElevatedButton.icon(
+                                onPressed: anyDownloading || allDownloaded
+                                    ? null
+                                    : () {
+                                        for (final s in onlineSongs) {
+                                          ref
+                                              .read(
+                                                  downloadProvider.notifier)
+                                              .downloadSong(s);
+                                        }
+                                      },
+                                icon: anyDownloading
+                                    ? const SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Colors.white))
+                                    : Icon(
+                                        allDownloaded
+                                            ? Icons.download_done
+                                            : Icons.download,
+                                        color: allDownloaded
+                                            ? const Color(0xFF1DB954)
+                                            : Colors.white,
+                                      ),
+                                label: Text(
+                                  allDownloaded
+                                      ? 'Done'
+                                      : anyDownloading
+                                          ? '$doneCount / ${onlineSongs.length}'
+                                          : 'Download',
+                                  style: TextStyle(
+                                      color: allDownloaded
+                                          ? const Color(0xFF1DB954)
+                                          : Colors.white,
+                                      fontWeight: FontWeight.w600),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF282828),
+                                  minimumSize: const Size(0, 48),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius:
+                                          BorderRadius.circular(24)),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
-                      ),
-                    ),
-                    // Only show Download for online songs
-                    if (filtered.any((s) => !s.isLocal)) ...[
-                      const SizedBox(width: 8),
-                      ElevatedButton.icon(
-                        onPressed: () {
-                          for (final song
-                              in filtered.where((s) => !s.isLocal)) {
-                            ref
-                                .read(downloadProvider.notifier)
-                                .downloadSong(song);
-                          }
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content: Text('Downloading…'),
-                                duration: Duration(seconds: 2)),
-                          );
-                        },
-                        icon: const Icon(Icons.download, color: Colors.white),
-                        label: const Text('Download',
-                            style: TextStyle(color: Colors.white)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF282828),
-                          minimumSize: const Size(0, 48),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(24)),
-                        ),
-                      ),
-                    ],
-                  ],
+
+                        // ── Progress bar (visible while downloading) ──
+                        if (hasOnline && anyDownloading) ...[
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(4),
+                                  child: LinearProgressIndicator(
+                                    value: overallProgress,
+                                    minHeight: 6,
+                                    backgroundColor:
+                                        const Color(0xFF2A2A2A),
+                                    color: const Color(0xFF1DB954),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Text(
+                                '$doneCount / ${onlineSongs.length} songs',
+                                style: const TextStyle(
+                                  color: Color(0xFFB3B3B3),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ],
+                    );
+                  },
                 ),
               ),
             ),
@@ -172,9 +273,10 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
                         song: song,
                         isPlaying: isCurrent && playerState.isPlaying,
                         isSelected: isCurrent,
-                        onTap: () => ref
-                            .read(playerProvider.notifier)
-                            .playSong(song, queue: filtered),
+                        onTap: () => _playSong(song, filtered),
+                        // Custom playlist: show remove button.
+                        // For all other views, SongTile auto-shows
+                        // the download button for online songs.
                         trailing: widget.playlistKey != null
                             ? IconButton(
                                 icon: const Icon(

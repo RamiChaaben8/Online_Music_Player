@@ -13,7 +13,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:just_audio/just_audio.dart';
+import 'package:just_audio/just_audio.dart' hide PlayerState;
 
 import '../providers/player_provider.dart';
 import '../providers/library_provider.dart';
@@ -178,7 +178,9 @@ class NowPlayingScreen extends ConsumerWidget {
                 Consumer(
                   builder: (context, ref, child) {
                     final dlState = ref.watch(downloadProvider);
-                    final downloading = dlState.isDownloading(song.id);
+                    final isDownloading = dlState.isDownloading(song.id);
+                    final isDownloaded = song.isLocal || dlState.isDownloaded(song.id);
+                    final progress = dlState.progressFor(song.id);
 
                     // Show error snackbar if a download just failed
                     ref.listen(downloadProvider, (prev, next) {
@@ -200,29 +202,63 @@ class NowPlayingScreen extends ConsumerWidget {
                       }
                     });
 
+                    if (isDownloading) {
+                      // Circular progress with % label in the centre
+                      return SizedBox(
+                        width: 48,
+                        height: 48,
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            SizedBox(
+                              width: 32,
+                              height: 32,
+                              child: CircularProgressIndicator(
+                                value: progress > 0 ? progress : null,
+                                strokeWidth: 2.5,
+                                color: const Color(0xFF1DB954),
+                                backgroundColor: Colors.white12,
+                              ),
+                            ),
+                            Text(
+                              progress > 0
+                                  ? '${(progress * 100).round()}%'
+                                  : '…',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 8,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+
+                    if (isDownloaded) {
+                      return IconButton(
+                        icon: const Icon(Icons.download_done,
+                            color: Color(0xFF1DB954), size: 28),
+                        onPressed: null,
+                        tooltip: 'Already downloaded',
+                      );
+                    }
+
                     return IconButton(
-                      icon: downloading
-                          ? const SizedBox(
-                              width: 24,
-                              height: 24,
-                              child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Icon(Icons.download,
-                              color: Colors.white, size: 28),
-                      onPressed: downloading
-                          ? null
-                          : () {
-                              ref
-                                  .read(downloadProvider.notifier)
-                                  .downloadSong(song);
-                              ScaffoldMessenger.of(context)
-                                  .clearSnackBars();
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Downloading…'),
-                                  duration: Duration(seconds: 2),
-                                ),
-                              );
-                            },
+                      icon: const Icon(Icons.download_outlined,
+                          color: Colors.white, size: 28),
+                      onPressed: () {
+                        ref.read(downloadProvider.notifier).downloadSong(song);
+                        ScaffoldMessenger.of(context).clearSnackBars();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Download started…'),
+                            backgroundColor: Color(0xFF1DB954),
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+                      },
+                      tooltip: 'Download',
                     );
                   },
                 ),
@@ -288,6 +324,11 @@ class NowPlayingScreen extends ConsumerWidget {
                 ),
               ],
             ),
+
+            const SizedBox(height: 12),
+
+            // ── Next Up card ───────────────────────────────────────────
+            _NextUpCard(playerState: playerState),
 
             // Error display
             if (playerState.error != null)
@@ -380,6 +421,108 @@ class _AlbumPlaceholder extends StatelessWidget {
       color: const Color(0xFF282828),
       child: const Center(
         child: Icon(Icons.music_note, size: 80, color: Color(0xFF3A3A3A)),
+      ),
+    );
+  }
+}
+
+
+// ─── Next Up card ──────────────────────────────────────────────────────────
+
+class _NextUpCard extends StatelessWidget {
+  final PlayerState playerState;
+  const _NextUpCard({required this.playerState});
+
+  @override
+  Widget build(BuildContext context) {
+    final queue = playerState.queue;
+    final idx = playerState.currentIndex;
+    if (queue.length <= 1 || idx < 0) return const SizedBox.shrink();
+
+    final next = queue[(idx + 1) % queue.length];
+
+    return Container(
+      margin: const EdgeInsets.only(top: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A1A),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFF2A2A2A)),
+      ),
+      child: Row(
+        children: [
+          // Small thumbnail
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: next.thumbnailUrl.isNotEmpty
+                ? CachedNetworkImage(
+                    imageUrl: next.thumbnailUrl,
+                    width: 44,
+                    height: 44,
+                    fit: BoxFit.cover,
+                    placeholder: (_, __) => Container(
+                      width: 44,
+                      height: 44,
+                      color: const Color(0xFF282828),
+                    ),
+                    errorWidget: (_, __, ___) => Container(
+                      width: 44,
+                      height: 44,
+                      color: const Color(0xFF282828),
+                      child: const Icon(Icons.music_note,
+                          color: Color(0xFF3A3A3A), size: 20),
+                    ),
+                  )
+                : Container(
+                    width: 44,
+                    height: 44,
+                    color: const Color(0xFF282828),
+                    child: const Icon(Icons.music_note,
+                        color: Color(0xFF3A3A3A), size: 20),
+                  ),
+          ),
+
+          const SizedBox(width: 12),
+
+          // Next song info
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'NEXT UP',
+                  style: TextStyle(
+                    color: Color(0xFF1DB954),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  next.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  next.channelName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      color: Color(0xFFB3B3B3), fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+
+          const Icon(Icons.queue_music_outlined,
+              color: Color(0xFF555555), size: 20),
+        ],
       ),
     );
   }
