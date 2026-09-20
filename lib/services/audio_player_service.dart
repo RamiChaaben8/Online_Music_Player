@@ -76,6 +76,7 @@ class AudioPlayerService {
   Stream<int?> get currentIndexStream => _player.currentIndexStream;
 
   AudioPlayer get player => _player;
+  YoutubeService get youtubeService => _youtube;
   List<Song> get queue => List.unmodifiable(_queue);
   int get currentIndex => _currentIndex;
   bool get shuffle => _shuffle;

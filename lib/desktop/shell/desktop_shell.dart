@@ -8,10 +8,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/playlist.dart';
 import '../../providers/local_music_provider.dart';
+import '../../providers/panel_provider.dart';
 import '../../providers/youtube_provider.dart';
 import '../home/desktop_home_view.dart';
 import '../now_playing/desktop_now_playing_panel.dart';
 import '../player/desktop_player_bar.dart';
+import '../player/queue_panel.dart';
 import '../playlist/desktop_playlist_view.dart';
 import '../sidebar/desktop_sidebar.dart';
 import '../theme/desktop_theme.dart';
@@ -27,14 +29,8 @@ class DesktopShell extends ConsumerStatefulWidget {
 
 class _DesktopShellState extends ConsumerState<DesktopShell>
     with WidgetsBindingObserver {
-  bool _showNowPlaying = true;
-
-  // ── Navigation history ────────────────────────────────────────────────────
-  // Each entry is a view index: 0=home, 1=search, 2=playlist
   final List<int> _history = [0];
   int _historyIndex = 0;
-
-  // The playlist shown when _currentView == 2
   Playlist? _viewedPlaylist;
 
   int get _currentView => _history[_historyIndex];
@@ -86,16 +82,17 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
 
   @override
   Widget build(BuildContext context) {
+    final panelMode = ref.watch(panelModeProvider);
+
     return Scaffold(
       backgroundColor: kBgColor,
       body: LayoutBuilder(
         builder: (context, constraints) {
-          final shouldShowNowPlaying =
-              _showNowPlaying && constraints.maxWidth >= 1100;
+          final wideEnough = constraints.maxWidth >= 1100;
 
           return Column(
             children: [
-              // ── Title bar ───────────────────────────────────────────
+              // ── Title bar ─────────────────────────────────────────
               DesktopTitleBar(
                 currentView: _currentView,
                 canGoBack: _canGoBack,
@@ -115,11 +112,9 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Sidebar
                     DesktopSidebar(
-                      selectedPlaylist: _currentView == 2
-                          ? _viewedPlaylist
-                          : null,
+                      selectedPlaylist:
+                          _currentView == 2 ? _viewedPlaylist : null,
                       onPlaylistSelected: (p) {
                         if (p != null) {
                           _navigateTo(2, playlist: p);
@@ -128,21 +123,27 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
                         }
                       },
                     ),
-
                     const SizedBox(width: 8),
-
-                    // Center view
                     Expanded(
                       child: AnimatedSwitcher(
                         duration: const Duration(milliseconds: 200),
                         child: _buildCenterView(),
                       ),
                     ),
-
-                    // Now playing panel (collapses below 1100px)
-                    if (shouldShowNowPlaying) ...[
+                    // Right panel — NowPlaying (handles lyrics scroll
+                    // internally) or Queue
+                    if (wideEnough) ...[
                       const SizedBox(width: 8),
-                      const DesktopNowPlayingPanel(),
+                      if (panelMode == PanelMode.queue)
+                        QueuePanel(
+                          key: const ValueKey('queue'),
+                          onClose: () => ref
+                              .read(panelModeProvider.notifier)
+                              .state = PanelMode.none,
+                        )
+                      else
+                        const DesktopNowPlayingPanel(
+                            key: ValueKey('nowplaying')),
                     ],
                   ],
                 ),

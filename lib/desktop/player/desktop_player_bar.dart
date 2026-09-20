@@ -9,6 +9,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../../models/song.dart';
+import '../../providers/lyrics_provider.dart';
+import '../../providers/panel_provider.dart';
 import '../../providers/player_provider.dart';
 import '../../widgets/song_context_menu.dart';
 import '../theme/desktop_theme.dart';
@@ -22,13 +24,14 @@ class DesktopPlayerBar extends ConsumerStatefulWidget {
 
 class _DesktopPlayerBarState extends ConsumerState<DesktopPlayerBar> {
   double _volume = 0.8;
+  double _volumeBeforeMute = 0.8;
+  bool _muted = false;
   bool _draggingProgress = false;
   double _dragProgress = 0.0;
 
   @override
   void initState() {
     super.initState();
-    // Apply initial volume to the underlying player
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _applyVolume(_volume);
     });
@@ -40,15 +43,38 @@ class _DesktopPlayerBarState extends ConsumerState<DesktopPlayerBar> {
     } catch (_) {}
   }
 
-  String _formatDuration(Duration d) {
-    final min = d.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final sec = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return '$min:$sec';
+  void _toggleMute() {
+    setState(() {
+      if (_muted) {
+        _muted = false;
+        _volume = _volumeBeforeMute;
+        _applyVolume(_volume);
+      } else {
+        _volumeBeforeMute = _volume;
+        _muted = true;
+        _applyVolume(0.0);
+      }
+    });
+  }
+
+  void _togglePanel(PanelMode mode) {
+    final current = ref.read(panelModeProvider);
+    final next = current == mode ? PanelMode.none : mode;
+    ref.read(panelModeProvider.notifier).state = next;
+
+    // Pre-fetch lyrics when panel is opened
+    if (next == PanelMode.lyrics) {
+      final song = ref.read(playerProvider).currentSong;
+      if (song != null) {
+        ref.read(lyricsProvider.notifier).fetchFor(song.id);
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final ps = ref.watch(playerProvider);
+    final panelMode = ref.watch(panelModeProvider);
     final song = ps.currentSong;
 
     final position = ps.position;
@@ -117,14 +143,23 @@ class _DesktopPlayerBarState extends ConsumerState<DesktopPlayerBar> {
                     ),
                   ),
 
-                  // Right: volume + extra controls
+                  // Right: volume + panel controls
                   Expanded(
                     child: _VolumeControls(
-                      volume: _volume,
+                      volume: _muted ? 0.0 : _volume,
+                      muted: _muted,
+                      panelMode: panelMode,
                       onVolumeChanged: (v) {
-                        setState(() => _volume = v);
+                        setState(() {
+                          _volume = v;
+                          _muted = v < 0.01;
+                          if (!_muted) _volumeBeforeMute = v;
+                        });
                         _applyVolume(v);
                       },
+                      onMuteToggle: _toggleMute,
+                      onLyricsToggle: () => _togglePanel(PanelMode.lyrics),
+                      onQueueToggle: () => _togglePanel(PanelMode.queue),
                     ),
                   ),
                 ],
@@ -172,8 +207,7 @@ class _ProgressBar extends StatelessWidget {
         children: [
           Text(
             _fmt(position),
-            style:
-                const TextStyle(color: kTextSecondary, fontSize: 11),
+            style: const TextStyle(color: kTextSecondary, fontSize: 11),
           ),
           const SizedBox(width: 8),
           Expanded(
@@ -203,7 +237,6 @@ class _ProgressBar extends StatelessWidget {
                       child: Stack(
                         alignment: Alignment.centerLeft,
                         children: [
-                          // Track background
                           Container(
                             height: 3,
                             decoration: BoxDecoration(
@@ -211,7 +244,6 @@ class _ProgressBar extends StatelessWidget {
                               borderRadius: BorderRadius.circular(2),
                             ),
                           ),
-                          // Progress fill
                           FractionallySizedBox(
                             widthFactor: fraction,
                             child: Container(
@@ -222,7 +254,6 @@ class _ProgressBar extends StatelessWidget {
                               ),
                             ),
                           ),
-                          // Thumb
                           Positioned(
                             left: (fraction * constraints.maxWidth - 5)
                                 .clamp(0.0, constraints.maxWidth - 10),
@@ -246,8 +277,7 @@ class _ProgressBar extends StatelessWidget {
           const SizedBox(width: 8),
           Text(
             _fmt(duration),
-            style:
-                const TextStyle(color: kTextSecondary, fontSize: 11),
+            style: const TextStyle(color: kTextSecondary, fontSize: 11),
           ),
         ],
       ),
@@ -277,7 +307,6 @@ class _SongInfo extends ConsumerWidget {
       song: s,
       child: Row(
         children: [
-          // ── Current song thumbnail ─────────────────────────────────
           ClipRRect(
             borderRadius: BorderRadius.circular(4),
             child: s.thumbnailUrl.isNotEmpty
@@ -305,8 +334,6 @@ class _SongInfo extends ConsumerWidget {
                   ),
           ),
           const SizedBox(width: 10),
-
-          // ── Current song title + artist ────────────────────────────
           Expanded(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -327,22 +354,14 @@ class _SongInfo extends ConsumerWidget {
                   s.channelName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: kTextSecondary,
-                    fontSize: 11,
-                  ),
+                  style: const TextStyle(color: kTextSecondary, fontSize: 11),
                 ),
               ],
             ),
           ),
-
-          // ── ··· button ─────────────────────────────────────────────
           SongMenuButton(song: s, size: 16),
-
-          // ── Next song (thumbnail + title/artist) ───────────────────
           if (next != null) ...[
             const SizedBox(width: 8),
-            // Vertical separator
             Container(width: 1, height: 36, color: const Color(0xFF3A3A3A)),
             const SizedBox(width: 10),
             ClipRRect(
@@ -400,10 +419,7 @@ class _SongInfo extends ConsumerWidget {
                     next.channelName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: kTextSecondary,
-                      fontSize: 10,
-                    ),
+                    style: const TextStyle(color: kTextSecondary, fontSize: 10),
                   ),
                 ],
               ),
@@ -442,37 +458,27 @@ class _TransportControls extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final repeatIcon = loopMode == LoopMode.one
-        ? Icons.repeat_one
-        : Icons.repeat;
+    final repeatIcon =
+        loopMode == LoopMode.one ? Icons.repeat_one : Icons.repeat;
     final repeatColor = loopMode != LoopMode.off ? kAccent : kTextSecondary;
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        // Shuffle
         IconButton(
           onPressed: onShuffle,
-          icon: Icon(
-            Icons.shuffle,
-            color: shuffle ? kAccent : kTextSecondary,
-            size: 20,
-          ),
+          icon: Icon(Icons.shuffle,
+              color: shuffle ? kAccent : kTextSecondary, size: 20),
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
         ),
-
-        // Previous
         IconButton(
           onPressed: onPrev,
           icon: const Icon(Icons.skip_previous, color: kTextPrimary, size: 28),
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
         ),
-
         const SizedBox(width: 4),
-
-        // Play / Pause
         GestureDetector(
           onTap: onPlayPause,
           child: Container(
@@ -495,18 +501,13 @@ class _TransportControls extends StatelessWidget {
                   ),
           ),
         ),
-
         const SizedBox(width: 4),
-
-        // Next
         IconButton(
           onPressed: onNext,
           icon: const Icon(Icons.skip_next, color: kTextPrimary, size: 28),
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
         ),
-
-        // Repeat
         IconButton(
           onPressed: onRepeat,
           icon: Icon(repeatIcon, color: repeatColor, size: 20),
@@ -522,21 +523,76 @@ class _TransportControls extends StatelessWidget {
 
 class _VolumeControls extends StatelessWidget {
   final double volume;
+  final bool muted;
+  final PanelMode panelMode;
   final void Function(double) onVolumeChanged;
+  final VoidCallback onMuteToggle;
+  final VoidCallback onLyricsToggle;
+  final VoidCallback onQueueToggle;
 
   const _VolumeControls({
     required this.volume,
+    required this.muted,
+    required this.panelMode,
     required this.onVolumeChanged,
+    required this.onMuteToggle,
+    required this.onLyricsToggle,
+    required this.onQueueToggle,
   });
 
   @override
   Widget build(BuildContext context) {
+    final IconData volIcon = muted || volume < 0.01
+        ? Icons.volume_off
+        : volume < 0.5
+            ? Icons.volume_down_outlined
+            : Icons.volume_up_outlined;
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.end,
       children: [
-        _grayIcon(Icons.mic_none_outlined),
-        _grayIcon(Icons.queue_music_outlined),
-        _grayIcon(volume < 0.01 ? Icons.volume_off : Icons.volume_up_outlined),
+        // Lyrics button
+        Tooltip(
+          message: panelMode == PanelMode.lyrics ? 'Close Lyrics' : 'Lyrics',
+          child: IconButton(
+            icon: Icon(
+              Icons.lyrics_outlined,
+              color: panelMode == PanelMode.lyrics ? kAccent : kTextSecondary,
+              size: 20,
+            ),
+            onPressed: onLyricsToggle,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          ),
+        ),
+
+        // Queue button
+        Tooltip(
+          message: panelMode == PanelMode.queue ? 'Close Queue' : 'Queue',
+          child: IconButton(
+            icon: Icon(
+              Icons.queue_music_outlined,
+              color: panelMode == PanelMode.queue ? kAccent : kTextSecondary,
+              size: 20,
+            ),
+            onPressed: onQueueToggle,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          ),
+        ),
+
+        // Mute button
+        Tooltip(
+          message: muted ? 'Unmute' : 'Mute',
+          child: IconButton(
+            icon: Icon(volIcon, color: kTextSecondary, size: 20),
+            onPressed: onMuteToggle,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          ),
+        ),
+
+        // Volume slider
         SizedBox(
           width: 80,
           child: SliderTheme(
@@ -544,9 +600,10 @@ class _VolumeControls extends StatelessWidget {
               activeTrackColor: kAccent,
               inactiveTrackColor: const Color(0xFF3A3A3A),
               thumbColor: Colors.white,
-              overlayColor: kAccent.withOpacity(0.2),
+              overlayColor: kAccent.withValues(alpha: 0.2),
               trackHeight: 3,
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
+              thumbShape:
+                  const RoundSliderThumbShape(enabledThumbRadius: 5),
               overlayShape:
                   const RoundSliderOverlayShape(overlayRadius: 10),
             ),
@@ -558,17 +615,16 @@ class _VolumeControls extends StatelessWidget {
             ),
           ),
         ),
-        _grayIcon(Icons.fullscreen_outlined),
-      ],
-    );
-  }
 
-  Widget _grayIcon(IconData icon) {
-    return IconButton(
-      icon: Icon(icon, color: kTextSecondary, size: 20),
-      onPressed: () {},
-      padding: EdgeInsets.zero,
-      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+        // Fullscreen placeholder
+        IconButton(
+          icon: const Icon(Icons.fullscreen_outlined,
+              color: kTextSecondary, size: 20),
+          onPressed: () {},
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+        ),
+      ],
     );
   }
 }

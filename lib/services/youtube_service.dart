@@ -259,7 +259,44 @@ class YoutubeService {
     );
   }
 
+  // ── Captions / Lyrics ─────────────────────────────────────────────────────
+
+  /// Returns a list of caption lines for the given video.
+  /// Tries English first, then any available track.
+  /// Returns an empty list if no captions are available.
+  Future<List<LyricLine>> getLyrics(String videoId) async {
+    try {
+      final manifest = await _yt.videos.closedCaptions.getManifest(videoId);
+      if (manifest.tracks.isEmpty) return [];
+
+      // Prefer English, fall back to first available
+      final trackInfo = manifest.tracks.firstWhere(
+        (t) => t.language.code.startsWith('en'),
+        orElse: () => manifest.tracks.first,
+      );
+
+      final track = await _yt.videos.closedCaptions.get(trackInfo);
+
+      return track.captions.map((c) {
+        return LyricLine(
+          text: c.text.trim(),
+          start: c.offset,
+          end: c.offset + c.duration,
+        );
+      }).where((l) => l.text.isNotEmpty).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   void dispose() => _yt.close();
+}
+
+class LyricLine {
+  final String text;
+  final Duration start;
+  final Duration end;
+  const LyricLine({required this.text, required this.start, required this.end});
 }
 
 class YoutubeServiceException implements Exception {
