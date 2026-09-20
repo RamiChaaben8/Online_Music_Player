@@ -141,6 +141,57 @@ class YoutubeService {
     }
   }
 
+  // ── Video stream URL ─────────────────────────────────────────────────────
+  // Returns a muxed (video+audio) MP4 stream URL suitable for video_player.
+  // Uses the highest quality muxed stream available (up to 720p typically).
+  // Note: separate high-res video streams (>720p) are not muxed on YouTube.
+
+  final Map<String, _CachedUrl> _videoMem = {};
+
+  Future<String> getVideoStreamUrl(String videoId) async {
+    final mem = _videoMem[videoId];
+    if (mem != null && !mem.isExpired) return mem.url;
+
+    if (_inflight.containsKey('v_$videoId')) return _inflight['v_$videoId']!;
+
+    final future = _fetchVideoUrl(videoId);
+    _inflight['v_$videoId'] = future;
+    try {
+      return await future;
+    } finally {
+      _inflight.remove('v_$videoId');
+    }
+  }
+
+  Future<String> _fetchVideoUrl(String videoId) async {
+    try {
+      final manifest = await _yt.videos.streamsClient.getManifest(videoId);
+
+      // Prefer highest bitrate muxed MP4 (these include both video and audio)
+      var streams = manifest.muxed
+          .where((s) => s.container.name == 'mp4')
+          .toList();
+      if (streams.isEmpty) streams = manifest.muxed.toList();
+      if (streams.isEmpty) {
+        throw YoutubeServiceException('No video streams found for $videoId');
+      }
+
+      // Sort descending — best quality first
+      streams.sort((a, b) => b.bitrate.compareTo(a.bitrate));
+      final url = streams.first.url.toString();
+
+      _videoMem[videoId] = _CachedUrl(url, DateTime.now());
+      return url;
+    } on VideoRequiresPurchaseException {
+      throw YoutubeServiceException('This video requires a purchase.');
+    } on VideoUnplayableException catch (e) {
+      throw YoutubeServiceException('Video unplayable: ${e.message}');
+    } catch (e) {
+      if (e is YoutubeServiceException) rethrow;
+      throw YoutubeServiceException('Failed to get video stream URL: $e');
+    }
+  }
+
   // ── Prefetch ─────────────────────────────────────────────────────────────
 
   void prefetchUrl(String videoId) {

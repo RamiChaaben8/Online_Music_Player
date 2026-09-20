@@ -13,27 +13,38 @@ import 'download_service.dart';
 import 'youtube_service.dart';
 
 class AudioPlayerService {
-  // AndroidLoudnessEnhancer / preload settings are passed at construction.
-  // We lower the initial buffer to 32 KB so just_audio starts playing
-  // after receiving much less data — the rest buffers while playback runs.
+  // Build platform-appropriate load config.
+  // AndroidLoadControl must only be passed on Android — the type is harmless
+  // to reference in Dart but passing it causes an assertion inside just_audio
+  // on non-Android platforms.
+  static AudioLoadConfiguration? _loadConfig() {
+    if (Platform.isAndroid) {
+      return const AudioLoadConfiguration(
+        androidLoadControl: AndroidLoadControl(
+          minBufferDuration: Duration(seconds: 10),
+          maxBufferDuration: Duration(seconds: 30),
+          prioritizeTimeOverSizeThresholds: true,
+          targetBufferBytes: 32 * 1024,
+        ),
+      );
+    }
+    if (Platform.isIOS || Platform.isMacOS) {
+      return const AudioLoadConfiguration(
+        darwinLoadControl: DarwinLoadControl(
+          preferredForwardBufferDuration: Duration(seconds: 5),
+          automaticallyWaitsToMinimizeStalling: false,
+        ),
+      );
+    }
+    // Windows / Linux — media_kit backend, no load config needed.
+    return null;
+  }
+
   final AudioPlayer _player = AudioPlayer(
     userAgent:
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
         '(KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36',
-    audioLoadConfiguration: const AudioLoadConfiguration(
-      androidLoadControl: AndroidLoadControl(
-        // Start playback after buffering just 32 KB instead of the default 50+ KB.
-        // The rest of the song buffers while audio is already playing.
-        minBufferDuration: Duration(seconds: 10),
-        maxBufferDuration: Duration(seconds: 30),
-        prioritizeTimeOverSizeThresholds: true,
-        targetBufferBytes: 32 * 1024, // 32 KB initial target
-      ),
-      darwinLoadControl: DarwinLoadControl(
-        preferredForwardBufferDuration: Duration(seconds: 5),
-        automaticallyWaitsToMinimizeStalling: false,
-      ),
-    ),
+    audioLoadConfiguration: _loadConfig(),
   );
 
   final YoutubeService _youtube;

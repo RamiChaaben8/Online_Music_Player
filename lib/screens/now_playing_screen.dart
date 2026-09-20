@@ -21,12 +21,20 @@ import '../widgets/seek_bar.dart';
 import '../screens/queue_screen.dart';
 import '../providers/download_provider.dart';
 import '../widgets/add_to_playlist_sheet.dart';
+import '../widgets/video_preview_widget.dart';
 
-class NowPlayingScreen extends ConsumerWidget {
+class NowPlayingScreen extends ConsumerStatefulWidget {
   const NowPlayingScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<NowPlayingScreen> createState() => _NowPlayingScreenState();
+}
+
+class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
+  bool _showVideo = false;
+
+  @override
+  Widget build(BuildContext context) {
     final playerState = ref.watch(playerProvider);
     final song = playerState.currentSong;
     final library = ref.watch(libraryProvider);
@@ -60,6 +68,16 @@ class NowPlayingScreen extends ConsumerWidget {
         ),
         centerTitle: true,
         actions: [
+          // Video preview toggle (only for YouTube tracks)
+          if (!song.isLocal)
+            IconButton(
+              icon: Icon(
+                _showVideo ? Icons.image_outlined : Icons.videocam_outlined,
+                color: _showVideo ? const Color(0xFF1DB954) : Colors.white,
+              ),
+              tooltip: _showVideo ? 'Show album art' : 'Watch video',
+              onPressed: () => setState(() => _showVideo = !_showVideo),
+            ),
           IconButton(
             icon: const Icon(Icons.queue_music_outlined),
             onPressed: () => Navigator.of(context).push(
@@ -74,36 +92,47 @@ class NowPlayingScreen extends ConsumerWidget {
           children: [
             const SizedBox(height: 24),
 
-            // ── Album art ─────────────────────────────────────────────────
-            Hero(
-              tag: 'album_art_${song.id}',
-              child: Container(
-                width: double.infinity,
-                height: 320,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.6),
-                      blurRadius: 30,
-                      offset: const Offset(0, 12),
-                    ),
-                  ],
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: song.isLocal || song.thumbnailUrl.isEmpty
-                      ? const _AlbumPlaceholder()
-                      : CachedNetworkImage(
-                          imageUrl: song.thumbnailUrl,
-                          fit: BoxFit.cover,
-                          placeholder: (_, __) =>
-                              Container(color: const Color(0xFF1A1A1A)),
-                          errorWidget: (_, __, ___) =>
-                              const _AlbumPlaceholder(),
+            // ── Album art / Video preview ──────────────────────────────────────
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 300),
+              child: _showVideo && !song.isLocal
+                  ? SizedBox(
+                      key: const ValueKey('video'),
+                      width: double.infinity,
+                      height: 320,
+                      child: VideoPreviewWidget(videoId: song.id),
+                    )
+                  : Hero(
+                      key: const ValueKey('art'),
+                      tag: 'album_art_${song.id}',
+                      child: Container(
+                        width: double.infinity,
+                        height: 320,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.6),
+                              blurRadius: 30,
+                              offset: const Offset(0, 12),
+                            ),
+                          ],
                         ),
-                ),
-              ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: song.isLocal || song.thumbnailUrl.isEmpty
+                              ? const _AlbumPlaceholder()
+                              : CachedNetworkImage(
+                                  imageUrl: song.thumbnailUrl,
+                                  fit: BoxFit.cover,
+                                  placeholder: (_, __) =>
+                                      Container(color: const Color(0xFF1A1A1A)),
+                                  errorWidget: (_, __, ___) =>
+                                      const _AlbumPlaceholder(),
+                                ),
+                        ),
+                      ),
+                    ),
             ),
 
             const SizedBox(height: 32),

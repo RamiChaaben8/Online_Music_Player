@@ -22,6 +22,10 @@ dependencies:
   just_audio_background: ^0.0.1-beta.12
   audio_service: ^0.18.15
 
+  # Windows/Linux audio backend for just_audio (Android uses just_audio natively)
+  just_audio_media_kit: ^2.1.0
+  media_kit_libs_windows_audio: any
+
   # Local storage with Hive
   hive: ^2.2.3
   hive_flutter: ^1.1.0
@@ -32,12 +36,16 @@ dependencies:
   flutter_animate: ^4.5.0
   palette_generator: ^0.3.3+3
 
+  # Video playback (for Now Playing video preview)
+  video_player: ^2.9.2
+  fvp: ^0.38.1  # Windows/Linux/macOS backend for video_player
+
   # Icons
   cupertino_icons: ^1.0.8
   path_provider: ^2.1.6
-  permission_handler: ^12.0.3
   fl_chart: ^1.2.0
   shared_preferences: ^2.5.5
+  webview_flutter_windows: ^1.2.0
 
 dev_dependencies:
   flutter_test:

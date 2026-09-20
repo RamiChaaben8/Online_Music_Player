@@ -6,6 +6,9 @@ import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:just_audio_media_kit/just_audio_media_kit.dart';
+import 'package:fvp/fvp.dart' as fvp;
+import 'dart:io';
 
 import 'models/song.dart';
 import 'models/playlist.dart';
@@ -34,6 +37,24 @@ Future<void> main() async {
     Hive.openBox('stream_url_cache'),
   ]);
 
+  // Initialise the media_kit backend for Windows/Linux.
+  // On Android, just_audio uses its own native backend — this call is a no-op.
+  if (Platform.isWindows || Platform.isLinux) {
+    JustAudioMediaKit.ensureInitialized(
+      windows: true,
+      linux: true,
+      android: false,
+      iOS: false,
+      macOS: false,
+    );
+  }
+
+  // Register fvp as the video_player backend for desktop platforms.
+  // This enables video_player to work on Windows/Linux/macOS using libmdk.
+  fvp.registerWith(options: {
+    'platforms': ['windows', 'linux', 'macos'],
+  });
+
   // Register the audio handler with the OS.
   // audio_service takes over notification management from just_audio_background.
   audioHandler = await AudioService.init(
@@ -42,18 +63,22 @@ Future<void> main() async {
       final player = AudioPlayerService(yt);
       return TuneifyAudioHandler(player);
     },
-    config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.example.testf.channel.audio',
-      androidNotificationChannelName: 'Tuneify',
-      androidShowNotificationBadge: true,
-      // White monochrome icon for the status bar (Android requirement)
-      androidNotificationIcon: 'drawable/ic_notification',
-      // Keep notification alive when paused so the user can resume from
-      // the lock screen or notification shade.
-      // Note: androidNotificationOngoing must be false when
-      // androidStopForegroundOnPause is false (audio_service assertion).
-      androidStopForegroundOnPause: false,
-      notificationColor: Color(0xFF1DB954),
+    config: AudioServiceConfig(
+      // Android-only notification fields — audio_service requires non-null
+      // Strings, so we pass empty strings on desktop (they are ignored).
+      androidNotificationChannelId: Platform.isAndroid
+          ? 'com.example.testf.channel.audio'
+          : 'tuneify.desktop',
+      androidNotificationChannelName:
+          Platform.isAndroid ? 'Tuneify' : 'Tuneify',
+      androidShowNotificationBadge: Platform.isAndroid,
+      androidNotificationIcon: Platform.isAndroid
+          ? 'drawable/ic_notification'
+          : 'mipmap/ic_launcher',
+      // On Android: keep foreground service alive when paused (lock-screen resume).
+      // On desktop: must be true (no foreground service concept).
+      androidStopForegroundOnPause: !Platform.isAndroid,
+      notificationColor: const Color(0xFF1DB954),
       artDownscaleWidth: 300,
       artDownscaleHeight: 300,
     ),

@@ -71,50 +71,66 @@ class LocalMusicService {
       dirs.add(await DownloadService.getTuneifyDir());
     } catch (_) {}
 
-    if (!Platform.isAndroid) return dirs;
-
-    // 2. Derive the storage root from the app's external dir
-    try {
-      final appExt = await getExternalStorageDirectory();
-      if (appExt != null) {
-        // appExt = /storage/emulated/0/Android/data/<pkg>/files
-        // Walk up 4 levels → /storage/emulated/0
-        Directory root = appExt;
-        for (int i = 0; i < 4; i++) {
-          final p = root.parent;
-          if (p.path == root.path) break;
-          root = p;
-        }
-        for (final name in [
-          'Music', 'Download', 'Downloads',
-          'Ringtones', 'Notifications', 'Alarms',
-        ]) {
-          dirs.add(Directory('${root.path}/$name'));
-        }
-      }
-    } catch (_) {}
-
-    // 3. SD cards via getExternalStorageDirectories()
-    try {
-      final extDirs = await getExternalStorageDirectories();
-      if (extDirs != null) {
-        for (final d in extDirs) {
-          Directory root = d;
+    if (Platform.isAndroid) {
+      // 2. Derive the storage root from the app's external dir
+      try {
+        final appExt = await getExternalStorageDirectory();
+        if (appExt != null) {
+          // appExt = /storage/emulated/0/Android/data/<pkg>/files
+          // Walk up 4 levels → /storage/emulated/0
+          Directory root = appExt;
           for (int i = 0; i < 4; i++) {
             final p = root.parent;
             if (p.path == root.path) break;
             root = p;
           }
-          dirs.add(Directory('${root.path}/Music'));
-          dirs.add(Directory('${root.path}/Download'));
+          for (final name in [
+            'Music', 'Download', 'Downloads',
+            'Ringtones', 'Notifications', 'Alarms',
+          ]) {
+            dirs.add(Directory('${root.path}/$name'));
+          }
         }
-      }
-    } catch (_) {}
+      } catch (_) {}
 
-    // NOTE: we deliberately do NOT add hard-coded /sdcard or
-    // /storage/sdcard0 — they are symlinks to /storage/emulated/0
-    // and would be deduplicated anyway, but skipping them avoids
-    // the resolveSymbolicLinks overhead.
+      // 3. SD cards via getExternalStorageDirectories()
+      try {
+        final extDirs = await getExternalStorageDirectories();
+        if (extDirs != null) {
+          for (final d in extDirs) {
+            Directory root = d;
+            for (int i = 0; i < 4; i++) {
+              final p = root.parent;
+              if (p.path == root.path) break;
+              root = p;
+            }
+            dirs.add(Directory('${root.path}/Music'));
+            dirs.add(Directory('${root.path}/Download'));
+          }
+        }
+      } catch (_) {}
+
+      // NOTE: we deliberately do NOT add hard-coded /sdcard or
+      // /storage/sdcard0 — they are symlinks to /storage/emulated/0
+      // and would be deduplicated anyway, but skipping them avoids
+      // the resolveSymbolicLinks overhead.
+
+    } else if (Platform.isWindows) {
+      // Windows: scan standard user music/download folders.
+      // USERPROFILE is always set (e.g. C:\Users\username).
+      final userProfile = Platform.environment['USERPROFILE'];
+      if (userProfile != null) {
+        dirs.add(Directory('$userProfile\\Music'));
+        dirs.add(Directory('$userProfile\\Downloads'));
+        dirs.add(Directory('$userProfile\\Desktop'));
+      }
+    } else if (Platform.isMacOS || Platform.isLinux) {
+      final home = Platform.environment['HOME'];
+      if (home != null) {
+        dirs.add(Directory('$home/Music'));
+        dirs.add(Directory('$home/Downloads'));
+      }
+    }
 
     return dirs;
   }

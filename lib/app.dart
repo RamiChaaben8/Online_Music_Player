@@ -12,7 +12,8 @@ import 'screens/home_screen.dart';
 import 'widgets/mini_player.dart';
 import 'providers/player_provider.dart';
 import 'providers/local_music_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'platform/permissions.dart';
+import 'desktop/shell/desktop_shell.dart';
 
 class TuneifyApp extends StatelessWidget {
   const TuneifyApp({super.key});
@@ -23,7 +24,7 @@ class TuneifyApp extends StatelessWidget {
       title: 'Tuneify',
       debugShowCheckedModeBanner: false,
       theme: _buildDarkTheme(),
-      home: const AppShell(),
+      home: Platform.isWindows ? const DesktopShell() : const AppShell(),
     );
   }
 
@@ -136,23 +137,7 @@ class _AppShellState extends ConsumerState<AppShell> with WidgetsBindingObserver
   /// page for this one since it can't be requested inline.
   Future<void> _requestStoragePermission() async {
     if (!Platform.isAndroid) return;
-    try {
-      // Android 13+: granular audio permission
-      final audio = await Permission.audio.request();
-
-      // Android 10-12: legacy storage
-      final storage = await Permission.storage.request();
-
-      // Android 11+ (SDK 30): request broad storage access.
-      // isGranted is false until the user enables it in Settings.
-      // We request it silently — if denied we still scan what we can.
-      final manageStatus = await Permission.manageExternalStorage.status;
-      if (!manageStatus.isGranted) {
-        await Permission.manageExternalStorage.request();
-      }
-    } catch (_) {
-      // Non-fatal; worst case local scan returns only app-dir files
-    }
+    await requestStoragePermission();
   }
 
   @override
