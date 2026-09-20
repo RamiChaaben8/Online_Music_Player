@@ -8,7 +8,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
+import '../../models/song.dart';
 import '../../providers/player_provider.dart';
+import '../../widgets/song_context_menu.dart';
 import '../theme/desktop_theme.dart';
 
 class DesktopPlayerBar extends ConsumerStatefulWidget {
@@ -255,76 +257,160 @@ class _ProgressBar extends StatelessWidget {
 
 // ─── Song info (left 1/3) ─────────────────────────────────────────────────────
 
-class _SongInfo extends StatelessWidget {
-  final dynamic song;
+class _SongInfo extends ConsumerWidget {
+  final Song? song;
   const _SongInfo({required this.song});
 
   @override
-  Widget build(BuildContext context) {
-    if (song == null) {
-      return const SizedBox.shrink();
-    }
-    return Row(
-      children: [
-        // Thumbnail
-        ClipRRect(
-          borderRadius: BorderRadius.circular(4),
-          child: (song.thumbnailUrl as String).isNotEmpty
-              ? CachedNetworkImage(
-                  imageUrl: song.thumbnailUrl as String,
-                  width: 48,
-                  height: 48,
-                  fit: BoxFit.cover,
-                  placeholder: (_, __) =>
-                      Container(width: 48, height: 48, color: kCardColor),
-                  errorWidget: (_, __, ___) => Container(
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (song == null) return const SizedBox.shrink();
+
+    final s = song!;
+    final ps = ref.watch(playerProvider);
+    final queue = ps.queue;
+    final idx = ps.currentIndex;
+    final next = (queue.length > 1 && idx >= 0)
+        ? queue[(idx + 1) % queue.length]
+        : null;
+
+    return SongContextMenu(
+      song: s,
+      child: Row(
+        children: [
+          // ── Current song thumbnail ─────────────────────────────────
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: s.thumbnailUrl.isNotEmpty
+                ? CachedNetworkImage(
+                    imageUrl: s.thumbnailUrl,
+                    width: 48,
+                    height: 48,
+                    fit: BoxFit.cover,
+                    placeholder: (_, __) =>
+                        Container(width: 48, height: 48, color: kCardColor),
+                    errorWidget: (_, __, ___) => Container(
+                      width: 48,
+                      height: 48,
+                      color: kCardColor,
+                      child: const Icon(Icons.music_note,
+                          color: Colors.white54, size: 20),
+                    ),
+                  )
+                : Container(
                     width: 48,
                     height: 48,
                     color: kCardColor,
                     child: const Icon(Icons.music_note,
                         color: Colors.white54, size: 20),
                   ),
-                )
-              : Container(
-                  width: 48,
-                  height: 48,
-                  color: kCardColor,
-                  child: const Icon(Icons.music_note,
-                      color: Colors.white54, size: 20),
-                ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                song.title as String,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: kTextPrimary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                song.channelName as String,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: kTextSecondary,
-                  fontSize: 11,
-                ),
-              ),
-            ],
           ),
-        ),
-        const SizedBox(width: 8),
-        const Icon(Icons.check_circle_outline, color: kAccent, size: 16),
-      ],
+          const SizedBox(width: 10),
+
+          // ── Current song title + artist ────────────────────────────
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  s.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: kTextPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  s.channelName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: kTextSecondary,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // ── ··· button ─────────────────────────────────────────────
+          SongMenuButton(song: s, size: 16),
+
+          // ── Next song (thumbnail + title/artist) ───────────────────
+          if (next != null) ...[
+            const SizedBox(width: 8),
+            // Vertical separator
+            Container(width: 1, height: 36, color: const Color(0xFF3A3A3A)),
+            const SizedBox(width: 10),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(3),
+              child: next.thumbnailUrl.isNotEmpty
+                  ? CachedNetworkImage(
+                      imageUrl: next.thumbnailUrl,
+                      width: 30,
+                      height: 30,
+                      fit: BoxFit.cover,
+                      placeholder: (_, __) =>
+                          Container(width: 30, height: 30, color: kCardColor),
+                      errorWidget: (_, __, ___) => Container(
+                        width: 30,
+                        height: 30,
+                        color: kCardColor,
+                        child: const Icon(Icons.music_note,
+                            color: Colors.white54, size: 12),
+                      ),
+                    )
+                  : Container(
+                      width: 30,
+                      height: 30,
+                      color: kCardColor,
+                      child: const Icon(Icons.music_note,
+                          color: Colors.white54, size: 12),
+                    ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Next',
+                    style: TextStyle(
+                      color: kAccent,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                  Text(
+                    next.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: kTextPrimary,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  Text(
+                    next.channelName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: kTextSecondary,
+                      fontSize: 10,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

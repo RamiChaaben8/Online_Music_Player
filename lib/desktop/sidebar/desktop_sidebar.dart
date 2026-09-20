@@ -163,76 +163,10 @@ class DesktopSidebar extends ConsumerWidget {
                     onTap: () {},
                   ),
                 ],
-
-                // Recently played
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
-                  child: Text(
-                    'Recently Played',
-                    style: TextStyle(
-                        color: kTextSecondary,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.8),
-                  ),
-                ),
-                ...library.recentlyPlayed.take(10).map((song) {
-                  return ListTile(
-                    dense: true,
-                    contentPadding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
-                    leading: ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
-                      child: _thumb(song.thumbnailUrl, 36),
-                    ),
-                    title: Text(
-                      song.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          color: kTextPrimary,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500),
-                    ),
-                    subtitle: Text(
-                      song.channelName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          color: kTextSecondary, fontSize: 11),
-                    ),
-                    onTap: () {},
-                  );
-                }),
               ],
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _thumb(String url, double size) {
-    if (url.isEmpty) {
-      return Container(
-        width: size,
-        height: size,
-        color: const Color(0xFF4A2C7A),
-        child: const Icon(Icons.music_note, color: Colors.white54, size: 16),
-      );
-    }
-    return CachedNetworkImage(
-      imageUrl: url,
-      width: size,
-      height: size,
-      fit: BoxFit.cover,
-      placeholder: (_, __) => Container(
-          width: size, height: size, color: const Color(0xFF4A2C7A)),
-      errorWidget: (_, __, ___) => Container(
-        width: size,
-        height: size,
-        color: const Color(0xFF4A2C7A),
-        child: const Icon(Icons.music_note, color: Colors.white54, size: 14),
       ),
     );
   }

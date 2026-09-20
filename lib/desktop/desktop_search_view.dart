@@ -7,8 +7,10 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../models/song.dart';
 import '../providers/player_provider.dart';
 import '../providers/youtube_provider.dart';
+import '../widgets/song_context_menu.dart';
 import 'theme/desktop_theme.dart';
 
 class DesktopSearchView extends ConsumerStatefulWidget {
@@ -168,121 +170,164 @@ class _DesktopSearchViewState extends ConsumerState<DesktopSearchView> {
             ? '${song.duration.inMinutes}:${(song.duration.inSeconds % 60).toString().padLeft(2, '0')}'
             : '';
 
-        return Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(8),
-            onTap: () =>
-                ref.read(playerProvider.notifier).playSong(
-                      song,
-                      queue: searchState.results,
-                    ),
-            child: Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Row(
-                children: [
-                  // Index
-                  SizedBox(
-                    width: 28,
-                    child: Text(
-                      '${i + 1}',
-                      style: const TextStyle(
-                          color: kTextSecondary, fontSize: 13),
-                      textAlign: TextAlign.right,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
+        return SongContextMenu(
+          song: song,
+          child: _SearchResultRow(
+            song: song,
+            index: i,
+            durationStr: durationStr,
+            allResults: searchState.results,
+          ),
+        );
+      },
+    );
+  }
+}
 
-                  // Thumbnail
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: song.thumbnailUrl.isNotEmpty
-                        ? CachedNetworkImage(
-                            imageUrl: song.thumbnailUrl,
-                            width: 48,
-                            height: 48,
-                            fit: BoxFit.cover,
-                            placeholder: (_, __) => Container(
-                                width: 48,
-                                height: 48,
-                                color: kCardColor),
-                            errorWidget: (_, __, ___) => Container(
-                              width: 48,
-                              height: 48,
-                              color: kCardColor,
-                              child: const Icon(Icons.music_note,
-                                  color: Colors.white54, size: 20),
-                            ),
-                          )
-                        : Container(
+
+// ─── Search result row ────────────────────────────────────────────────────────
+
+class _SearchResultRow extends ConsumerStatefulWidget {
+  final Song song;
+  final int index;
+  final String durationStr;
+  final List<Song> allResults;
+
+  const _SearchResultRow({
+    required this.song,
+    required this.index,
+    required this.durationStr,
+    required this.allResults,
+  });
+
+  @override
+  ConsumerState<_SearchResultRow> createState() => _SearchResultRowState();
+}
+
+class _SearchResultRowState extends ConsumerState<_SearchResultRow> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: Material(
+        color: _hovered ? const Color(0xFF2A2A2A) : Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => ref.read(playerProvider.notifier).playSong(
+                widget.song,
+                queue: widget.allResults,
+              ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                // Index
+                SizedBox(
+                  width: 28,
+                  child: Text(
+                    '${widget.index + 1}',
+                    style: const TextStyle(color: kTextSecondary, fontSize: 13),
+                    textAlign: TextAlign.right,
+                  ),
+                ),
+                const SizedBox(width: 16),
+
+                // Thumbnail
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: widget.song.thumbnailUrl.isNotEmpty
+                      ? CachedNetworkImage(
+                          imageUrl: widget.song.thumbnailUrl,
+                          width: 48,
+                          height: 48,
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) =>
+                              Container(width: 48, height: 48, color: kCardColor),
+                          errorWidget: (_, __, ___) => Container(
                             width: 48,
                             height: 48,
                             color: kCardColor,
                             child: const Icon(Icons.music_note,
                                 color: Colors.white54, size: 20),
                           ),
-                  ),
-                  const SizedBox(width: 16),
-
-                  // Title + artist
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          song.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: kTextPrimary,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                          ),
+                        )
+                      : Container(
+                          width: 48,
+                          height: 48,
+                          color: kCardColor,
+                          child: const Icon(Icons.music_note,
+                              color: Colors.white54, size: 20),
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          song.channelName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              color: kTextSecondary, fontSize: 12),
-                        ),
-                      ],
-                    ),
-                  ),
+                ),
+                const SizedBox(width: 16),
 
-                  // Duration
-                  if (durationStr.isNotEmpty)
-                    Padding(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 16),
-                      child: Text(
-                        durationStr,
+                // Title + artist
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.song.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                            color: kTextSecondary, fontSize: 13),
+                          color: kTextPrimary,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
-                    ),
-
-                  // Play button
-                  IconButton(
-                    icon: const Icon(Icons.play_circle_fill,
-                        color: kAccent, size: 32),
-                    onPressed: () =>
-                        ref.read(playerProvider.notifier).playSong(
-                              song,
-                              queue: searchState.results,
-                            ),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(
-                        minWidth: 40, minHeight: 40),
+                      const SizedBox(height: 2),
+                      Text(
+                        widget.song.channelName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            color: kTextSecondary, fontSize: 12),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+
+                // Duration
+                if (widget.durationStr.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Text(
+                      widget.durationStr,
+                      style: const TextStyle(
+                          color: kTextSecondary, fontSize: 13),
+                    ),
+                  ),
+
+                // ··· menu button (always visible on hover, subtle otherwise)
+                AnimatedOpacity(
+                  opacity: _hovered ? 1.0 : 0.0,
+                  duration: const Duration(milliseconds: 150),
+                  child: SongMenuButton(song: widget.song),
+                ),
+                const SizedBox(width: 4),
+
+                // Play button
+                IconButton(
+                  icon: const Icon(Icons.play_circle_fill,
+                      color: kAccent, size: 32),
+                  onPressed: () => ref.read(playerProvider.notifier).playSong(
+                        widget.song,
+                        queue: widget.allResults,
+                      ),
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints(minWidth: 40, minHeight: 40),
+                ),
+              ],
             ),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }
