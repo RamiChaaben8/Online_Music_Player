@@ -1,11 +1,21 @@
 // ============================================================
 // desktop/now_playing/desktop_now_playing_panel.dart
 //
-// Right panel — ONE scrollable column for everything:
-//   • Video card at top (fixed height, cover-cropped, resizable)
-//   • Lyrics card below (same scroll — no nested scroller)
-//   • Single thin green-thumb scrollbar on the right edge
-//   • Resize bar on the far-right edge (video height only)
+// Right panel layout (fixed, never scrolls as a whole):
+//
+//   ┌──────────────────────────────────────┐
+//   │  Video card  (fixed height, pinned)  │  ← never scrolls away
+//   ├──────────────────────────────────────┤
+//   │  [Lyrics] label  (fixed)             │
+//   │  ─────────────────────────────────── │
+//   │  lyric line 1                        │  ← only THIS inner box
+//   │  lyric line 2                        │    scrolls (its own
+//   │  …                                   │    ScrollController)
+//   └──────────────────────────────────────┘
+//
+// Root Column has overflow:hidden (ClipRect). The ListView / any
+// ancestor never scrolls. The Listener intercepts wheel events and
+// routes them either to the inner lyrics scroller or the video resize.
 // ============================================================
 
 import 'dart:async';
@@ -16,7 +26,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../providers/lyrics_provider.dart';
-import '../../providers/panel_provider.dart';
 import '../../providers/player_provider.dart';
 import '../../services/youtube_service.dart';
 import '../../widgets/video_preview_widget.dart';
@@ -44,8 +53,8 @@ class DesktopNowPlayingPanel extends ConsumerStatefulWidget {
 class _DesktopNowPlayingPanelState
     extends ConsumerState<DesktopNowPlayingPanel> {
 
-  // One scroll controller for the whole panel
-  final ScrollController _scroll = ScrollController();
+  // Lyrics-only scroll controller — the panel itself never scrolls
+  final ScrollController _lyricsScroll = ScrollController();
 
   // Video resize
   double _videoHeight          = _kVideoMin;
@@ -53,9 +62,9 @@ class _DesktopNowPlayingPanelState
   bool   _isDragging           = false;
   double _dragStartThumbOffset = 0;
 
-  // Lyrics
+  // Lyrics sync
   String? _lastVideoId;
-  int     _activeIndex     = -1;
+  int     _activeIndex      = -1;
   final List<GlobalKey> _lineKeys = [];
   bool    _autoScrollPaused = false;
   Timer?  _resumeTimer;
@@ -64,15 +73,15 @@ class _DesktopNowPlayingPanelState
   @override
   void initState() {
     super.initState();
-    _scroll.addListener(_onScroll);
+    _lyricsScroll.addListener(_onLyricsScroll);
     _loadHeight();
   }
 
   @override
   void dispose() {
     _resumeTimer?.cancel();
-    _scroll
-      ..removeListener(_onScroll)
+    _lyricsScroll
+      ..removeListener(_onLyricsScroll)
       ..dispose();
     super.dispose();
   }
@@ -101,7 +110,7 @@ class _DesktopNowPlayingPanelState
     final range = _videoMax - _kVideoMin;
     if (range <= 0) return h;
     if ((h - _kVideoMin) / range < _kSnapFrac) return _kVideoMin;
-    if ((_videoMax - h)  / range < _kSnapFrac) return _videoMax;
+    if ((_videoMax - h) / range < _kSnapFrac) return _videoMax;
     return h;
   }
 
@@ -119,9 +128,28 @@ class _DesktopNowPlayingPanelState
         (offset / trackH).clamp(0.0, 1.0) * (_videoMax - _kVideoMin);
   }
 
-  // ── Scroll / lyrics auto-scroll ───────────────────────────────────────────
+  // ── Wheel routing ─────────────────────────────────────────────────────────
+  //
+  // Scrolling UP   → grow video (if below max), else scroll lyrics up.
+  // Scrolling DOWN → scroll lyrics down; only shrink video when lyrics
+  //                  are already at scrollTop == 0.
+  //
+  // We call jumpTo() on _lyricsScroll directly so the event never
+  // bubbles up to any ancestor scroller.
 
-  void _onScroll() {
+  // Wheel events over the video card call _setHeight directly.
+
+  void _scrollLyricsBy(double dy) {
+    if (!_lyricsScroll.hasClients) return;
+    _lyricsScroll.jumpTo(
+      (_lyricsScroll.offset + dy)
+          .clamp(0.0, _lyricsScroll.position.maxScrollExtent),
+    );
+  }
+
+  // ── Auto-scroll pause on manual scroll ───────────────────────────────────
+
+  void _onLyricsScroll() {
     if (_isAutoScrolling) return;
     _autoScrollPaused = true;
     _resumeTimer?.cancel();
@@ -130,6 +158,8 @@ class _DesktopNowPlayingPanelState
       () => _autoScrollPaused = false,
     );
   }
+
+  // ── Lyrics sync ───────────────────────────────────────────────────────────
 
   void _syncActive(List<LyricLine> lines, Duration pos) {
     if (_lineKeys.length != lines.length) {
@@ -148,19 +178,44 @@ class _DesktopNowPlayingPanelState
     }
   }
 
+  // Auto-scroll: compute the lyric line's offset inside the lyrics
+  // ScrollView and call animateTo() on _lyricsScroll directly.
+  // We do NOT use Scrollable.ensureVisible / scrollIntoView because
+  // those walk up every ancestor and would move the video card.
   void _autoScrollToLine(int index) {
     if (_autoScrollPaused) return;
     if (index < 0 || index >= _lineKeys.length) return;
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final ctx = _lineKeys[index].currentContext;
-      if (ctx == null || !_scroll.hasClients) return;
+      if (!mounted) return;
+      final key = _lineKeys[index];
+      final ctx = key.currentContext;
+      if (ctx == null || !_lyricsScroll.hasClients) return;
+
+      // Find the RenderBox of the lyric line and the lyrics scroll viewport
+      final RenderBox? lineBox =
+          ctx.findRenderObject() as RenderBox?;
+      final RenderBox? viewBox = _lyricsScroll
+          .position.context.storageContext
+          .findRenderObject() as RenderBox?;
+
+      if (lineBox == null || viewBox == null) return;
+
+      // Position of the line relative to the top of the scroll viewport
+      final lineOffset =
+          lineBox.localToGlobal(Offset.zero, ancestor: viewBox).dy;
+      final viewH    = _lyricsScroll.position.viewportDimension;
+      final target   = _lyricsScroll.offset + lineOffset -
+                       viewH * 0.35; // keep line ~35% from top
+
       _isAutoScrolling = true;
-      Scrollable.ensureVisible(
-        ctx,
-        duration: const Duration(milliseconds: 380),
-        curve: Curves.easeOut,
-        alignment: 0.35,
-      ).then((_) => _isAutoScrolling = false);
+      _lyricsScroll
+          .animateTo(
+            target.clamp(0.0, _lyricsScroll.position.maxScrollExtent),
+            duration: const Duration(milliseconds: 380),
+            curve: Curves.easeOut,
+          )
+          .then((_) => _isAutoScrolling = false);
     });
   }
 
@@ -168,14 +223,12 @@ class _DesktopNowPlayingPanelState
 
   @override
   Widget build(BuildContext context) {
-    final panelMode = ref.watch(panelModeProvider);
-    final ps        = ref.watch(playerProvider);
-    final lyrics    = ref.watch(lyricsProvider);
-    final song      = ps.currentSong;
+    final ps     = ref.watch(playerProvider);
+    final lyrics = ref.watch(lyricsProvider);
+    final song   = ps.currentSong;
 
-    if (panelMode == PanelMode.lyrics && song != null) {
-      if (song.id != _lastVideoId ||
-          (song.id == _lastVideoId && lyrics.videoId != song.id)) {
+    if (song != null && !song.isLocal) {
+      if (song.id != _lastVideoId || lyrics.videoId != song.id) {
         _lastVideoId = song.id;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           ref.read(lyricsProvider.notifier).fetchFor(song.id);
@@ -204,90 +257,81 @@ class _DesktopNowPlayingPanelState
   Widget _buildPanel(dynamic song, LyricsState lyrics) {
     return LayoutBuilder(builder: (context, constraints) {
       final panelH = constraints.maxHeight;
-      _videoMax = (panelH - 16).clamp(_kVideoMin, double.infinity);
-      if (_videoHeight > _videoMax) _videoHeight = _videoMax;
+      const double kLyricsMinH = 160.0;
+      _videoMax = (panelH - kLyricsMinH).clamp(_kVideoMin, double.infinity);
+      if (_videoHeight > _videoMax) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _videoHeight > _videoMax) {
+            setState(() => _videoHeight = _videoMax);
+          }
+        });
+      }
 
       final dur = _isDragging
           ? Duration.zero
           : const Duration(milliseconds: _kAnimMs);
 
+      final safeVideoH = _videoHeight.clamp(_kVideoMin, _videoMax);
+
       return Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // ── Scrollable area (no scrollbar) ───────────────────────
+          // ── Main panel column ──────────────────────────────────
           Expanded(
-            child: Listener(
-                // Intercept wheel events so we can resize the video
-                // before (or instead of) scrolling the list.
-                onPointerSignal: (event) {
-                  if (event is! PointerScrollEvent) return;
-                  final dy = event.scrollDelta.dy;
-
-                  if (dy < 0) {
-                    // ── Scroll UP ──────────────────────────────────
-                    // If video is below MAX, grow it and consume the
-                    // event (don't scroll the list).
-                    if (_videoHeight < _videoMax) {
-                      _setHeight(_videoHeight - dy); // dy<0 → adds
-                      return; // consumed — list does not scroll
-                    }
-                    // Already at MAX → fall through to normal list scroll
-                  } else if (dy > 0) {
-                    // ── Scroll DOWN ────────────────────────────────
-                    // If list is at the very top AND video is above MIN,
-                    // shrink video first.
-                    final atTop = !_scroll.hasClients ||
-                        _scroll.offset <= 0;
-                    if (atTop && _videoHeight > _kVideoMin) {
-                      _setHeight(_videoHeight - dy); // dy>0 → subtracts
-                      return; // consumed — list does not scroll yet
-                    }
-                    // List already scrolled or video at MIN → normal scroll
-                  }
-
-                  // Let the ListView handle the event normally
-                  if (_scroll.hasClients) {
-                    _scroll.jumpTo(
-                      (_scroll.offset + dy)
-                          .clamp(0.0, _scroll.position.maxScrollExtent),
-                    );
-                  }
-                },
-                child: ListView(
-                  controller: _scroll,
-                  // NeverScrollableScrollPhysics because we drive the
-                  // scroll manually from the Listener above, which gives
-                  // us the control needed for the video-resize intercept.
-                  physics: const NeverScrollableScrollPhysics(),
-                  children: [
-                    // 1. Video card (animated height)
-                    AnimatedContainer(
+            child: ClipRect(
+              child: Column(
+                children: [
+                  // 1. Video card — wheel resizes, drag bar also resizes
+                  Listener(
+                    onPointerSignal: (event) {
+                      if (event is! PointerScrollEvent) return;
+                      _setHeight(_videoHeight - event.scrollDelta.dy);
+                    },
+                    child: AnimatedContainer(
                       duration: dur,
                       curve: Curves.easeOut,
-                      height: _videoHeight,
+                      height: safeVideoH,
                       child: _VideoCard(song: song),
                     ),
+                  ),
 
-                    const SizedBox(height: 10),
-
-                    // 2. Lyrics section
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(10, 0, 10, 16),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF2a2a2a),
-                          borderRadius: BorderRadius.circular(12),
+                  // 2. Lyrics card — fills remaining space, only this scrolls
+                  Expanded(
+                    child: Listener(
+                      onPointerSignal: (event) {
+                        if (event is! PointerScrollEvent) return;
+                        _scrollLyricsBy(event.scrollDelta.dy);
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(10, 10, 10, 16),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF2a2a2a),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const _LyricsHeader(),
+                              Expanded(
+                                child: _ThinScrollbar(
+                                  controller: _lyricsScroll,
+                                  child: _buildLyricsInner(lyrics),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                        clipBehavior: Clip.antiAlias,
-                        child: _buildLyricsContent(lyrics),
                       ),
                     ),
+                  ),
                 ],
-              ),     // ListView
-            ),       // Listener
-          ),         // Expanded
+              ),
+            ),
+          ),
 
-          // ── Resize bar ────────────────────────────────────────────
+          // ── Resize drag bar ──────────────────────────────────────
           _DragBar(
             panelHeight: panelH,
             videoHeight: _videoHeight,
@@ -317,38 +361,28 @@ class _DesktopNowPlayingPanelState
     });
   }
 
-  Widget _buildLyricsContent(LyricsState lyrics) {
+  // The inner scrollable widget that holds only the lyric lines.
+  Widget _buildLyricsInner(LyricsState lyrics) {
     if (lyrics.isLoading) {
-      return const Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _LyricsHeader(),
-          Padding(
-            padding: EdgeInsets.symmetric(vertical: 40),
-            child: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(color: kAccent, strokeWidth: 2),
-                  SizedBox(height: 10),
-                  Text(
-                    'Loading lyrics…',
-                    style: TextStyle(color: kTextSecondary, fontSize: 13),
-                  ),
-                ],
-              ),
-            ),
+      return const SizedBox.expand(
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: kAccent, strokeWidth: 2),
+              SizedBox(height: 10),
+              Text('Loading lyrics…',
+                  style: TextStyle(color: kTextSecondary, fontSize: 13)),
+            ],
           ),
-        ],
+        ),
       );
     }
 
     if (!lyrics.hasLyrics) {
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const _LyricsHeader(),
-          Padding(
+      return SizedBox.expand(
+        child: Center(
+          child: Padding(
             padding: const EdgeInsets.all(24),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -364,43 +398,38 @@ class _DesktopNowPlayingPanelState
               ],
             ),
           ),
-        ],
+        ),
       );
     }
 
-    // All lyric lines rendered in a plain Column — no nested scroll,
-    // the outer ListView handles all scrolling.
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const _LyricsHeader(),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(14, 0, 14, 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (int i = 0; i < lyrics.lines.length; i++)
-                _LyricLine(
-                  key: i < _lineKeys.length ? _lineKeys[i] : GlobalKey(),
-                  text: lyrics.lines[i].text,
-                  isActive: i == _activeIndex,
-                ),
-              const SizedBox(height: 8),
-              const Text(
-                'Lyrics provided by YouTube',
-                style: TextStyle(color: Color(0xFF666666), fontSize: 11),
-              ),
-            ],
-          ),
-        ),
-      ],
+    // NeverScrollableScrollPhysics because wheel events are handled by
+    // the Listener above — _scrollLyricsBy() drives _lyricsScroll directly.
+    return ListView.builder(
+      controller: _lyricsScroll,
+      physics: const NeverScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(14, 0, 14, 16),
+      itemCount: lyrics.lines.length + 1, // +1 for footer
+      itemBuilder: (context, i) {
+        if (i == lyrics.lines.length) {
+          return const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: Text(
+              'Lyrics provided by YouTube',
+              style: TextStyle(color: Color(0xFF666666), fontSize: 11),
+            ),
+          );
+        }
+        return _LyricLine(
+          key: i < _lineKeys.length ? _lineKeys[i] : GlobalKey(),
+          text: lyrics.lines[i].text,
+          isActive: i == _activeIndex,
+        );
+      },
     );
   }
 }
 
-// ─── Lyrics header (const widget so it can live in const trees) ──────────────
+// ─── Lyrics header (const, never scrolls) ────────────────────────────────────
 
 class _LyricsHeader extends StatelessWidget {
   const _LyricsHeader();
@@ -432,8 +461,8 @@ class _LyricsHeader extends StatelessWidget {
         ),
         Padding(
           padding: EdgeInsets.symmetric(horizontal: 14),
-          child:
-              Divider(color: Color(0xFF3d3d3d), height: 1, thickness: 1),
+          child: Divider(
+              color: Color(0xFF3d3d3d), height: 1, thickness: 1),
         ),
         SizedBox(height: 8),
       ],
@@ -480,6 +509,8 @@ class _ThinScrollbarState extends State<_ThinScrollbar> {
 
   double _thumbH(double trackH) {
     final sc = widget.controller;
+    // Guard: if trackH is too small to fit the minimum thumb, just fill it.
+    if (trackH <= _kThumbMinH) return trackH.clamp(0.0, double.infinity);
     if (!sc.hasClients || sc.position.maxScrollExtent <= 0) return trackH;
     final visible = sc.position.viewportDimension;
     final total   = visible + sc.position.maxScrollExtent;
@@ -531,46 +562,64 @@ class _ThinScrollbarState extends State<_ThinScrollbar> {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    // Use a Stack instead of a Row so the LayoutBuilder for the
+    // scrollbar thumb always receives the same bounded constraints
+    // as the child — a Row with CrossAxisAlignment.stretch can pass
+    // infinite height to LayoutBuilder when the Row itself is unconstrained.
+    return Stack(
       children: [
-        Expanded(child: widget.child),
-        MouseRegion(
-          cursor: SystemMouseCursors.resizeUpDown,
-          onEnter: (_) => setState(() => _hovering = true),
-          onExit:  (_) => setState(() => _hovering = false),
-          child: LayoutBuilder(builder: (context, constraints) {
-            final totalH = constraints.maxHeight;
-            final trackH = totalH - 2 * _kPadV;
-            return GestureDetector(
-              onTapDown: (d) =>
-                  _trackTap(d.localPosition.dy - _kPadV, trackH),
-              onVerticalDragStart:  (d) =>
-                  _dragStart(d.localPosition.dy - _kPadV),
-              onVerticalDragUpdate: (d) =>
-                  _dragUpdate(d.localPosition.dy - _kPadV, trackH),
-              onVerticalDragEnd:    (_) => _dragEnd(),
-              onVerticalDragCancel: ()  => _dragEnd(),
-              child: SizedBox(
-                width: _kBarW,
-                height: totalH,
-                child: CustomPaint(
-                  painter: _BarPainter(
-                    trackH:     trackH,
-                    padV:       _kPadV,
-                    thumbTop:   _thumbTop(trackH),
-                    thumbH:     _thumbH(trackH),
-                    thumbW:     _kThumbW,
-                    barW:       _kBarW,
-                    thumbColor: (_hovering || _dragging)
-                        ? const Color(0xFF82b832)
-                        : const Color(0xFF5f7a2f),
-                    trackColor: const Color(0xFF1e1e1e),
+        // The scrollable content fills the whole box
+        Positioned.fill(
+          child: Padding(
+            // Leave room for the scrollbar on the right
+            padding: const EdgeInsets.only(right: _kBarW),
+            child: widget.child,
+          ),
+        ),
+
+        // Scrollbar pinned to the right edge
+        Positioned(
+          top: 0,
+          bottom: 0,
+          right: 0,
+          width: _kBarW,
+          child: MouseRegion(
+            cursor: SystemMouseCursors.resizeUpDown,
+            onEnter: (_) => setState(() => _hovering = true),
+            onExit:  (_) => setState(() => _hovering = false),
+            child: LayoutBuilder(builder: (context, constraints) {
+              final totalH = constraints.maxHeight;
+              final trackH = (totalH - 2 * _kPadV).clamp(0.0, double.infinity);
+              return GestureDetector(
+                onTapDown: (d) =>
+                    _trackTap(d.localPosition.dy - _kPadV, trackH),
+                onVerticalDragStart:  (d) =>
+                    _dragStart(d.localPosition.dy - _kPadV),
+                onVerticalDragUpdate: (d) =>
+                    _dragUpdate(d.localPosition.dy - _kPadV, trackH),
+                onVerticalDragEnd:    (_) => _dragEnd(),
+                onVerticalDragCancel: ()  => _dragEnd(),
+                child: SizedBox(
+                  width: _kBarW,
+                  height: totalH,
+                  child: CustomPaint(
+                    painter: _BarPainter(
+                      trackH:     trackH,
+                      padV:       _kPadV,
+                      thumbTop:   _thumbTop(trackH),
+                      thumbH:     _thumbH(trackH),
+                      thumbW:     _kThumbW,
+                      barW:       _kBarW,
+                      thumbColor: (_hovering || _dragging)
+                          ? const Color(0xFF82b832)
+                          : const Color(0xFF5f7a2f),
+                      trackColor: const Color(0xFF1e1e1e),
+                    ),
                   ),
                 ),
-              ),
-            );
-          }),
+              );
+            }),
+          ),
         ),
       ],
     );

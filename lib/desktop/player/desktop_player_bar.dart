@@ -551,12 +551,16 @@ class _VolumeControls extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.end,
       children: [
-        // Lyrics button
+        // Lyrics button — opens fullscreen lyrics overlay
         Tooltip(
-          message: panelMode == PanelMode.lyrics ? 'Close Lyrics' : 'Lyrics',
+          message: panelMode == PanelMode.lyrics
+              ? 'Close Fullscreen Lyrics'
+              : 'Fullscreen Lyrics',
           child: IconButton(
             icon: Icon(
-              Icons.lyrics_outlined,
+              panelMode == PanelMode.lyrics
+                  ? Icons.lyrics          // filled when active
+                  : Icons.lyrics_outlined,
               color: panelMode == PanelMode.lyrics ? kAccent : kTextSecondary,
               size: 20,
             ),

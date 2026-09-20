@@ -1,17 +1,21 @@
 // ============================================================
 // desktop/player/lyrics_panel.dart
 //
-// Full-screen lyrics view (opens when lyrics button is pressed).
+// Full-screen lyrics overlay — side-by-side layout:
 //
-// • CustomScrollView with a SliverAppBar:
-//   - Video/thumbnail fills the top at expandedHeight
-//   - StretchMode.zoomBackground → video STRETCHES when you
-//     pull/scroll up (parallax zoom effect)
-//   - Collapses away as you scroll down into the lyrics
-// • Lyrics below: active line white+bold, past dimmed, upcoming muted
-// • Auto-scrolls to keep active line in view
-// • Player bar stays visible at bottom (audio never stops)
-// • × close button pinned top-right at all times
+//   ┌─────────────────────┬─────────────────────────────────┐
+//   │                     │  Song title                     │
+//   │   Thumbnail /       │  Artist                         │
+//   │   album art         ├─────────────────────────────────┤
+//   │   (fills left       │  Lyrics  ▲                      │
+//   │    column,          │  …       │  scrollable           │
+//   │    always           │  …       ▼                      │
+//   │    visible)         │                                 │
+//   └─────────────────────┴─────────────────────────────────┘
+//
+// • Left column width is resizable by dragging the divider.
+// • Lyrics scroll independently — image never moves.
+// • × close button pinned top-right.
 // ============================================================
 
 import 'package:flutter/material.dart';
@@ -20,8 +24,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/lyrics_provider.dart';
 import '../../providers/player_provider.dart';
 import '../../services/youtube_service.dart';
-import '../../widgets/video_preview_widget.dart';
 import '../theme/desktop_theme.dart';
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const double _kLeftMin     = 220.0;
+const double _kLeftMax     = 600.0;
+const double _kLeftDefault = 340.0;
+const double _kDividerW    =   8.0;
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 class LyricsPanel extends ConsumerStatefulWidget {
   final VoidCallback onClose;
@@ -37,13 +49,15 @@ class _LyricsPanelState extends ConsumerState<LyricsPanel> {
   int _activeIndex = -1;
   final List<GlobalKey> _lineKeys = [];
 
-  static const double _expandedHeight = 340.0;
+  double _leftWidth = _kLeftDefault;
 
   @override
   void dispose() {
     _scroll.dispose();
     super.dispose();
   }
+
+  // ── Lyric sync ────────────────────────────────────────────────────────────
 
   void _syncActive(List<LyricLine> lines, Duration pos) {
     if (_lineKeys.length != lines.length) {
@@ -74,11 +88,13 @@ class _LyricsPanelState extends ConsumerState<LyricsPanel> {
     });
   }
 
+  // ── Build ─────────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
-    final ps       = ref.watch(playerProvider);
-    final lyrics   = ref.watch(lyricsProvider);
-    final song     = ps.currentSong;
+    final ps     = ref.watch(playerProvider);
+    final lyrics = ref.watch(lyricsProvider);
+    final song   = ps.currentSong;
 
     // Trigger fetch on song change
     if (song != null && song.id != _lastVideoId) {
@@ -89,127 +105,124 @@ class _LyricsPanelState extends ConsumerState<LyricsPanel> {
       });
     }
 
-    // Sync active lyric line
     if (lyrics.hasLyrics) _syncActive(lyrics.lines, ps.position);
 
     return Material(
       color: const Color(0xFF0A0A0A),
       child: Stack(
         children: [
-          // ── Main scrollable content ───────────────────────────────
-          CustomScrollView(
-            controller: _scroll,
-            physics: const BouncingScrollPhysics(
-              parent: AlwaysScrollableScrollPhysics(),
-            ),
-            slivers: [
-              // ── Stretchy video header ──────────────────────────────
-              SliverAppBar(
-                expandedHeight: _expandedHeight,
-                collapsedHeight: 0,
-                toolbarHeight: 0,
-                pinned: false,
-                stretch: true,           // enables stretch-on-overscroll
-                automaticallyImplyLeading: false,
-                backgroundColor: Colors.transparent,
-                flexibleSpace: FlexibleSpaceBar(
-                  stretchModes: const [
-                    StretchMode.zoomBackground, // video zooms on pull-down
-                    StretchMode.fadeTitle,
-                  ],
-                  background: _VideoHeader(song: song),
-                ),
+          // ── Side-by-side layout ───────────────────────────────────
+          Row(
+            children: [
+              // ── LEFT: thumbnail (always fully visible) ───────────
+              SizedBox(
+                width: _leftWidth,
+                child: _VideoHeader(song: song),
               ),
 
-              // ── Song info ──────────────────────────────────────────
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (song != null) ...[
-                        Row(
+              // ── Draggable divider ─────────────────────────────────
+              _Divider(
+                onDelta: (dx) => setState(() {
+                  _leftWidth =
+                      (_leftWidth + dx).clamp(_kLeftMin, _kLeftMax);
+                }),
+              ),
+
+              // ── RIGHT: song info + scrollable lyrics ─────────────
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Song info header
+                    if (song != null)
+                      Padding(
+                        padding:
+                            const EdgeInsets.fromLTRB(20, 20, 56, 0),
+                        child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                            Text(
+                              song.title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 20,
+                                fontWeight: FontWeight.w800,
+                                height: 1.2,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              song.channelName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFF9A9A9A),
+                                fontSize: 14,
+                              ),
+                            ),
+                            const SizedBox(height: 14),
+                            // "Lyrics" chip
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF1A1A2A),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                    color: const Color(0xFF2E2E50),
+                                    width: 1),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
                                 children: [
+                                  Icon(Icons.lyrics_outlined,
+                                      color: kAccent, size: 14),
+                                  SizedBox(width: 5),
                                   Text(
-                                    song.title,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.w800,
-                                      height: 1.2,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    song.channelName,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      color: Color(0xFF9A9A9A),
-                                      fontSize: 14,
+                                    'Lyrics',
+                                    style: TextStyle(
+                                      color: kAccent,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
                                     ),
                                   ),
                                 ],
                               ),
                             ),
-                            const SizedBox(width: 12),
-                            const Icon(Icons.check_circle,
-                                color: kAccent, size: 22),
-                          ],
-                        ),
-                        const SizedBox(height: 20),
-                      ],
-
-                      // "Lyrics" chip
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF1A1A2A),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(
-                              color: const Color(0xFF2E2E50), width: 1),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.lyrics_outlined,
-                                color: kAccent, size: 14),
-                            SizedBox(width: 5),
-                            Text(
-                              'Lyrics',
-                              style: TextStyle(
-                                color: kAccent,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
+                            const SizedBox(height: 16),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 18),
-                    ],
-                  ),
+
+                    // Thin separator
+                    const Divider(
+                        height: 1,
+                        thickness: 1,
+                        color: Color(0xFF1E1E1E)),
+
+                    // Scrollable lyrics box
+                    Expanded(
+                      child: CustomScrollView(
+                        controller: _scroll,
+                        physics: const BouncingScrollPhysics(
+                          parent: AlwaysScrollableScrollPhysics(),
+                        ),
+                        slivers: [
+                          _buildLyricsSliver(lyrics),
+                          const SliverToBoxAdapter(
+                              child: SizedBox(height: 60)),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
-
-              // ── Lyric lines ────────────────────────────────────────
-              _buildLyricsSliver(lyrics),
-
-              // ── Footer padding ─────────────────────────────────────
-              const SliverToBoxAdapter(child: SizedBox(height: 60)),
             ],
           ),
 
-          // ── Close button (always on top) ──────────────────────────
+          // ── Close button (always on top-right) ────────────────────
           Positioned(
             top: 14,
             right: 14,
@@ -232,6 +245,8 @@ class _LyricsPanelState extends ConsumerState<LyricsPanel> {
     );
   }
 
+  // ── Lyrics sliver ─────────────────────────────────────────────────────────
+
   Widget _buildLyricsSliver(LyricsState lyrics) {
     if (lyrics.isLoading) {
       return const SliverFillRemaining(
@@ -242,7 +257,8 @@ class _LyricsPanelState extends ConsumerState<LyricsPanel> {
               CircularProgressIndicator(color: kAccent, strokeWidth: 2),
               SizedBox(height: 12),
               Text('Loading lyrics…',
-                  style: TextStyle(color: Color(0xFF9A9A9A), fontSize: 14)),
+                  style: TextStyle(
+                      color: Color(0xFF9A9A9A), fontSize: 14)),
             ],
           ),
         ),
@@ -278,22 +294,21 @@ class _LyricsPanelState extends ConsumerState<LyricsPanel> {
       sliver: SliverList(
         delegate: SliverChildBuilderDelegate(
           (context, i) {
-            // Footer item
             if (i == lyrics.lines.length) {
               return const Padding(
                 padding: EdgeInsets.only(top: 28),
                 child: Text(
                   'Lyrics provided by YouTube',
-                  style: TextStyle(color: Color(0xFF555577), fontSize: 12),
+                  style: TextStyle(
+                      color: Color(0xFF555577), fontSize: 12),
                 ),
               );
             }
 
             final isActive = i == _activeIndex;
             final isPast   = i < _activeIndex;
-            final key      = i < _lineKeys.length
-                ? _lineKeys[i]
-                : GlobalKey();
+            final key =
+                i < _lineKeys.length ? _lineKeys[i] : GlobalKey();
 
             return _LyricLine(
               key: key,
@@ -309,10 +324,50 @@ class _LyricsPanelState extends ConsumerState<LyricsPanel> {
   }
 }
 
-// ─── Video / thumbnail header ─────────────────────────────────────────────────
+// ─── Draggable vertical divider ───────────────────────────────────────────────
+
+class _Divider extends StatefulWidget {
+  final void Function(double dx) onDelta;
+  const _Divider({required this.onDelta});
+
+  @override
+  State<_Divider> createState() => _DividerState();
+}
+
+class _DividerState extends State<_Divider> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeColumn,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit:  (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onHorizontalDragUpdate: (d) => widget.onDelta(d.delta.dx),
+        child: SizedBox(
+          width: _kDividerW,
+          child: Center(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              width: 2,
+              height: double.infinity,
+              color: _hovered
+                  ? kAccent.withOpacity(0.6)
+                  : Colors.white.withOpacity(0.08),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Thumbnail / album art left panel ────────────────────────────────────────
 
 class _VideoHeader extends StatelessWidget {
-  final dynamic song; // Song?
+  final dynamic song;
   const _VideoHeader({required this.song});
 
   @override
@@ -320,36 +375,42 @@ class _VideoHeader extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: [
-        // Video (muted — just_audio owns the audio)
-        if (song != null && !song.isLocal)
-          ColoredBox(
-            color: Colors.black,
-            child: VideoPreviewWidget(videoId: song.id, fit: BoxFit.cover),
+        if (song != null && song.thumbnailUrl.isNotEmpty)
+          Image.network(
+            song.thumbnailUrl,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => const _Placeholder(),
           )
-        else if (song != null && song.thumbnailUrl.isNotEmpty)
-          Image.network(song.thumbnailUrl, fit: BoxFit.cover)
         else
-          const ColoredBox(
-            color: Color(0xFF1A1A2A),
-            child: Center(
-              child: Icon(Icons.music_note, color: Colors.white12, size: 72),
-            ),
-          ),
+          const _Placeholder(),
 
-        // Bottom gradient so the song info below blends in
+        // Right-edge fade to blend into the divider/dark bg
         const Positioned.fill(
           child: DecoratedBox(
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                stops: [0.5, 1.0],
-                colors: [Colors.transparent, Color(0xFF0A0A0A)],
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+                stops: [0.75, 1.0],
+                colors: [Colors.transparent, Color(0xCC0A0A0A)],
               ),
             ),
           ),
         ),
       ],
+    );
+  }
+}
+
+class _Placeholder extends StatelessWidget {
+  const _Placeholder();
+  @override
+  Widget build(BuildContext context) {
+    return const ColoredBox(
+      color: Color(0xFF1A1A2A),
+      child: Center(
+        child: Icon(Icons.music_note, color: Colors.white12, size: 80),
+      ),
     );
   }
 }

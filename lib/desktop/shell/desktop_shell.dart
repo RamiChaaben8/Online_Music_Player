@@ -13,6 +13,7 @@ import '../../providers/youtube_provider.dart';
 import '../home/desktop_home_view.dart';
 import '../now_playing/desktop_now_playing_panel.dart';
 import '../player/desktop_player_bar.dart';
+import '../player/lyrics_panel.dart';
 import '../player/queue_panel.dart';
 import '../playlist/desktop_playlist_view.dart';
 import '../sidebar/desktop_sidebar.dart';
@@ -39,12 +40,12 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
 
   void _navigateTo(int view, {Playlist? playlist}) {
     if (_currentView == view &&
-        (view != 2 || _viewedPlaylist?.key == playlist?.key)) return;
+        (view != 2 || _viewedPlaylist?.key == playlist?.key)) { return; }
     setState(() {
       _history.removeRange(_historyIndex + 1, _history.length);
       _history.add(view);
       _historyIndex = _history.length - 1;
-      if (view == 2) _viewedPlaylist = playlist;
+      if (view == 2) { _viewedPlaylist = playlist; }
     });
   }
 
@@ -90,9 +91,11 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
         builder: (context, constraints) {
           final wideEnough = constraints.maxWidth >= 1100;
 
-          return Column(
+          // Full-screen lyrics overlay sits on top of the entire shell
+          // (above the player bar too) when PanelMode.lyrics is active.
+          final shell = Column(
             children: [
-              // ── Title bar ─────────────────────────────────────────
+              // ── Title bar ───────────────────────────────────────
               DesktopTitleBar(
                 currentView: _currentView,
                 canGoBack: _canGoBack,
@@ -107,7 +110,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
                 },
               ),
 
-              // ── Main content row ────────────────────────────────────
+              // ── Main content row ──────────────────────────────────
               Expanded(
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -130,8 +133,8 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
                         child: _buildCenterView(),
                       ),
                     ),
-                    // Right panel — NowPlaying (handles lyrics scroll
-                    // internally) or Queue
+                    // Right panel — always NowPlaying or Queue.
+                    // LyricsPanel is a separate fullscreen overlay (below).
                     if (wideEnough) ...[
                       const SizedBox(width: 8),
                       if (panelMode == PanelMode.queue)
@@ -151,8 +154,26 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
 
               const SizedBox(height: 8),
 
-              // ── Player bar ──────────────────────────────────────────
+              // ── Player bar ────────────────────────────────────────
               const DesktopPlayerBar(),
+            ],
+          );
+
+          // Always wrap in a Stack so the shell (and its VideoPreviewWidget)
+          // is never disposed when the lyrics overlay opens/closes.
+          // Using Offstage keeps the LyricsPanel in the tree but invisible
+          // when not active, which also prevents it from re-fetching lyrics
+          // on every open. We flip to visible only when lyrics mode is on.
+          return Stack(
+            children: [
+              shell,
+              if (panelMode == PanelMode.lyrics)
+                LyricsPanel(
+                  key: const ValueKey('lyrics_overlay'),
+                  onClose: () => ref
+                      .read(panelModeProvider.notifier)
+                      .state = PanelMode.none,
+                ),
             ],
           );
         },
