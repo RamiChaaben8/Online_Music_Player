@@ -189,7 +189,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
         final p = _viewedPlaylist;
         if (p != null) {
           return DesktopPlaylistView(
-            key: ValueKey('playlist_${p.key}'),
+            key: ValueKey('playlist_${p.key ?? p.name}'),
             playlist: p,
           );
         }

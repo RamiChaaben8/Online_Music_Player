@@ -209,11 +209,19 @@ class _SearchResultRowState extends ConsumerState<_SearchResultRow> {
 
   @override
   Widget build(BuildContext context) {
+    final ps         = ref.watch(playerProvider);
+    final isPlaying  = ps.currentSong?.id == widget.song.id && ps.isPlaying;
+    final isCurrent  = ps.currentSong?.id == widget.song.id;
+
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: Material(
-        color: _hovered ? const Color(0xFF2A2A2A) : Colors.transparent,
+        color: isCurrent
+            ? const Color(0xFF1A2A1A)   // green tint when current
+            : _hovered
+                ? const Color(0xFF2A2A2A)
+                : Colors.transparent,
         borderRadius: BorderRadius.circular(8),
         child: InkWell(
           borderRadius: BorderRadius.circular(8),
@@ -225,14 +233,23 @@ class _SearchResultRowState extends ConsumerState<_SearchResultRow> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Row(
               children: [
-                // Index
+                // Index — green speaker icon when this song is current
                 SizedBox(
                   width: 28,
-                  child: Text(
-                    '${widget.index + 1}',
-                    style: const TextStyle(color: kTextSecondary, fontSize: 13),
-                    textAlign: TextAlign.right,
-                  ),
+                  child: isCurrent
+                      ? Icon(
+                          isPlaying
+                              ? Icons.volume_up
+                              : Icons.volume_mute,
+                          color: kAccent,
+                          size: 16,
+                        )
+                      : Text(
+                          '${widget.index + 1}',
+                          style: const TextStyle(
+                              color: kTextSecondary, fontSize: 13),
+                          textAlign: TextAlign.right,
+                        ),
                 ),
                 const SizedBox(width: 16),
 
@@ -245,8 +262,8 @@ class _SearchResultRowState extends ConsumerState<_SearchResultRow> {
                           width: 48,
                           height: 48,
                           fit: BoxFit.cover,
-                          placeholder: (_, __) =>
-                              Container(width: 48, height: 48, color: kCardColor),
+                          placeholder: (_, __) => Container(
+                              width: 48, height: 48, color: kCardColor),
                           errorWidget: (_, __, ___) => Container(
                             width: 48,
                             height: 48,
@@ -265,7 +282,7 @@ class _SearchResultRowState extends ConsumerState<_SearchResultRow> {
                 ),
                 const SizedBox(width: 16),
 
-                // Title + artist
+                // Title + artist — green when current
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -274,8 +291,8 @@ class _SearchResultRowState extends ConsumerState<_SearchResultRow> {
                         widget.song.title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: kTextPrimary,
+                        style: TextStyle(
+                          color: isCurrent ? kAccent : kTextPrimary,
                           fontSize: 14,
                           fontWeight: FontWeight.w500,
                         ),
@@ -285,8 +302,12 @@ class _SearchResultRowState extends ConsumerState<_SearchResultRow> {
                         widget.song.channelName,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                            color: kTextSecondary, fontSize: 12),
+                        style: TextStyle(
+                          color: isCurrent
+                              ? kAccent.withOpacity(0.7)
+                              : kTextSecondary,
+                          fontSize: 12,
+                        ),
                       ),
                     ],
                   ),
@@ -298,12 +319,16 @@ class _SearchResultRowState extends ConsumerState<_SearchResultRow> {
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                     child: Text(
                       widget.durationStr,
-                      style: const TextStyle(
-                          color: kTextSecondary, fontSize: 13),
+                      style: TextStyle(
+                        color: isCurrent
+                            ? kAccent.withOpacity(0.7)
+                            : kTextSecondary,
+                        fontSize: 13,
+                      ),
                     ),
                   ),
 
-                // ··· menu button (always visible on hover, subtle otherwise)
+                // ··· menu button
                 AnimatedOpacity(
                   opacity: _hovered ? 1.0 : 0.0,
                   duration: const Duration(milliseconds: 150),
@@ -311,14 +336,25 @@ class _SearchResultRowState extends ConsumerState<_SearchResultRow> {
                 ),
                 const SizedBox(width: 4),
 
-                // Play button
+                // Play button — pause icon when this song is playing
                 IconButton(
-                  icon: const Icon(Icons.play_circle_fill,
-                      color: kAccent, size: 32),
-                  onPressed: () => ref.read(playerProvider.notifier).playSong(
-                        widget.song,
-                        queue: widget.allResults,
-                      ),
+                  icon: Icon(
+                    isPlaying
+                        ? Icons.pause_circle_filled
+                        : Icons.play_circle_fill,
+                    color: kAccent,
+                    size: 32,
+                  ),
+                  onPressed: () {
+                    if (isCurrent) {
+                      ref.read(playerProvider.notifier).togglePlayPause();
+                    } else {
+                      ref.read(playerProvider.notifier).playSong(
+                            widget.song,
+                            queue: widget.allResults,
+                          );
+                    }
+                  },
                   padding: EdgeInsets.zero,
                   constraints:
                       const BoxConstraints(minWidth: 40, minHeight: 40),
