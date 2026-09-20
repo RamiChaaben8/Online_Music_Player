@@ -210,7 +210,7 @@ class _LyricsPanelState extends ConsumerState<LyricsPanel> {
                           parent: AlwaysScrollableScrollPhysics(),
                         ),
                         slivers: [
-                          _buildLyricsSliver(lyrics),
+                          _buildLyricsSliver(lyrics, ps.position),
                           const SliverToBoxAdapter(
                               child: SizedBox(height: 60)),
                         ],
@@ -247,7 +247,7 @@ class _LyricsPanelState extends ConsumerState<LyricsPanel> {
 
   // ── Lyrics sliver ─────────────────────────────────────────────────────────
 
-  Widget _buildLyricsSliver(LyricsState lyrics) {
+  Widget _buildLyricsSliver(LyricsState lyrics, Duration position) {
     if (lyrics.isLoading) {
       return const SliverFillRemaining(
         child: Center(
@@ -312,9 +312,10 @@ class _LyricsPanelState extends ConsumerState<LyricsPanel> {
 
             return _LyricLine(
               key: key,
-              text: lyrics.lines[i].text,
+              line: lyrics.lines[i],
               isActive: isActive,
               isPast: isPast,
+              position: position,
             );
           },
           childCount: lyrics.lines.length + 1,
@@ -418,19 +419,46 @@ class _Placeholder extends StatelessWidget {
 // ─── Single lyric line ────────────────────────────────────────────────────────
 
 class _LyricLine extends StatelessWidget {
-  final String text;
+  final LyricLine line;
   final bool isActive;
   final bool isPast;
+  final Duration position;
 
   const _LyricLine({
     super.key,
-    required this.text,
+    required this.line,
     required this.isActive,
     required this.isPast,
+    required this.position,
   });
 
   @override
   Widget build(BuildContext context) {
+    // ── Karaoke word-by-word when active and timing available ───────
+    if (isActive && line.hasWordTiming) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: Wrap(
+          spacing: 0,
+          runSpacing: 2,
+          children: line.words.map((word) {
+            final lit = position >= word.start;
+            return AnimatedDefaultTextStyle(
+              duration: const Duration(milliseconds: 120),
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                height: 1.3,
+                color: lit ? kAccent : Colors.white.withValues(alpha: 0.45),
+              ),
+              child: Text('${word.text} '),
+            );
+          }).toList(),
+        ),
+      );
+    }
+
+    // ── Plain line ──────────────────────────────────────────────────
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: AnimatedDefaultTextStyle(
@@ -442,11 +470,10 @@ class _LyricLine extends StatelessWidget {
                   ? const Color(0xFF3A3A3A)
                   : const Color(0xFF888888),
           fontSize: isActive ? 22 : 18,
-          fontWeight:
-              isActive ? FontWeight.w800 : FontWeight.w500,
+          fontWeight: isActive ? FontWeight.w800 : FontWeight.w500,
           height: 1.3,
         ),
-        child: Text(text),
+        child: Text(line.text),
       ),
     );
   }

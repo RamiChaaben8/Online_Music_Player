@@ -340,10 +340,18 @@ class YoutubeService {
   Future<List<LyricLine>> _fetchTrack(dynamic trackInfo) async {
     final track = await _yt.videos.closedCaptions.get(trackInfo);
     return track.captions.map((c) {
+      // Build per-word list from caption parts when available
+      final words = c.parts.map((p) => LyricWord(
+        text: p.text.trim(),
+        // part.offset is relative to the caption's own offset
+        start: c.offset + p.offset,
+      )).where((w) => w.text.isNotEmpty).toList();
+
       return LyricLine(
         text: c.text.trim(),
         start: c.offset,
         end: c.offset + c.duration,
+        words: words,
       );
     }).where((l) => l.text.isNotEmpty).toList();
   }
@@ -355,7 +363,25 @@ class LyricLine {
   final String text;
   final Duration start;
   final Duration end;
-  const LyricLine({required this.text, required this.start, required this.end});
+  // Per-word timing (empty when not available — manual captions rarely have this)
+  final List<LyricWord> words;
+
+  const LyricLine({
+    required this.text,
+    required this.start,
+    required this.end,
+    this.words = const [],
+  });
+
+  bool get hasWordTiming => words.isNotEmpty;
+}
+
+class LyricWord {
+  final String text;
+  // Absolute start time (caption.offset + part.offset)
+  final Duration start;
+
+  const LyricWord({required this.text, required this.start});
 }
 
 class CaptionTrackInfo {

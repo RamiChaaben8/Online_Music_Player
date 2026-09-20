@@ -174,6 +174,10 @@ class HomeNotifier extends StateNotifier<HomeState> {
 final homeProvider = StateNotifierProvider<HomeNotifier, HomeState>((ref) {
   return HomeNotifier(
     ref.watch(youtubeServiceProvider),
-    ref.watch(libraryProvider),
+    // Use read so homeProvider is NOT recreated every time libraryProvider
+    // changes (e.g. when a song is added to recently played on each play).
+    // The home feed only needs the library snapshot at startup to build
+    // personalised sections — not a live subscription.
+    ref.read(libraryProvider),
   );
 });

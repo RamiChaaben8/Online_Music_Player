@@ -317,7 +317,7 @@ class _DesktopNowPlayingPanelState
                               Expanded(
                                 child: _ThinScrollbar(
                                   controller: _lyricsScroll,
-                                  child: _buildLyricsInner(lyrics),
+                                  child: _buildLyricsInner(lyrics, ref.watch(playerProvider).position),
                                 ),
                               ),
                             ],
@@ -362,7 +362,7 @@ class _DesktopNowPlayingPanelState
   }
 
   // The inner scrollable widget that holds only the lyric lines.
-  Widget _buildLyricsInner(LyricsState lyrics) {
+  Widget _buildLyricsInner(LyricsState lyrics, Duration position) {
     if (lyrics.isLoading) {
       return const SizedBox.expand(
         child: Center(
@@ -421,8 +421,9 @@ class _DesktopNowPlayingPanelState
         }
         return _LyricLine(
           key: i < _lineKeys.length ? _lineKeys[i] : GlobalKey(),
-          text: lyrics.lines[i].text,
+          line: lyrics.lines[i],
           isActive: i == _activeIndex,
+          position: position,
         );
       },
     );
@@ -966,38 +967,67 @@ class _VideoCard extends StatelessWidget {
 // ─── Single lyric line ────────────────────────────────────────────────────────
 
 class _LyricLine extends StatelessWidget {
-  final String text;
-  final bool   isActive;
+  final LyricLine line;
+  final bool isActive;
+  final Duration position; // current playback position for word highlighting
 
   const _LyricLine({
     super.key,
-    required this.text,
+    required this.line,
     required this.isActive,
+    required this.position,
   });
+
+  static const _fallbackFonts = [
+    'Malgun Gothic', 'Noto Sans KR', 'Noto Sans CJK',
+    'Microsoft YaHei', 'Segoe UI',
+  ];
 
   @override
   Widget build(BuildContext context) {
-    const fallbackFonts = [
-      'Malgun Gothic',
-      'Noto Sans KR',
-      'Noto Sans CJK',
-      'Microsoft YaHei',
-      'Segoe UI',
-    ];
+    final dimColor   = Colors.white.withValues(alpha: 0.38);
+    final baseColor  = isActive ? Colors.white : dimColor;
+    final fontSize   = isActive ? 22.0 : 18.0;
+    final fontWeight = isActive ? FontWeight.w700 : FontWeight.w500;
+
+    // ── Karaoke word-by-word highlighting ──────────────────────────
+    if (isActive && line.hasWordTiming) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 18),
+        child: Wrap(
+          spacing: 0,
+          runSpacing: 2,
+          children: line.words.map((word) {
+            final lit = position >= word.start;
+            return AnimatedDefaultTextStyle(
+              duration: const Duration(milliseconds: 120),
+              style: TextStyle(
+                fontFamilyFallback: _fallbackFonts,
+                fontSize: fontSize,
+                fontWeight: fontWeight,
+                height: 1.35,
+                color: lit ? kAccent : Colors.white.withValues(alpha: 0.55),
+              ),
+              child: Text('${word.text} '),
+            );
+          }).toList(),
+        ),
+      );
+    }
+
+    // ── Plain line (no word timing or not active) ───────────────────
     return Padding(
       padding: const EdgeInsets.only(bottom: 18),
       child: AnimatedDefaultTextStyle(
         duration: const Duration(milliseconds: 220),
         style: TextStyle(
-          fontFamilyFallback: fallbackFonts,
-          fontSize: 22,
-          fontWeight: FontWeight.w700,
+          fontFamilyFallback: _fallbackFonts,
+          fontSize: fontSize,
+          fontWeight: fontWeight,
           height: 1.35,
-          color: isActive
-              ? Colors.white
-              : Colors.white.withValues(alpha: 0.38),
+          color: baseColor,
         ),
-        child: Text(text, softWrap: true),
+        child: Text(line.text, softWrap: true),
       ),
     );
   }
