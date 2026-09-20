@@ -429,25 +429,28 @@ class _DesktopNowPlayingPanelState
   }
 }
 
-// ─── Lyrics header (const, never scrolls) ────────────────────────────────────
+// ─── Lyrics header with optional track selector ───────────────────────────────
 
-class _LyricsHeader extends StatelessWidget {
+class _LyricsHeader extends ConsumerWidget {
   const _LyricsHeader();
 
   @override
-  Widget build(BuildContext context) {
-    return const Column(
+  Widget build(BuildContext context, WidgetRef ref) {
+    final lyrics = ref.watch(lyricsProvider);
+    final hasMultipleTracks = lyrics.availableTracks.length > 1;
+
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
         Padding(
-          padding: EdgeInsets.fromLTRB(14, 12, 14, 8),
+          padding: const EdgeInsets.fromLTRB(14, 12, 8, 8),
           child: Row(
-            mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.lyrics_outlined, color: kAccent, size: 13),
-              SizedBox(width: 5),
-              Text(
+              // "Lyrics" label
+              const Icon(Icons.lyrics_outlined, color: kAccent, size: 13),
+              const SizedBox(width: 5),
+              const Text(
                 'Lyrics',
                 style: TextStyle(
                   color: kAccent,
@@ -456,17 +459,127 @@ class _LyricsHeader extends StatelessWidget {
                   letterSpacing: 0.5,
                 ),
               ),
+
+              const Spacer(),
+
+              // Track selector — only shown when multiple tracks exist
+              if (hasMultipleTracks)
+                _TrackSelectorButton(lyrics: lyrics),
             ],
           ),
         ),
-        Padding(
+        const Padding(
           padding: EdgeInsets.symmetric(horizontal: 14),
           child: Divider(
               color: Color(0xFF3d3d3d), height: 1, thickness: 1),
         ),
-        SizedBox(height: 8),
+        const SizedBox(height: 8),
       ],
     );
+  }
+}
+
+// ─── Track selector button + dropdown ────────────────────────────────────────
+
+class _TrackSelectorButton extends ConsumerWidget {
+  final LyricsState lyrics;
+  const _TrackSelectorButton({required this.lyrics});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final selectedLabel = lyrics.selectedTrackLabel ??
+        (lyrics.availableTracks.isNotEmpty
+            ? lyrics.availableTracks.first.label
+            : 'Auto');
+
+    // Shorten the label for the button (strip "(auto-generated)" suffix)
+    final shortLabel = selectedLabel
+        .replaceAll(' (auto-generated)', '')
+        .replaceAll(' (auto)', '');
+
+    return GestureDetector(
+      onTapDown: (details) => _showMenu(context, ref, details.globalPosition),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1A1A2A),
+          borderRadius: BorderRadius.circular(5),
+          border: Border.all(color: const Color(0xFF2E2E50), width: 1),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.subtitles_outlined,
+                color: kAccent, size: 11),
+            const SizedBox(width: 4),
+            Text(
+              shortLabel,
+              style: const TextStyle(
+                color: kAccent,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(width: 3),
+            const Icon(Icons.arrow_drop_down,
+                color: kAccent, size: 14),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showMenu(BuildContext context, WidgetRef ref, Offset position) {
+    final items = lyrics.availableTracks.map((track) {
+      final isSelected = track.code == lyrics.selectedTrackCode;
+      return PopupMenuItem<String>(
+        value: track.code,
+        height: 36,
+        child: Row(
+          children: [
+            SizedBox(
+              width: 18,
+              child: isSelected
+                  ? const Icon(Icons.check, color: kAccent, size: 14)
+                  : null,
+            ),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Text(
+                track.label,
+                style: TextStyle(
+                  color: isSelected ? kAccent : Colors.white,
+                  fontSize: 13,
+                  fontWeight: isSelected
+                      ? FontWeight.w600
+                      : FontWeight.normal,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }).toList();
+
+    showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        position.dx - 160,
+        position.dy,
+        position.dx,
+        position.dy + 40,
+      ),
+      color: const Color(0xFF1E1E2E),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: const BorderSide(color: Color(0xFF2E2E50)),
+      ),
+      items: items,
+    ).then((code) {
+      if (code != null) {
+        ref.read(lyricsProvider.notifier).selectTrack(code);
+      }
+    });
   }
 }
 
