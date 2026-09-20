@@ -149,6 +149,8 @@ class FirestoreService {
     required Song? currentSong,
     required List<Song> queue,
     required int queueIndex,
+    required int positionMs,
+    required bool isPlaying,
   }) async {
     final cappedQueue = queue.take(200).toList();
     await _userDoc(uid, 'remoteCommand').set({
@@ -156,6 +158,8 @@ class FirestoreService {
       'currentTrack': currentSong != null ? _songToMap(currentSong) : null,
       'queue': cappedQueue.map(_songToMap).toList(),
       'queueIndex': queueIndex,
+      'positionMs': positionMs,
+      'isPlaying': isPlaying,
       'deviceId': deviceId,
       'deviceName': deviceName,
       'updatedAt': FieldValue.serverTimestamp(),
@@ -187,6 +191,8 @@ class FirestoreService {
       'currentSong': trackMap != null ? _docToSong(trackMap) : null,
       'queue': queueList.map(_docToSong).toList(),
       'queueIndex': (d['queueIndex'] as num?)?.toInt() ?? 0,
+      'positionMs': (d['positionMs'] as num?)?.toInt() ?? 0,
+      'isPlaying': d['isPlaying'] as bool? ?? false,
       'deviceId': d['deviceId'] as String? ?? '',
       'deviceName': d['deviceName'] as String? ?? 'Unknown Device',
     };

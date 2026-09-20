@@ -23,8 +23,8 @@
 //
 // What does NOT sync
 // ─────────────────────────────────────────────────────────────
-// • Playback position — local only
-// • Volume, seek — local only
+// • Playback position and play state
+// • Volume — local only
 // ============================================================
 
 import 'dart:async';
@@ -38,7 +38,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 // ── Types ────────────────────────────────────────────────────────────────────
 
 /// The command written to Firestore by the acting device.
-enum RemoteCommand { play, pause, next, prev, playSong, none }
+enum RemoteCommand { play, pause, next, prev, playSong, seek, none }
 
 /// Parsed remote-command document from Firestore.
 class RemoteCommandDoc {
@@ -48,6 +48,8 @@ class RemoteCommandDoc {
   final Song? currentSong;
   final List<Song> queue;
   final int queueIndex;
+  final int positionMs;
+  final bool isPlaying;
 
   const RemoteCommandDoc({
     required this.command,
@@ -56,6 +58,8 @@ class RemoteCommandDoc {
     this.currentSong,
     required this.queue,
     required this.queueIndex,
+    required this.positionMs,
+    required this.isPlaying,
   });
 
   /// Parse the raw map returned by FirestoreService.
@@ -72,6 +76,8 @@ class RemoteCommandDoc {
       currentSong: m['currentSong'] as Song?,
       queue: (m['queue'] as List?)?.cast<Song>() ?? const [],
       queueIndex: m['queueIndex'] as int? ?? 0,
+      positionMs: (m['positionMs'] as num?)?.toInt() ?? 0,
+      isPlaying: m['isPlaying'] as bool? ?? false,
     );
   }
 }
@@ -201,6 +207,8 @@ class SyncService {
     required Song? currentSong,
     required List<Song> queue,
     required int queueIndex,
+    required int positionMs,
+    required bool isPlaying,
   }) async {
     if (_uid == null || _deviceId == null) return;
     await _fs.writeRemoteCommand(
@@ -211,6 +219,8 @@ class SyncService {
       currentSong: currentSong,
       queue: queue,
       queueIndex: queueIndex,
+      positionMs: positionMs,
+      isPlaying: isPlaying,
     );
   }
 
@@ -220,12 +230,16 @@ class SyncService {
     required Song? currentSong,
     required List<Song> queue,
     required int queueIndex,
+    required int positionMs,
+    required bool isPlaying,
   }) {
     return sendCommand(
       command: RemoteCommand.none,
       currentSong: currentSong,
       queue: queue,
       queueIndex: queueIndex,
+      positionMs: positionMs,
+      isPlaying: isPlaying,
     );
   }
 

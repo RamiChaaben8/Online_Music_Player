@@ -129,6 +129,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   AudioPlayerService get _service => _handler.service;
 
   final List<StreamSubscription> _subs = [];
+  DateTime _lastPositionSync = DateTime.fromMillisecondsSinceEpoch(0);
 
   /// True while a remote-triggered load is in progress.
   bool _applyingRemote = false;
@@ -150,7 +151,16 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
 
   void _subscribeToPlayerStreams() {
     _subs.add(_service.positionStream.listen((pos) {
-      state = state.copyWith(position: pos);
+      if (_sync.service.isActive) {
+        state = state.copyWith(position: pos);
+      }
+      if (_sync.service.isActive &&
+          state.currentSong != null &&
+          DateTime.now().difference(_lastPositionSync) >=
+              const Duration(seconds: 1)) {
+        _lastPositionSync = DateTime.now();
+        _sendCommand(RemoteCommand.none);
+      }
     }));
 
     _subs.add(_service.durationStream.listen((dur) {
@@ -237,6 +247,13 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
           _applyRemoteSkip(skipForward: false, doc: doc);
         case RemoteCommand.playSong:
           _applyRemotePlaySong(doc);
+        case RemoteCommand.seek:
+          _service
+              .seek(Duration(milliseconds: doc.positionMs))
+              .catchError((_) {});
+          state = state.copyWith(
+            position: Duration(milliseconds: doc.positionMs),
+          );
         case RemoteCommand.none:
           break;
       }
@@ -250,8 +267,10 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
               currentSong: song,
               queue: doc.queue.isNotEmpty ? doc.queue : state.queue,
               currentIndex: doc.queueIndex,
+              position: Duration(milliseconds: doc.positionMs),
+              duration: song.duration,
               isLoading: false,
-              isPlaying: true,
+              isPlaying: doc.isPlaying,
               clearError: true,
             );
           }
@@ -259,11 +278,20 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
           state = state.copyWith(isPlaying: true, isLoading: false);
         case RemoteCommand.pause:
           state = state.copyWith(isPlaying: false, isLoading: false);
+        case RemoteCommand.seek:
+          state = state.copyWith(
+            position: Duration(milliseconds: doc.positionMs),
+          );
         case RemoteCommand.next:
         case RemoteCommand.prev:
           // The active device will fire a playSong command once the song loads.
           state = state.copyWith(isLoading: true);
         case RemoteCommand.none:
+          state = state.copyWith(
+            position: Duration(milliseconds: doc.positionMs),
+            isPlaying: doc.isPlaying,
+            isLoading: false,
+          );
           break;
       }
     }
@@ -301,7 +329,15 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
 
     _service.playSong(song, queue: doc.queue).then((_) {
       if (!mounted) return;
+      final position = Duration(milliseconds: doc.positionMs);
+      _service.seek(position).catchError((_) {});
       _updateFromService();
+      state = state.copyWith(
+        position: position,
+        duration: song.duration,
+        isPlaying: doc.isPlaying,
+      );
+      if (!doc.isPlaying) _service.pause().catchError((_) {});
       _handler.updateCurrentSong();
       _pushMarquee();
     }).catchError((e) {
@@ -331,6 +367,8 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
           currentSong: state.currentSong,
           queue: state.queue,
           queueIndex: state.currentIndex,
+          positionMs: state.position.inMilliseconds,
+          isPlaying: state.isPlaying,
         )
         .catchError((_) {});
   }
@@ -381,8 +419,9 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   Future<void> transferToDevice(
       String targetDeviceId, String targetDeviceName) async {
     // Pause local playback first.
+    final wasPlaying = state.isPlaying;
     await _service.pause();
-    state = state.copyWith(isPlaying: false, isActiveDevice: false);
+    state = state.copyWith(isPlaying: wasPlaying, isActiveDevice: false);
 
     // Make the other device active in Firestore.
     await _sync.service.transferToDevice(targetDeviceId, targetDeviceName);
@@ -408,8 +447,10 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
           currentSong: doc.currentSong,
           queue: doc.queue,
           currentIndex: doc.queueIndex,
+          position: Duration(milliseconds: doc.positionMs),
+          duration: doc.currentSong?.duration ?? Duration.zero,
           isLoading: false,
-          isPlaying: false,
+          isPlaying: doc.isPlaying,
           clearError: true,
         );
         return;
@@ -420,8 +461,10 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
         state = state.copyWith(
           queue: doc.queue,
           currentIndex: doc.queueIndex,
+          position: Duration(milliseconds: doc.positionMs),
+          duration: Duration.zero,
           isLoading: false,
-          isPlaying: false,
+          isPlaying: doc.isPlaying,
           clearError: true,
         );
         return;
@@ -430,13 +473,15 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       _applyingRemote = true;
       state = state.copyWith(
         currentSong: song,
+        position: Duration(milliseconds: doc.positionMs),
         isLoading: true,
-        isPlaying: false,
+        isPlaying: doc.isPlaying,
         clearError: true,
       );
 
       await _service.playSong(song, queue: doc.queue);
-      await _service.pause();
+      await _service.seek(Duration(milliseconds: doc.positionMs));
+      if (!doc.isPlaying) await _service.pause();
 
       if (!mounted) {
         _applyingRemote = false;
@@ -447,8 +492,9 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
         currentSong: _service.currentSong ?? song,
         queue: _service.queue,
         currentIndex: _service.currentIndex,
+        position: Duration(milliseconds: doc.positionMs),
         isLoading: false,
-        isPlaying: false,
+        isPlaying: doc.isPlaying,
       );
       _handler.updateCurrentSong();
       _pushMarquee();
@@ -545,6 +591,8 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       currentSong: state.currentSong,
       queue: state.queue,
       queueIndex: state.currentIndex,
+      positionMs: state.position.inMilliseconds,
+      isPlaying: state.isPlaying,
     );
   }
 
@@ -560,7 +608,8 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     if (state.isActiveDevice) {
       await _service.seek(position);
     }
-    // Seek is not synced remotely for now (position is local-only).
+    state = state.copyWith(position: position);
+    _sendCommand(RemoteCommand.seek);
   }
 
   Future<void> skipToNext() async {
