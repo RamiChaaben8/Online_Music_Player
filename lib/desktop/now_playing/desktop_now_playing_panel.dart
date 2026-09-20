@@ -35,6 +35,7 @@ import '../theme/desktop_theme.dart';
 
 const double _kVideoMin  = 230.0;
 const double _kBarWidth  =   7.0;
+
 const double _kSnapFrac  =   0.10;
 const int    _kAnimMs    =  150;
 const int    _kPauseMs   = 3000;

@@ -112,7 +112,8 @@ class PlayerState {
       shuffle: shuffle ?? this.shuffle,
       loopMode: loopMode ?? this.loopMode,
       remoteCommand: clearRemote ? null : (remoteCommand ?? this.remoteCommand),
-      activeDevice: clearActiveDevice ? null : (activeDevice ?? this.activeDevice),
+      activeDevice:
+          clearActiveDevice ? null : (activeDevice ?? this.activeDevice),
       isActiveDevice: isActiveDevice ?? this.isActiveDevice,
     );
   }
@@ -138,11 +139,11 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     _subscribeToRemoteCommands();
     _subscribeToActiveDevice();
     // Wire OS media-button callbacks.
-    _handler.onPlay           = () => play();
-    _handler.onPause          = () => pause();
-    _handler.onSkipToNext     = () => skipToNext();
+    _handler.onPlay = () => play();
+    _handler.onPause = () => pause();
+    _handler.onSkipToNext = () => skipToNext();
     _handler.onSkipToPrevious = () => skipToPrevious();
-    _handler.onSeek           = (pos) => seek(pos);
+    _handler.onSeek = (pos) => seek(pos);
   }
 
   // ── Internal stream subscriptions ────────────────────────────────────────
@@ -157,12 +158,17 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     }));
 
     _subs.add(_service.playerStateStream.listen((ps) {
+      // Loading is set explicitly while a track is being loaded. Do not turn
+      // it back on merely because a paused player reports buffering; this is
+      // common after restoring a saved session on Android and desktop.
+      final loadFinished = ps.playing ||
+          ps.processingState == ProcessingState.ready ||
+          ps.processingState == ProcessingState.completed;
       state = state.copyWith(
         isPlaying: ps.playing,
-        isLoading: ps.processingState == ProcessingState.loading ||
-            ps.processingState == ProcessingState.buffering,
+        isLoading: loadFinished ? false : state.isLoading,
       );
-      if (!state.isLoading) _pushMarquee();
+      if (loadFinished) _pushMarquee();
     }));
 
     _subs.add(_service.errorStream.listen((msg) {
@@ -174,8 +180,11 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
         currentSong: song,
         currentIndex: _service.currentIndex,
         queue: _service.queue,
-        isLoading: true,
-        isPlaying: false,
+        isLoading: false,
+        // _loadAndPlay starts the track before emitting songChangeStream.
+        // Do not overwrite that playing state and make the first pause tap
+        // appear to be a second play action.
+        isPlaying: true,
         clearError: true,
       );
       _handler.updateCurrentSong();
@@ -199,43 +208,83 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     }));
   }
 
-  // ── Remote command handler — only fires on active device ──────────────────
+  // ── Remote command handler ────────────────────────────────────────────────
+  // Active device  → EXECUTES the command (plays/pauses local audio).
+  // Passive device → OBSERVES only (updates UI state, never touches local audio).
 
   void _onRemoteCommand(RemoteCommandDoc doc) {
-    // SyncService already filters to active device only.
     state = state.copyWith(remoteCommand: doc);
 
-    switch (doc.command) {
-      case RemoteCommand.play:
-        if (state.currentSong != null) {
-          _service.play().catchError((_) {});
-          state = state.copyWith(isPlaying: true);
-        } else if (doc.currentSong != null) {
+    // SyncService updates this flag before publishing the active-device
+    // stream. Use it as the source of truth so a command arriving during
+    // stream/UI startup is still handled by the actual active device.
+    if (_sync.service.isActive) {
+      // ── Active device: execute ──────────────────────────────────────────
+      switch (doc.command) {
+        case RemoteCommand.play:
+          if (state.currentSong != null) {
+            _service.play().catchError((_) {});
+            state = state.copyWith(isPlaying: true);
+          } else if (doc.currentSong != null) {
+            _applyRemotePlaySong(doc);
+          }
+        case RemoteCommand.pause:
+          _service.pause().catchError((_) {});
+          state = state.copyWith(isPlaying: false);
+        case RemoteCommand.next:
+          _applyRemoteSkip(skipForward: true, doc: doc);
+        case RemoteCommand.prev:
+          _applyRemoteSkip(skipForward: false, doc: doc);
+        case RemoteCommand.playSong:
           _applyRemotePlaySong(doc);
-        }
-      case RemoteCommand.pause:
-        _service.pause().catchError((_) {});
-        state = state.copyWith(isPlaying: false);
-      case RemoteCommand.next:
-        _applyRemoteSkip(skipForward: true, doc: doc);
-      case RemoteCommand.prev:
-        _applyRemoteSkip(skipForward: false, doc: doc);
-      case RemoteCommand.playSong:
-        _applyRemotePlaySong(doc);
-      case RemoteCommand.none:
-        break;
+        case RemoteCommand.none:
+          break;
+      }
+    } else {
+      // ── Passive device: observe (UI sync only, no local audio) ──────────
+      switch (doc.command) {
+        case RemoteCommand.playSong:
+          final song = doc.currentSong;
+          if (song != null) {
+            state = state.copyWith(
+              currentSong: song,
+              queue: doc.queue.isNotEmpty ? doc.queue : state.queue,
+              currentIndex: doc.queueIndex,
+              isLoading: false,
+              isPlaying: true,
+              clearError: true,
+            );
+          }
+        case RemoteCommand.play:
+          state = state.copyWith(isPlaying: true, isLoading: false);
+        case RemoteCommand.pause:
+          state = state.copyWith(isPlaying: false, isLoading: false);
+        case RemoteCommand.next:
+        case RemoteCommand.prev:
+          // The active device will fire a playSong command once the song loads.
+          state = state.copyWith(isLoading: true);
+        case RemoteCommand.none:
+          break;
+      }
     }
   }
 
-  void _applyRemoteSkip({required bool skipForward, required RemoteCommandDoc doc}) {
+  void _applyRemoteSkip(
+      {required bool skipForward, required RemoteCommandDoc doc}) {
     _applyingRemote = true;
     final fut = skipForward ? _service.skipToNext() : _service.skipToPrevious();
-    fut.then((_) {
-      if (!mounted) return;
-      _updateFromService();
-      _handler.updateCurrentSong();
-      _pushMarquee();
-    }).catchError((_) {}).whenComplete(() => _applyingRemote = false);
+    fut
+        .then((_) {
+          if (!mounted) return;
+          _updateFromService();
+          _handler.updateCurrentSong();
+          _pushMarquee();
+          if (_service.currentSong != null) {
+            _sendCommand(RemoteCommand.playSong);
+          }
+        })
+        .catchError((_) {})
+        .whenComplete(() => _applyingRemote = false);
   }
 
   void _applyRemotePlaySong(RemoteCommandDoc doc) {
@@ -276,35 +325,107 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   // ── Sync helper ───────────────────────────────────────────────────────────
 
   void _sendCommand(RemoteCommand command) {
-    _sync.service.sendCommand(
-      command: command,
-      currentSong: state.currentSong,
-      queue: state.queue,
-      queueIndex: state.currentIndex,
-    ).catchError((_) {});
+    _sync.service
+        .sendCommand(
+          command: command,
+          currentSong: state.currentSong,
+          queue: state.queue,
+          queueIndex: state.currentIndex,
+        )
+        .catchError((_) {});
   }
 
   // ── Active device management ──────────────────────────────────────────────
 
   /// Called by DevicePickerSheet when user taps "Listen here".
-  /// Claims this device as active and restores the last session.
+  /// Claims this device as active and loads whatever is currently queued.
   Future<void> listenHere() async {
     await _sync.service.claimAsActiveDevice();
     state = state.copyWith(isActiveDevice: true);
+
+    // If we already have a song in state (populated by _onRemoteCommand
+    // while passive), load it directly — no Firestore round-trip needed.
+    final current = state.currentSong;
+    if (current != null) {
+      _applyingRemote = true;
+      state =
+          state.copyWith(isLoading: true, isPlaying: false, clearError: true);
+      try {
+        await _service.playSong(current, queue: state.queue);
+        await _service.pause();
+        if (!mounted) return;
+        state = state.copyWith(
+          currentSong: _service.currentSong ?? current,
+          queue: _service.queue,
+          currentIndex: _service.currentIndex,
+          isLoading: false,
+          isPlaying: false,
+        );
+        _handler.updateCurrentSong();
+        _pushMarquee();
+      } catch (_) {
+        if (mounted) state = state.copyWith(isLoading: false);
+      } finally {
+        _applyingRemote = false;
+      }
+      return;
+    }
+
+    // Nothing in state yet — fall back to the last saved Firestore session.
     await restoreLastSession();
   }
 
-  // ── Restore on login ─────────────────────────────────────────────────────
+  /// Transfer active playback to [targetDeviceId].
+  /// Pauses local audio, makes the target device active in Firestore, then
+  /// sends the current queue so the target device auto-starts playback.
+  Future<void> transferToDevice(
+      String targetDeviceId, String targetDeviceName) async {
+    // Pause local playback first.
+    await _service.pause();
+    state = state.copyWith(isPlaying: false, isActiveDevice: false);
+
+    // Make the other device active in Firestore.
+    await _sync.service.transferToDevice(targetDeviceId, targetDeviceName);
+
+    // Send the current queue/song to the target via a playSong command
+    // so it can start playing immediately.
+    if (state.currentSong != null) {
+      _sendCommand(RemoteCommand.playSong);
+    }
+  }
 
   /// Called after login. Only runs if this device is the active device.
   Future<void> restoreLastSession() async {
-    if (!_sync.service.isActive) return; // passive device — do nothing
     try {
       final doc = await _sync.service.getLastState();
-      if (doc == null || doc.currentSong == null) return;
+      if (doc == null) return;
       if (!mounted) return;
 
-      final song = doc.currentSong!;
+      // Every device restores the queue metadata so its UI is current.
+      // Only the active device loads audio.
+      if (!_sync.service.isActive) {
+        state = state.copyWith(
+          currentSong: doc.currentSong,
+          queue: doc.queue,
+          currentIndex: doc.queueIndex,
+          isLoading: false,
+          isPlaying: false,
+          clearError: true,
+        );
+        return;
+      }
+
+      final song = doc.currentSong;
+      if (song == null) {
+        state = state.copyWith(
+          queue: doc.queue,
+          currentIndex: doc.queueIndex,
+          isLoading: false,
+          isPlaying: false,
+          clearError: true,
+        );
+        return;
+      }
 
       _applyingRemote = true;
       state = state.copyWith(
@@ -372,6 +493,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
         currentSong: _service.currentSong,
         queue: _service.queue,
         currentIndex: _service.currentIndex,
+        isLoading: false,
       );
       _handler.updateCurrentSong();
       _pushMarquee();
@@ -387,16 +509,43 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   }
 
   Future<void> play() async {
-    await _service.play();
-    state = state.copyWith(isPlaying: true);
-    _handler.updateCurrentSong();
+    if (state.isActiveDevice) {
+      await _service.play();
+      state = state.copyWith(isPlaying: true);
+      _handler.updateCurrentSong();
+    } else {
+      // Passive: optimistically update UI, real update comes via observe path.
+      state = state.copyWith(isPlaying: true);
+    }
     _sendCommand(RemoteCommand.play);
   }
 
   Future<void> pause() async {
-    await _service.pause();
-    state = state.copyWith(isPlaying: false);
+    if (state.isActiveDevice) {
+      await _service.pause();
+      state = state.copyWith(isPlaying: false);
+    } else {
+      // Passive: optimistically update UI.
+      state = state.copyWith(isPlaying: false);
+    }
     _sendCommand(RemoteCommand.pause);
+  }
+
+  /// Pause locally without broadcasting a remote command.
+  /// Used when the app goes to background / is closed so we don't
+  /// accidentally pause playback on other active devices.
+  Future<void> pauseLocal() async {
+    await _service.pause();
+    if (mounted) state = state.copyWith(isPlaying: false);
+  }
+
+  /// Save the queue and current song for the next app session.
+  Future<void> saveSession() {
+    return _sync.service.savePlaybackState(
+      currentSong: state.currentSong,
+      queue: state.queue,
+      queueIndex: state.currentIndex,
+    );
   }
 
   Future<void> togglePlayPause() async {
@@ -408,35 +557,47 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   }
 
   Future<void> seek(Duration position) async {
-    await _service.seek(position);
+    if (state.isActiveDevice) {
+      await _service.seek(position);
+    }
+    // Seek is not synced remotely for now (position is local-only).
   }
 
   Future<void> skipToNext() async {
-    state = state.copyWith(isLoading: true, clearError: true);
-    await _service.skipToNext();
-    state = state.copyWith(
-      currentSong: _service.currentSong,
-      currentIndex: _service.currentIndex,
-      isLoading: false,
-    );
-    _handler.updateCurrentSong();
-    _pushMarquee();
-    if (_service.currentSong != null) {
-      _library.addToRecentlyPlayed(_service.currentSong!).catchError((_) {});
+    if (state.isActiveDevice) {
+      state = state.copyWith(isLoading: true, clearError: true);
+      await _service.skipToNext();
+      state = state.copyWith(
+        currentSong: _service.currentSong,
+        currentIndex: _service.currentIndex,
+        isLoading: false,
+      );
+      _handler.updateCurrentSong();
+      _pushMarquee();
+      if (_service.currentSong != null) {
+        _library.addToRecentlyPlayed(_service.currentSong!).catchError((_) {});
+      }
+    } else {
+      // Passive: show loading spinner; real song update comes via playSong observe.
+      state = state.copyWith(isLoading: true, clearError: true);
     }
     _sendCommand(RemoteCommand.next);
   }
 
   Future<void> skipToPrevious() async {
-    state = state.copyWith(isLoading: true, clearError: true);
-    await _service.skipToPrevious();
-    state = state.copyWith(
-      currentSong: _service.currentSong,
-      currentIndex: _service.currentIndex,
-      isLoading: false,
-    );
-    _handler.updateCurrentSong();
-    _pushMarquee();
+    if (state.isActiveDevice) {
+      state = state.copyWith(isLoading: true, clearError: true);
+      await _service.skipToPrevious();
+      state = state.copyWith(
+        currentSong: _service.currentSong,
+        currentIndex: _service.currentIndex,
+        isLoading: false,
+      );
+      _handler.updateCurrentSong();
+      _pushMarquee();
+    } else {
+      state = state.copyWith(isLoading: true, clearError: true);
+    }
     _sendCommand(RemoteCommand.prev);
   }
 
@@ -495,10 +656,10 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     final next = nextSong;
     final nextLine = next != null ? 'Next: ${next.title}' : '';
     _marqueeChannel.invokeMethod<void>('update', {
-      'title':     song.title,
-      'artist':    song.channelName,
-      'nextLine':  nextLine,
-      'artUrl':    song.thumbnailUrl,
+      'title': song.title,
+      'artist': song.channelName,
+      'nextLine': nextLine,
+      'artUrl': song.thumbnailUrl,
       'isPlaying': state.isPlaying,
     }).catchError((_) {});
   }
@@ -508,11 +669,11 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     for (final sub in _subs) {
       sub.cancel();
     }
-    _handler.onPlay           = null;
-    _handler.onPause          = null;
-    _handler.onSkipToNext     = null;
+    _handler.onPlay = null;
+    _handler.onPause = null;
+    _handler.onSkipToNext = null;
     _handler.onSkipToPrevious = null;
-    _handler.onSeek           = null;
+    _handler.onSeek = null;
     super.dispose();
   }
 }
@@ -523,7 +684,8 @@ final audioHandlerProvider = Provider<TuneifyAudioHandler>((ref) {
   throw UnimplementedError('audioHandlerProvider must be overridden in main()');
 });
 
-final playerProvider = StateNotifierProvider<PlayerNotifier, PlayerState>((ref) {
+final playerProvider =
+    StateNotifierProvider<PlayerNotifier, PlayerState>((ref) {
   return PlayerNotifier(
     ref.watch(audioHandlerProvider),
     ref.watch(libraryProvider.notifier),

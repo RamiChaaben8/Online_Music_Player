@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/playlist.dart';
 import '../../providers/local_music_provider.dart';
 import '../../providers/panel_provider.dart';
+import '../../providers/player_provider.dart';
 import '../../providers/sync_provider.dart';
 import '../../providers/youtube_provider.dart';
 import '../../services/firestore_service.dart';
@@ -44,12 +45,16 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
 
   void _navigateTo(int view, {Playlist? playlist}) {
     if (_currentView == view &&
-        (view != 2 || _isSamePlaylist(_viewedPlaylist, playlist))) { return; }
+        (view != 2 || _isSamePlaylist(_viewedPlaylist, playlist))) {
+      return;
+    }
     setState(() {
       _history.removeRange(_historyIndex + 1, _history.length);
       _history.add(view);
       _historyIndex = _history.length - 1;
-      if (view == 2) { _viewedPlaylist = playlist; }
+      if (view == 2) {
+        _viewedPlaylist = playlist;
+      }
     });
   }
 
@@ -100,10 +105,22 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
     if (state == AppLifecycleState.resumed) {
       ref.read(localMusicProvider.notifier).scan();
     }
+    // On Windows, pause audio when the app is hidden/minimized.
+    if (state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.paused) {
+      ref.read(playerProvider.notifier).saveSession().catchError((_) {});
+      ref.read(playerProvider.notifier).pauseLocal();
+    }
     // Release active-device claim when app is fully closed so another
     // device can auto-claim on next launch.
     if (state == AppLifecycleState.detached) {
-      ref.read(syncProvider.notifier).service.releaseIfActive().catchError((_) {});
+      ref.read(playerProvider.notifier).saveSession().catchError((_) {});
+      ref.read(playerProvider.notifier).pauseLocal();
+      ref
+          .read(syncProvider.notifier)
+          .service
+          .releaseIfActive()
+          .catchError((_) {});
     }
   }
 
@@ -206,9 +223,8 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
               if (panelMode == PanelMode.lyrics)
                 LyricsPanel(
                   key: const ValueKey('lyrics_overlay'),
-                  onClose: () => ref
-                      .read(panelModeProvider.notifier)
-                      .state = PanelMode.none,
+                  onClose: () => ref.read(panelModeProvider.notifier).state =
+                      PanelMode.none,
                 ),
             ],
           );

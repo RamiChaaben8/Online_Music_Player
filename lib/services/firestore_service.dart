@@ -120,9 +120,8 @@ class FirestoreService {
   }
 
   Future<List<Song>> getLikes(String uid) async {
-    final snap = await _userCol(uid, 'likes')
-        .orderBy('likedAt', descending: true)
-        .get();
+    final snap =
+        await _userCol(uid, 'likes').orderBy('likedAt', descending: true).get();
     return snap.docs.map((d) => _docToSong(d.data())).toList();
   }
 
@@ -145,7 +144,8 @@ class FirestoreService {
     required String uid,
     required String deviceId,
     required String deviceName,
-    required String command, // 'play' | 'pause' | 'next' | 'prev' | 'playSong' | 'none'
+    required String
+        command, // 'play' | 'pause' | 'next' | 'prev' | 'playSong' | 'none'
     required Song? currentSong,
     required List<Song> queue,
     required int queueIndex,
@@ -181,8 +181,7 @@ class FirestoreService {
   /// Converts Firestore data into a plain map with Song objects resolved.
   Map<String, dynamic> _expandRemoteCommand(Map<String, dynamic> d) {
     final trackMap = d['currentTrack'] as Map<String, dynamic>?;
-    final queueList =
-        (d['queue'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+    final queueList = (d['queue'] as List?)?.cast<Map<String, dynamic>>() ?? [];
     return {
       'command': d['command'] as String? ?? 'none',
       'currentSong': trackMap != null ? _docToSong(trackMap) : null,
@@ -202,6 +201,29 @@ class FirestoreService {
       'platform': platform,
       'lastActiveAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
+  }
+
+  /// Remove device registrations that have not sent a heartbeat recently.
+  Future<void> removeStaleDevices(String uid,
+      {required String keepDeviceId,
+      Duration maxAge = const Duration(minutes: 2)}) async {
+    final cutoff = DateTime.now().subtract(maxAge);
+    final snap = await _userCol(uid, 'devices').get();
+    final deletions = <Future<void>>[];
+
+    for (final doc in snap.docs) {
+      if (doc.id == keepDeviceId) continue;
+      final value = doc.data()['lastActiveAt'];
+      final lastActiveAt = value is Timestamp
+          ? value.toDate()
+          : value is DateTime
+              ? value
+              : null;
+      if (lastActiveAt == null || lastActiveAt.isBefore(cutoff)) {
+        deletions.add(doc.reference.delete());
+      }
+    }
+    await Future.wait(deletions);
   }
 
   // ── Active device ─────────────────────────────────────────────────────────
@@ -253,12 +275,29 @@ class FirestoreService {
   /// Stream of all registered devices (users/{uid}/devices collection).
   /// Each device doc has: name, platform, lastActiveAt.
   Stream<List<DeviceInfo>> devicesStream(String uid) {
-    return _userCol(uid, 'devices').snapshots().map((snap) =>
-        snap.docs.map((d) => DeviceInfo(
-              deviceId: d.id,
-              name: d.data()['name'] as String? ?? 'Unknown',
-              platform: d.data()['platform'] as String? ?? 'unknown',
-            )).toList());
+    final cutoff = DateTime.now().subtract(const Duration(minutes: 2));
+    return _userCol(uid, 'devices').snapshots().map((snap) {
+      final devices = snap.docs.map((d) {
+        final lastActive = d.data()['lastActiveAt'];
+        final lastActiveAt = lastActive is Timestamp
+            ? lastActive.toDate()
+            : lastActive is DateTime
+                ? lastActive
+                : null;
+        return DeviceInfo(
+          deviceId: d.id,
+          name: d.data()['name'] as String? ?? 'Unknown',
+          platform: d.data()['platform'] as String? ?? 'unknown',
+          lastActiveAt: lastActiveAt,
+        );
+      });
+
+      return devices
+          .where((device) =>
+              device.lastActiveAt != null &&
+              device.lastActiveAt!.isAfter(cutoff))
+          .toList();
+    });
   }
 
   // ── Delete user data ──────────────────────────────────────────────────────
@@ -280,8 +319,7 @@ class FirestoreService {
     futures.add(_userDoc(uid, 'activeDevice').delete().catchError((_) {}));
 
     // Delete the root user doc
-    futures.add(
-        _db.collection('users').doc(uid).delete().catchError((_) {}));
+    futures.add(_db.collection('users').doc(uid).delete().catchError((_) {}));
 
     await Future.wait(futures);
   }
@@ -292,10 +330,13 @@ class FirestoreService {
     final batch = _db.batch();
     for (final song in songs) {
       final ref = _userCol(uid, 'likes').doc(song.id);
-      batch.set(ref, {
-        ..._songToMap(song),
-        'likedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      batch.set(
+          ref,
+          {
+            ..._songToMap(song),
+            'likedAt': FieldValue.serverTimestamp(),
+          },
+          SetOptions(merge: true));
     }
     await batch.commit();
   }
@@ -328,20 +369,18 @@ class FirestoreService {
         title: d['title'] as String? ?? '',
         channelName: d['artist'] as String? ?? '',
         thumbnailUrl: d['coverUrl'] as String? ?? '',
-        duration: Duration(
-            milliseconds: (d['durationMs'] as num?)?.toInt() ?? 0),
+        duration:
+            Duration(milliseconds: (d['durationMs'] as num?)?.toInt() ?? 0),
       );
 
   Playlist _docToPlaylist(DocumentSnapshot<Map<String, dynamic>> doc) {
     final d = doc.data()!;
-    final tracks =
-        (d['tracks'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+    final tracks = (d['tracks'] as List?)?.cast<Map<String, dynamic>>() ?? [];
     final playlist = Playlist(
       name: d['name'] as String? ?? 'Untitled',
       description: d['description'] as String?,
       songs: tracks.map(_docToSong).toList(),
-      createdAt: (d['createdAt'] as Timestamp?)?.toDate() ??
-          DateTime.now(),
+      createdAt: (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
     playlistFirestoreIds[playlist] = doc.id;
     return playlist;
@@ -371,9 +410,12 @@ class DeviceInfo {
   final String deviceId;
   final String name;
   final String platform;
+  final DateTime? lastActiveAt;
+
   const DeviceInfo({
     required this.deviceId,
     required this.name,
     required this.platform,
+    this.lastActiveAt,
   });
 }

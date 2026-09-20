@@ -480,26 +480,29 @@ class _TransportControls extends StatelessWidget {
           constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
         ),
         const SizedBox(width: 4),
-        GestureDetector(
-          onTap: onPlayPause,
-          child: Container(
-            width: 52,
-            height: 52,
-            decoration: const BoxDecoration(
-              color: kAccent,
-              shape: BoxShape.circle,
+        Material(
+          color: kAccent,
+          shape: const CircleBorder(),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onPlayPause,
+            child: SizedBox(
+              width: 52,
+              height: 52,
+              child: Center(
+                child: isLoading
+                    ? const Padding(
+                        padding: EdgeInsets.all(14),
+                        child: CircularProgressIndicator(
+                            color: Colors.black, strokeWidth: 2.5),
+                      )
+                    : Icon(
+                        isPlaying ? Icons.pause : Icons.play_arrow,
+                        color: Colors.black,
+                        size: 28,
+                      ),
+              ),
             ),
-            child: isLoading
-                ? const Padding(
-                    padding: EdgeInsets.all(14),
-                    child: CircularProgressIndicator(
-                        color: Colors.black, strokeWidth: 2.5),
-                  )
-                : Icon(
-                    isPlaying ? Icons.pause : Icons.play_arrow,
-                    color: Colors.black,
-                    size: 28,
-                  ),
           ),
         ),
         const SizedBox(width: 4),

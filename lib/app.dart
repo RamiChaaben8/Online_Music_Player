@@ -56,15 +56,22 @@ class TuneifyApp extends StatelessWidget {
       cardColor: cardColor,
       dividerColor: const Color(0xFF282828),
       textTheme: TextTheme(
-        displayLarge: const TextStyle(color: onSurface, fontWeight: FontWeight.bold),
-        displayMedium: const TextStyle(color: onSurface, fontWeight: FontWeight.bold),
-        headlineLarge: const TextStyle(color: onSurface, fontWeight: FontWeight.bold),
-        headlineMedium: const TextStyle(color: onSurface, fontWeight: FontWeight.w700),
-        titleLarge: const TextStyle(color: onSurface, fontWeight: FontWeight.w600),
-        titleMedium: const TextStyle(color: onSurface, fontWeight: FontWeight.w500),
+        displayLarge:
+            const TextStyle(color: onSurface, fontWeight: FontWeight.bold),
+        displayMedium:
+            const TextStyle(color: onSurface, fontWeight: FontWeight.bold),
+        headlineLarge:
+            const TextStyle(color: onSurface, fontWeight: FontWeight.bold),
+        headlineMedium:
+            const TextStyle(color: onSurface, fontWeight: FontWeight.w700),
+        titleLarge:
+            const TextStyle(color: onSurface, fontWeight: FontWeight.w600),
+        titleMedium:
+            const TextStyle(color: onSurface, fontWeight: FontWeight.w500),
         bodyLarge: const TextStyle(color: onSurface),
         bodyMedium: const TextStyle(color: subtext),
-        labelLarge: const TextStyle(color: onSurface, fontWeight: FontWeight.w600),
+        labelLarge:
+            const TextStyle(color: onSurface, fontWeight: FontWeight.w600),
       ),
       appBarTheme: const AppBarTheme(
         backgroundColor: bgColor,
@@ -78,7 +85,8 @@ class TuneifyApp extends StatelessWidget {
         indicatorColor: accentGreen.withOpacity(0.2),
         labelTextStyle: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) {
-            return const TextStyle(color: accentGreen, fontSize: 12, fontWeight: FontWeight.w600);
+            return const TextStyle(
+                color: accentGreen, fontSize: 12, fontWeight: FontWeight.w600);
           }
           return const TextStyle(color: subtext, fontSize: 12);
         }),
@@ -97,10 +105,12 @@ class TuneifyApp extends StatelessWidget {
           borderRadius: BorderRadius.circular(8),
           borderSide: BorderSide.none,
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       ),
       iconTheme: const IconThemeData(color: onSurface),
-      progressIndicatorTheme: const ProgressIndicatorThemeData(color: accentGreen),
+      progressIndicatorTheme:
+          const ProgressIndicatorThemeData(color: accentGreen),
       sliderTheme: SliderThemeData(
         activeTrackColor: accentGreen,
         inactiveTrackColor: const Color(0xFF3A3A3A),
@@ -121,7 +131,8 @@ class AppShell extends ConsumerStatefulWidget {
   ConsumerState<AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends ConsumerState<AppShell> with WidgetsBindingObserver {
+class _AppShellState extends ConsumerState<AppShell>
+    with WidgetsBindingObserver {
   int _currentIndex = 0;
 
   @override
@@ -160,7 +171,17 @@ class _AppShellState extends ConsumerState<AppShell> with WidgetsBindingObserver
     // Release active-device claim when app is fully closed so another
     // device can auto-claim on next launch.
     if (state == AppLifecycleState.detached) {
-      ref.read(syncProvider.notifier).service.releaseIfActive().catchError((_) {});
+      final player = ref.read(playerProvider.notifier);
+      player.saveSession().catchError((_) {});
+      ref
+          .read(syncProvider.notifier)
+          .service
+          .releaseIfActive()
+          .catchError((_) {});
+    }
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      ref.read(playerProvider.notifier).saveSession().catchError((_) {});
     }
   }
 

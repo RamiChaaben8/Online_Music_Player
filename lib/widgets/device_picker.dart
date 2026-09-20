@@ -154,14 +154,22 @@ class DevicePickerSheet extends ConsumerWidget {
                       device: device,
                       isThisDevice: isThisDevice,
                       isActive: isCurrentlyActive,
-                      onTap: isThisDevice
-                          ? () async {
-                              await ref
-                                  .read(playerProvider.notifier)
-                                  .listenHere();
-                              if (context.mounted) Navigator.pop(context);
-                            }
-                          : null, // can't push to other device
+                      onTap: isCurrentlyActive
+                          ? null // already active, nothing to do
+                          : isThisDevice
+                              ? () async {
+                                  await ref
+                                      .read(playerProvider.notifier)
+                                      .listenHere();
+                                  if (context.mounted) Navigator.pop(context);
+                                }
+                              : () async {
+                                  // Transfer playback to another same-account device.
+                                  await ref
+                                      .read(playerProvider.notifier)
+                                      .transferToDevice(device.deviceId, device.name);
+                                  if (context.mounted) Navigator.pop(context);
+                                },
                     );
                   },
                 );
@@ -258,16 +266,14 @@ class _DeviceTile extends StatelessWidget {
       subtitle: isActive
           ? const Text('Now playing',
               style: TextStyle(color: Color(0xFF1DB954), fontSize: 12))
-          : (!isThisDevice
-              ? const Text('Open Tuneify to listen there',
+          : (isThisDevice
+              ? const Text('Tap to listen here',
                   style: TextStyle(color: Color(0xFF777777), fontSize: 12))
-              : null),
+              : const Text('Tap to transfer here',
+                  style: TextStyle(color: Color(0xFF777777), fontSize: 12))),
       trailing: isActive
           ? const Icon(Icons.volume_up, color: Color(0xFF1DB954), size: 20)
-          : (isThisDevice && !isActive
-              ? const Text('Tap to listen here',
-                  style: TextStyle(color: Color(0xFFB3B3B3), fontSize: 12))
-              : null),
+          : null,
       onTap: onTap,
     );
   }

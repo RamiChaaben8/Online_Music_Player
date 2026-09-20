@@ -10,6 +10,7 @@
 // ============================================================
 
 import 'dart:io';
+import 'dart:math';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
@@ -58,15 +59,15 @@ class DeviceIdService {
 
   /// Simple UUID v4 generator (no external dependency needed).
   String _generateUuid() {
-    final now = DateTime.now().microsecondsSinceEpoch;
-    final rand = now ^ (now >> 32);
-    // Build a simple random-enough hex string formatted as UUID v4
-    final hex = rand.toRadixString(16).padLeft(16, '0');
+    final bytes = List<int>.generate(16, (_) => Random.secure().nextInt(256));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
     return '${hex.substring(0, 8)}-'
         '${hex.substring(8, 12)}-'
-        '4${hex.substring(13, 16)}-'
-        '${(8 + (now & 3)).toRadixString(16)}${hex.substring(1, 4)}-'
-        '${DateTime.now().millisecondsSinceEpoch.toRadixString(16).padLeft(12, '0')}';
+        '${hex.substring(12, 16)}-'
+        '${hex.substring(16, 20)}-'
+        '${hex.substring(20, 32)}';
   }
 }
 

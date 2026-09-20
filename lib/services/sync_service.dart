@@ -89,6 +89,7 @@ class SyncService {
 
   StreamSubscription? _cmdSub;
   StreamSubscription? _activeDeviceSub;
+  Timer? _heartbeatTimer;
 
   // Broadcast stream of remote commands — PlayerNotifier listens.
   final StreamController<RemoteCommandDoc> _cmdController =
@@ -117,6 +118,13 @@ class SyncService {
     final platform = _detectPlatform();
 
     await _fs.registerDevice(uid, _deviceId!, _deviceName!, platform);
+    await _fs.removeStaleDevices(uid, keepDeviceId: _deviceId!);
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      _fs
+          .registerDevice(uid, _deviceId!, _deviceName!, platform)
+          .catchError((_) {});
+    });
 
     // Subscribe to remote commands.
     _cmdSub?.cancel();
@@ -137,6 +145,8 @@ class SyncService {
     _cmdSub = null;
     _activeDeviceSub?.cancel();
     _activeDeviceSub = null;
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
     _isActive = false;
     _uid = null;
     _deviceId = null;
@@ -149,8 +159,8 @@ class SyncService {
     final doc = RemoteCommandDoc.fromMap(raw);
     // Ignore commands we sent ourselves.
     if (doc.deviceId == _deviceId) return;
-    // Only execute commands if THIS device is the active device.
-    if (!_isActive) return;
+    // Emit to ALL devices (active AND passive).
+    // Active device will EXECUTE; passive device will OBSERVE (UI sync only).
     _cmdController.add(doc);
   }
 
@@ -175,6 +185,15 @@ class SyncService {
     _isActive = false;
   }
 
+  /// Transfer active playback to another device by claiming it as active.
+  /// This device becomes passive immediately.
+  Future<void> transferToDevice(
+      String targetDeviceId, String targetDeviceName) async {
+    if (_uid == null) return;
+    await _fs.claimActiveDevice(_uid!, targetDeviceId, targetDeviceName);
+    _isActive = false;
+  }
+
   // ── Write API ─────────────────────────────────────────────────────────────
 
   Future<void> sendCommand({
@@ -189,6 +208,21 @@ class SyncService {
       deviceId: _deviceId!,
       deviceName: _deviceName ?? 'Unknown',
       command: command.name,
+      currentSong: currentSong,
+      queue: queue,
+      queueIndex: queueIndex,
+    );
+  }
+
+  /// Persist the current queue and track without asking another device to
+  /// perform an action. Used during app backgrounding/shutdown.
+  Future<void> savePlaybackState({
+    required Song? currentSong,
+    required List<Song> queue,
+    required int queueIndex,
+  }) {
+    return sendCommand(
+      command: RemoteCommand.none,
       currentSong: currentSong,
       queue: queue,
       queueIndex: queueIndex,
