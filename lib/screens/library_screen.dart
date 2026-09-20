@@ -10,6 +10,9 @@ import '../providers/local_music_provider.dart';
 import '../models/playlist.dart';
 import '../models/song.dart';
 import '../screens/playlist_screen.dart';
+import '../providers/auth_provider.dart';
+import '../providers/player_provider.dart';
+import 'auth/delete_account_screen.dart';
 
 /// Which songs to show in playlist/library screens.
 enum SongFilter { all, local, online }
@@ -48,11 +51,60 @@ class LibraryScreen extends ConsumerWidget {
             tooltip: 'Create playlist',
             onPressed: () => _showCreatePlaylistDialog(context, ref),
           ),
+          // Account menu
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.account_circle_outlined),
+            tooltip: 'Account',
+            onSelected: (v) async {
+              if (v == 'signout') {
+                await ref.read(playerProvider.notifier).pause().catchError((_) {});
+                await ref.read(authServiceProvider).signOut();
+              } else if (v == 'delete') {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const DeleteAccountScreen()),
+                );
+              }
+            },
+            itemBuilder: (_) => [
+              const PopupMenuItem(
+                value: 'signout',
+                child: Row(
+                  children: [
+                    Icon(Icons.logout, size: 18, color: Colors.white70),
+                    SizedBox(width: 10),
+                    Text('Sign Out'),
+                  ],
+                ),
+              ),
+              const PopupMenuDivider(),
+              const PopupMenuItem(
+                value: 'delete',
+                child: Row(
+                  children: [
+                    Icon(Icons.delete_forever,
+                        size: 18, color: Colors.redAccent),
+                    SizedBox(width: 10),
+                    Text('Delete Account',
+                        style: TextStyle(color: Colors.redAccent)),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ],
       ),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // ── Firestore loading bar ───────────────────────────────────────
+          if (library.isLoading)
+            const LinearProgressIndicator(
+              backgroundColor: Color(0xFF1A1A1A),
+              color: Color(0xFF1DB954),
+              minHeight: 2,
+            ),
           // ── Filter chips ────────────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
@@ -400,7 +452,7 @@ class _PlaylistTile extends ConsumerWidget {
           builder: (_) => PlaylistScreen(
             title: playlist.name,
             songs: playlist.songs,
-            playlistKey: playlist.key as int?,
+            playlist: playlist,
           ),
         ),
       ),
@@ -458,8 +510,8 @@ class _PlaylistTile extends ConsumerWidget {
           TextButton(
             onPressed: () {
               if (controller.text.trim().isNotEmpty) {
-                ref.read(libraryProvider.notifier).renamePlaylist(
-                    playlist.key as int, controller.text.trim());
+                ref.read(libraryProvider.notifier).renamePlaylistObj(
+                    playlist, controller.text.trim());
                 Navigator.pop(context);
               }
             },
@@ -492,7 +544,7 @@ class _PlaylistTile extends ConsumerWidget {
             onPressed: () {
               ref
                   .read(libraryProvider.notifier)
-                  .deletePlaylist(playlist.key as int);
+                  .deletePlaylistObj(playlist);
               Navigator.pop(context);
             },
             child:

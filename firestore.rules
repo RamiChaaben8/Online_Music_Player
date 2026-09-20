@@ -1,0 +1,59 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── User root + all subcollections ────────────────────────────────────
+    // A user can only read and write their own data.
+    match /users/{uid}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // ── Tighter per-collection validation ────────────────────────────────
+
+    match /users/{uid}/playlists/{playlistId} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+
+      allow create: if request.auth != null
+                    && request.auth.uid == uid
+                    && request.resource.data.name is string
+                    && request.resource.data.name.size() > 0
+                    && request.resource.data.name.size() <= 100
+                    && request.resource.data.tracks is list
+                    && request.resource.data.tracks.size() <= 500;
+
+      allow update: if request.auth != null
+                    && request.auth.uid == uid
+                    && request.resource.data.name is string
+                    && request.resource.data.name.size() > 0
+                    && request.resource.data.name.size() <= 100
+                    && request.resource.data.tracks is list
+                    && request.resource.data.tracks.size() <= 500;
+
+      allow delete: if request.auth != null && request.auth.uid == uid;
+    }
+
+    match /users/{uid}/likes/{trackId} {
+      allow read, delete: if request.auth != null && request.auth.uid == uid;
+
+      allow write: if request.auth != null
+                   && request.auth.uid == uid
+                   && request.resource.data.id is string
+                   && request.resource.data.title is string
+                   && request.resource.data.title.size() <= 500;
+    }
+
+    match /users/{uid}/state/playback {
+      allow read: if request.auth != null && request.auth.uid == uid;
+
+      allow write: if request.auth != null
+                   && request.auth.uid == uid
+                   && request.resource.data.queue is list
+                   && request.resource.data.queue.size() <= 200
+                   && request.resource.data.deviceId is string;
+    }
+
+    match /users/{uid}/devices/{deviceId} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+  }
+}

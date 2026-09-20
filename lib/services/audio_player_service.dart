@@ -56,6 +56,10 @@ class AudioPlayerService {
 
   StreamSubscription<PlayerState>? _completionSub;
 
+  // Serial counter — incremented on every _loadAndPlay call.
+  // Used by the setAudioSource callback to discard itself if superseded.
+  int _loadSerial = 0;
+
   final StreamController<String> _errorController =
       StreamController<String>.broadcast();
   Stream<String> get errorStream => _errorController.stream;
@@ -189,6 +193,10 @@ class AudioPlayerService {
     _completionSub?.cancel();
     _completionSub = null;
 
+    // Stamp this load. If another _loadAndPlay starts before setAudioSource
+    // resolves, the stale callback will see a different serial and skip play().
+    final mySerial = ++_loadSerial;
+
     final mediaItem = MediaItem(
       id: song.id,
       title: song.title,
@@ -199,15 +207,18 @@ class AudioPlayerService {
 
     AudioSource source;
 
-    // Check if song is local OR if we have a downloaded copy on disk
     final localPath = song.isLocal && song.localPath != null
         ? song.localPath
         : await _findDownloadedFile(song);
+
+    // After an await, check if we've been superseded.
+    if (_loadSerial != mySerial) return;
 
     if (localPath != null) {
       source = AudioSource.file(localPath, tag: mediaItem);
     } else {
       final streamUrl = await _youtube.getAudioStreamUrl(song.id);
+      if (_loadSerial != mySerial) return; // superseded during URL fetch
       _persistStreamUrl(song, streamUrl);
 
       source = AudioSource.uri(
@@ -222,22 +233,27 @@ class AudioPlayerService {
       );
     }
 
-    _player
-        .setAudioSource(source, preload: true)
-        .then((_) => _player.play())
-        .catchError((e) {
-          _errorController.add(
-            e is YoutubeServiceException ? e.message : 'Playback failed: $e',
-          );
-        });
+    // Await setAudioSource so errors surface correctly, then play if still current.
+    try {
+      await _player.setAudioSource(source, preload: true);
+      if (_loadSerial == mySerial) {
+        await _player.play();
+      }
+    } catch (e) {
+      if (_loadSerial == mySerial) {
+        _errorController.add(
+          e is YoutubeServiceException ? e.message : 'Playback failed: $e',
+        );
+      }
+      return;
+    }
 
-    // Notify listeners that the song has changed (cover art, title, etc.)
+    // Only notify / prefetch / subscribe if this load is still current.
+    if (_loadSerial != mySerial) return;
+
     _songChangeController.add(song);
-
     _prefetchNext();
 
-    // ── Skip on natural completion ────────────────────────────────
-    // Fires when just_audio reaches the end of the track.
     _completionSub = _player.playerStateStream.listen((ps) {
       if (ps.processingState == ProcessingState.completed &&
           _loopMode != LoopMode.one) {

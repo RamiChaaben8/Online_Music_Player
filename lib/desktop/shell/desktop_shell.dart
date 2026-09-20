@@ -9,7 +9,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/playlist.dart';
 import '../../providers/local_music_provider.dart';
 import '../../providers/panel_provider.dart';
+import '../../providers/sync_provider.dart';
 import '../../providers/youtube_provider.dart';
+import '../../services/firestore_service.dart';
 import '../home/desktop_home_view.dart';
 import '../now_playing/desktop_now_playing_panel.dart';
 import '../player/desktop_player_bar.dart';
@@ -20,6 +22,8 @@ import '../sidebar/desktop_sidebar.dart';
 import '../theme/desktop_theme.dart';
 import '../desktop_search_view.dart';
 import 'desktop_title_bar.dart';
+import '../../widgets/remote_playback_banner.dart';
+import '../../widgets/offline_indicator.dart';
 
 class DesktopShell extends ConsumerStatefulWidget {
   const DesktopShell({super.key});
@@ -40,13 +44,26 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
 
   void _navigateTo(int view, {Playlist? playlist}) {
     if (_currentView == view &&
-        (view != 2 || _viewedPlaylist?.key == playlist?.key)) { return; }
+        (view != 2 || _isSamePlaylist(_viewedPlaylist, playlist))) { return; }
     setState(() {
       _history.removeRange(_historyIndex + 1, _history.length);
       _history.add(view);
       _historyIndex = _history.length - 1;
       if (view == 2) { _viewedPlaylist = playlist; }
     });
+  }
+
+  /// Returns true if [a] and [b] refer to the same playlist.
+  bool _isSamePlaylist(Playlist? a, Playlist? b) {
+    if (a == null && b == null) return true;
+    if (a == null || b == null) return false;
+    final aFsId = a.firestoreId;
+    final bFsId = b.firestoreId;
+    if (aFsId != null && bFsId != null) return aFsId == bFsId;
+    final aKey = a.key;
+    final bKey = b.key;
+    if (aKey != null && bKey != null) return aKey == bKey;
+    return a.name == b.name && a.createdAt == b.createdAt;
   }
 
   void _goBack() {
@@ -63,6 +80,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    AppThemeNotifier.instance.addListener(_onThemeChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(localMusicProvider.notifier).scan();
     });
@@ -71,13 +89,21 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    AppThemeNotifier.instance.removeListener(_onThemeChanged);
     super.dispose();
   }
+
+  void _onThemeChanged() => setState(() {});
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       ref.read(localMusicProvider.notifier).scan();
+    }
+    // Release active-device claim when app is fully closed so another
+    // device can auto-claim on next launch.
+    if (state == AppLifecycleState.detached) {
+      ref.read(syncProvider.notifier).service.releaseIfActive().catchError((_) {});
     }
   }
 
@@ -86,7 +112,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
     final panelMode = ref.watch(panelModeProvider);
 
     return Scaffold(
-      backgroundColor: kBgColor,
+      backgroundColor: AppThemeNotifier.instance.value.bgColor,
       body: LayoutBuilder(
         builder: (context, constraints) {
           final wideEnough = constraints.maxWidth >= 1100;
@@ -154,6 +180,9 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
 
               const SizedBox(height: 8),
 
+              // ── Offline indicator ─────────────────────────────────
+              const OfflineIndicator(),
+
               // ── Player bar ────────────────────────────────────────
               const DesktopPlayerBar(),
             ],
@@ -167,6 +196,13 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
           return Stack(
             children: [
               shell,
+              // Cross-device banner (top of shell, below title bar)
+              const Positioned(
+                top: 40, // below title bar
+                left: 0,
+                right: 0,
+                child: RemotePlaybackBanner(),
+              ),
               if (panelMode == PanelMode.lyrics)
                 LyricsPanel(
                   key: const ValueKey('lyrics_overlay'),
@@ -189,7 +225,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
         final p = _viewedPlaylist;
         if (p != null) {
           return DesktopPlaylistView(
-            key: ValueKey('playlist_${p.key ?? p.name}'),
+            key: ValueKey('playlist_${p.firestoreId ?? p.key ?? p.name}'),
             playlist: p,
           );
         }

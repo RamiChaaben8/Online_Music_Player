@@ -22,6 +22,7 @@ import '../screens/queue_screen.dart';
 import '../providers/download_provider.dart';
 import '../widgets/add_to_playlist_sheet.dart';
 import '../widgets/video_preview_widget.dart';
+import '../widgets/device_picker.dart';
 
 class NowPlayingScreen extends ConsumerStatefulWidget {
   const NowPlayingScreen({super.key});
@@ -68,6 +69,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
         ),
         centerTitle: true,
         actions: [
+          const DevicePickerButton(size: 22),
           // Video preview toggle (only for YouTube tracks)
           if (!song.isLocal)
             IconButton(

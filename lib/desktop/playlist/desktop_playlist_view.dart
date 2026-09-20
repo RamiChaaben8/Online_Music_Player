@@ -13,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/playlist.dart';
 import '../../models/song.dart';
+import '../../services/firestore_service.dart';
 import '../../providers/library_provider.dart';
 import '../../providers/player_provider.dart';
 import '../../widgets/song_context_menu.dart';
@@ -28,7 +29,14 @@ class DesktopPlaylistView extends ConsumerWidget {
     // Always read the live version from the provider so edits reflect instantly
     final library = ref.watch(libraryProvider);
     final live = library.playlists.firstWhere(
-      (p) => p.key == playlist.key,
+      (p) {
+        // Prefer Firestore ID match, fall back to Hive key
+        final fsId = playlist.firestoreId;
+        if (fsId != null && p.firestoreId == fsId) return true;
+        final hiveKey = playlist.key;
+        if (hiveKey != null && p.key == hiveKey) return true;
+        return false;
+      },
       orElse: () => playlist,
     );
     final songs = live.songs;

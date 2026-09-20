@@ -2,6 +2,11 @@
 cmake_minimum_required(VERSION 3.14)
 project(testf LANGUAGES CXX)
 
+# Fix for Firebase C++ SDK shipping a CMakeLists.txt that requires CMake < 3.5.
+# Modern CMake (3.27+) removed compatibility with those old minimum versions.
+# This tells CMake to allow the old policy behaviour when processing the SDK.
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.
 set(BINARY_NAME "testf")

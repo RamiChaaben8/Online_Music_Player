@@ -12,9 +12,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/playlist.dart';
-import '../../models/song.dart';
 import '../../providers/library_provider.dart';
+import '../../services/firestore_service.dart';
 import '../../providers/player_provider.dart';
+import '../../providers/auth_provider.dart';
+import '../../screens/auth/delete_account_screen.dart';
 import '../theme/desktop_theme.dart';
 
 class DesktopSidebar extends ConsumerStatefulWidget {
@@ -35,6 +37,18 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
   bool _collapsed = false;
 
   static const double _kCollapsedWidth = 64.0;
+
+  /// Returns true if [a] and [b] refer to the same playlist.
+  /// Prefers Firestore ID comparison, falls back to Hive key, then name+createdAt.
+  bool _isSamePlaylist(Playlist a, Playlist b) {
+    final aFsId = a.firestoreId;
+    final bFsId = b.firestoreId;
+    if (aFsId != null && bFsId != null) return aFsId == bFsId;
+    final aKey = a.key;
+    final bKey = b.key;
+    if (aKey != null && bKey != null) return aKey == bKey;
+    return a.name == b.name && a.createdAt == b.createdAt;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -110,7 +124,8 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
               final thumbUrl = pl.songs.isNotEmpty
                   ? pl.songs.first.thumbnailUrl
                   : '';
-              final isActive = widget.selectedPlaylist?.key == pl.key;
+              final isActive = widget.selectedPlaylist != null &&
+                  _isSamePlaylist(widget.selectedPlaylist!, pl);
               return Tooltip(
                 message: pl.name,
                 child: _IconOnlyTile(
@@ -174,6 +189,19 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
                       const EdgeInsets.symmetric(horizontal: 8),
                   minimumSize: Size.zero,
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+              // Sign-out button
+              Tooltip(
+                message: 'Sign out',
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () => _confirmSignOut(context),
+                  child: const Padding(
+                    padding: EdgeInsets.all(6),
+                    child: Icon(Icons.logout,
+                        color: Color(0xFFB3B3B3), size: 18),
+                  ),
                 ),
               ),
             ],
@@ -262,8 +290,8 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
                 )
               else
                 ...library.playlists.map((playlist) {
-                  final isActive =
-                      widget.selectedPlaylist?.key == playlist.key;
+                  final isActive = widget.selectedPlaylist != null &&
+                      _isSamePlaylist(widget.selectedPlaylist!, playlist);
                   return _PlaylistTile(
                     playlist: playlist,
                     isActive: isActive,
@@ -278,6 +306,58 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
         ),
       ],
     );
+  }
+
+  Future<void> _confirmSignOut(BuildContext context) async {
+    final action = await showDialog<_SignOutAction>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E2E),
+        title: const Text('Account',
+            style: TextStyle(color: Colors.white)),
+        content: const Text(
+          'What would you like to do?',
+          style: TextStyle(color: Color(0xFFB3B3B3)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel',
+                style: TextStyle(color: Color(0xFFB3B3B3))),
+          ),
+          TextButton(
+            onPressed: () =>
+                Navigator.pop(ctx, _SignOutAction.deleteAccount),
+            child: const Text('Delete Account',
+                style: TextStyle(color: Colors.redAccent)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: kAccent, foregroundColor: Colors.black),
+            onPressed: () =>
+                Navigator.pop(ctx, _SignOutAction.signOut),
+            child: const Text('Sign Out'),
+          ),
+        ],
+      ),
+    );
+
+    if (!mounted) return;
+
+    switch (action) {
+      case _SignOutAction.signOut:
+        await ref.read(playerProvider.notifier).pause().catchError((_) {});
+        await ref.read(authServiceProvider).signOut();
+      case _SignOutAction.deleteAccount:
+        if (!mounted) return;
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+              builder: (_) => const DeleteAccountScreen()),
+        );
+      case null:
+        break;
+    }
   }
 
   Future<void> _showCreatePlaylistDialog(BuildContext context) async {
@@ -328,6 +408,9 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
     }
   }
 }
+
+// Top-level enum — cannot be declared inside a class in Dart
+enum _SignOutAction { signOut, deleteAccount }
 
 // ─── Icon-only tile (collapsed mode) ─────────────────────────────────────────
 
@@ -691,7 +774,7 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
     if (name != null && name.isNotEmpty && mounted) {
       await ref
           .read(libraryProvider.notifier)
-          .renamePlaylist(widget.playlist.key as int, name);
+          .renamePlaylistObj(widget.playlist, name);
     }
   }
 
@@ -725,7 +808,7 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
     if (confirmed == true && mounted) {
       await ref
           .read(libraryProvider.notifier)
-          .deletePlaylist(widget.playlist.key as int);
+          .deletePlaylistObj(widget.playlist);
     }
   }
 }
@@ -750,14 +833,9 @@ class _LikedSongsTile extends StatefulWidget {
 }
 
 class _LikedSongsTileState extends State<_LikedSongsTile> {
-  bool _hovering = false;
-
   @override
   Widget build(BuildContext context) {
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hovering = true),
-      onExit:  (_) => setState(() => _hovering = false),
-      child: Material(
+    return Material(
         color: widget.isActive
             ? const Color(0xFF1A2A1A)
             : Colors.transparent,
@@ -824,7 +902,6 @@ class _LikedSongsTileState extends State<_LikedSongsTile> {
             ),
           ),
         ),
-      ),
     );
   }
 }

@@ -18,6 +18,9 @@ class LibraryService {
   Box<Song> get _recentBox => Hive.box<Song>('recently_played');
   Box<Playlist> get _playlistsBox => Hive.box<Playlist>('playlists');
 
+  /// Exposed for FirestoreService sync (mirrors server-side likes to local cache).
+  Box<Song> get likedBox => _likedBox;
+
   static const int _maxRecent = 50;
 
   // ── Liked songs ───────────────────────────────────────────────────────────

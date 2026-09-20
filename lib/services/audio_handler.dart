@@ -1,5 +1,19 @@
 // ============================================================
 // services/audio_handler.dart
+//
+// Bridges audio_service (OS media buttons / notification) with
+// the app's AudioPlayerService.
+//
+// Media button routing
+// ─────────────────────────────────────────────────────────────
+// OS media buttons (lock-screen, headset, BT remote) call the
+// BaseAudioHandler overrides (play, pause, skipToNext, …).
+// These MUST go through PlayerNotifier so that:
+//   • Every action triggers a remote-command write via _sendCommand
+//
+// To avoid a circular dependency (handler → notifier → handler),
+// we use a late-bound callback set: [onPlay], [onPause], etc.
+// PlayerNotifier sets these after construction.
 // ============================================================
 
 import 'dart:async';
@@ -15,6 +29,15 @@ class TuneifyAudioHandler extends BaseAudioHandler with SeekHandler {
   final List<StreamSubscription> _subs = [];
 
   AudioPlayerService get service => _service;
+
+  // ── Media-button callbacks set by PlayerNotifier ──────────────────────────
+  // These route OS button presses through the notifier so remote-command
+  // writes are handled correctly.
+  Future<void> Function()? onPlay;
+  Future<void> Function()? onPause;
+  Future<void> Function()? onSkipToNext;
+  Future<void> Function()? onSkipToPrevious;
+  Future<void> Function(Duration)? onSeek;
 
   TuneifyAudioHandler(this._service) {
     _subs.add(_service.playerStateStream.listen(_onPlayerState));
@@ -60,8 +83,7 @@ class TuneifyAudioHandler extends BaseAudioHandler with SeekHandler {
     required bool playing,
     required AudioProcessingState processingState,
   }) {
-    final queue = _service.queue;
-    final idx   = _service.currentIndex;
+    final idx = _service.currentIndex;
 
     playbackState.add(PlaybackState(
       controls: [
@@ -115,7 +137,6 @@ class TuneifyAudioHandler extends BaseAudioHandler with SeekHandler {
 
     final item = MediaItem(
       id: current.id,
-      // Keep title and artist separate so Android can scroll/show them properly
       title: current.title,
       artist: current.channelName,
       album: next != null ? 'Next: ${next.title}' : 'Tuneify',
@@ -147,15 +168,64 @@ class TuneifyAudioHandler extends BaseAudioHandler with SeekHandler {
     return q[(idx + 1) % q.length];
   }
 
-  @override Future<void> play()   => _service.play();
-  @override Future<void> pause()  => _service.pause();
-  @override Future<void> seek(Duration position) => _service.seek(position);
-  @override Future<void> skipToNext()     => _service.skipToNext();
-  @override Future<void> skipToPrevious() => _service.skipToPrevious();
+  // ── BaseAudioHandler overrides (OS media buttons) ─────────────────────────
+  // Always route through PlayerNotifier callbacks when set.
+  // The callbacks are wired by PlayerNotifier immediately after construction,
+  // so the fallback path (direct _service call) only executes during the very
+  // brief window between audio_service init and ProviderScope setup —
+  // i.e. before there is any song to play anyway.
+  //
+  // IMPORTANT: do NOT call _service.play/skipToNext/etc. as the fallback
+  // because that bypasses remote-command writes in PlayerNotifier.
+  // We simply no-op when callbacks are not yet wired, which is safe because
+  // no music is loaded at that point.
+
+  @override
+  Future<void> play() async {
+    if (onPlay != null) {
+      await onPlay!();
+    }
+    // No fallback — media buttons before the notifier is wired are no-ops.
+  }
+
+  @override
+  Future<void> pause() async {
+    if (onPause != null) {
+      await onPause!();
+    } else {
+      // Safe to pause directly — pausing never causes state divergence.
+      await _service.pause();
+    }
+  }
+
+  @override
+  Future<void> seek(Duration position) async {
+    if (onSeek != null) {
+      await onSeek!(position);
+    } else {
+      await _service.seek(position);
+    }
+  }
+
+  @override
+  Future<void> skipToNext() async {
+    if (onSkipToNext != null) {
+      await onSkipToNext!();
+    }
+    // No fallback — skip before notifier is wired is a no-op.
+  }
+
+  @override
+  Future<void> skipToPrevious() async {
+    if (onSkipToPrevious != null) {
+      await onSkipToPrevious!();
+    }
+    // No fallback — skip before notifier is wired is a no-op.
+  }
 
   @override
   Future<void> stop() async {
-    await _service.pause();
+    await (onPause?.call() ?? _service.pause());
     playbackState.add(playbackState.value.copyWith(
       processingState: AudioProcessingState.idle,
     ));

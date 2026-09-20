@@ -3,12 +3,16 @@
 // ============================================================
 
 import 'package:audio_service/audio_service.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'package:fvp/fvp.dart' as fvp;
 import 'dart:io';
+
+import 'firebase_options.dart';
 
 import 'models/song.dart';
 import 'models/playlist.dart';
@@ -24,6 +28,19 @@ late final TuneifyAudioHandler audioHandler;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialise Firebase first — required before any Firebase service is used.
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+
+  // Enable Firestore offline persistence.
+  // On mobile this is the default; on Web/Desktop we enable it explicitly.
+  // This lets the app read/write while offline and sync when back online.
+  FirebaseFirestore.instance.settings = const Settings(
+    persistenceEnabled: true,
+    cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+  );
 
   await Hive.initFlutter();
   Hive.registerAdapter(SongAdapter());
@@ -55,34 +72,48 @@ Future<void> main() async {
     'platforms': ['windows', 'linux', 'macos'],
   });
 
-  // Register the audio handler with the OS.
-  // audio_service takes over notification management from just_audio_background.
-  audioHandler = await AudioService.init(
-    builder: () {
-      final yt = YoutubeService();
-      final player = AudioPlayerService(yt);
-      return TuneifyAudioHandler(player);
-    },
-    config: AudioServiceConfig(
-      // Android-only notification fields — audio_service requires non-null
-      // Strings, so we pass empty strings on desktop (they are ignored).
-      androidNotificationChannelId: Platform.isAndroid
-          ? 'com.example.testf.channel.audio'
-          : 'tuneify.desktop',
-      androidNotificationChannelName:
-          Platform.isAndroid ? 'Tuneify' : 'Tuneify',
-      androidShowNotificationBadge: Platform.isAndroid,
-      androidNotificationIcon: Platform.isAndroid
-          ? 'drawable/ic_notification'
-          : 'mipmap/ic_launcher',
-      // On Android: keep foreground service alive when paused (lock-screen resume).
-      // On desktop: must be true (no foreground service concept).
-      androidStopForegroundOnPause: !Platform.isAndroid,
-      notificationColor: const Color(0xFF1DB954),
-      artDownscaleWidth: 300,
-      artDownscaleHeight: 300,
-    ),
-  );
+  // ── Audio handler initialisation ─────────────────────────────────────────
+  //
+  // audio_service only supports Android, iOS, macOS and Web.
+  // On Windows it has no platform implementation — AudioService.init() calls
+  // the builder but wraps the result in a stub that silently no-ops every
+  // transport call (play, pause, skipToNext, …), making ALL playback broken.
+  //
+  // Fix: on Windows, construct TuneifyAudioHandler directly — no wrapping,
+  // no stub.  just_audio + just_audio_media_kit handle the actual audio.
+  // We simply don't get OS media-key integration on Windows (which
+  // audio_service wouldn't provide anyway since it has no Windows impl).
+  //
+  // On Android/iOS/macOS AudioService.init keeps working normally for
+  // lock-screen controls, notifications and the foreground service.
+  if (Platform.isWindows || Platform.isLinux) {
+    final yt     = YoutubeService();
+    final player = AudioPlayerService(yt);
+    audioHandler = TuneifyAudioHandler(player);
+  } else {
+    audioHandler = await AudioService.init(
+      builder: () {
+        final yt     = YoutubeService();
+        final player = AudioPlayerService(yt);
+        return TuneifyAudioHandler(player);
+      },
+      config: AudioServiceConfig(
+        androidNotificationChannelId: Platform.isAndroid
+            ? 'com.example.testf.channel.audio'
+            : 'tuneify.desktop',
+        androidNotificationChannelName:
+            Platform.isAndroid ? 'Tuneify' : 'Tuneify',
+        androidShowNotificationBadge: Platform.isAndroid,
+        androidNotificationIcon: Platform.isAndroid
+            ? 'drawable/ic_notification'
+            : 'mipmap/ic_launcher',
+        androidStopForegroundOnPause: !Platform.isAndroid,
+        notificationColor: const Color(0xFF1DB954),
+        artDownscaleWidth: 300,
+        artDownscaleHeight: 300,
+      ),
+    );
+  }
 
   runApp(ProviderScope(
     overrides: [

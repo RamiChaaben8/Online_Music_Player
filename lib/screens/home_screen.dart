@@ -20,7 +20,6 @@ import '../models/song.dart';
 import '../providers/home_provider.dart';
 import '../providers/library_provider.dart';
 import '../providers/player_provider.dart';
-import '../screens/now_playing_screen.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});

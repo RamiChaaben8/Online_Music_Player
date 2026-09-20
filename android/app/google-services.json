@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "210995583890",
+    "project_id": "ytspotify-aa97c",
+    "storage_bucket": "ytspotify-aa97c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:210995583890:android:c32b1e0dea4386c1a57f4b",
+        "android_client_info": {
+          "package_name": "com.example.testf"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "210995583890-e3muu65e68qcf92sfi84k38lcf44t2h7.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDGFYdmV8MpsbLMUV-A_gD1X9GFfOI3iwU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "210995583890-e3muu65e68qcf92sfi84k38lcf44t2h7.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,7 +1,6 @@
 // ============================================================
 // desktop/desktop_app.dart
 // Root widget for Windows — wraps DesktopShell in MaterialApp.
-// Used only on Platform.isWindows; Android uses TuneifyApp/AppShell.
 // ============================================================
 
 import 'package:flutter/material.dart';
@@ -14,50 +13,45 @@ class DesktopApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Tuneify',
-      debugShowCheckedModeBanner: false,
-      theme: _buildDesktopTheme(),
-      home: const DesktopShell(),
+    return AppThemeBuilder(
+      builder: (context, theme) => MaterialApp(
+        title: 'Tuneify',
+        debugShowCheckedModeBanner: false,
+        theme: _buildDesktopTheme(theme),
+        home: const DesktopShell(),
+      ),
     );
   }
 
-  ThemeData _buildDesktopTheme() {
+  ThemeData _buildDesktopTheme(AppThemeData t) {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
-      scaffoldBackgroundColor: kBgColor,
-      colorScheme: const ColorScheme.dark(
-        primary: kAccent,
-        secondary: kAccent,
-        surface: kPanelColor,
-        onSurface: kTextPrimary,
+      scaffoldBackgroundColor: t.bgColor,
+      colorScheme: ColorScheme.dark(
+        primary: t.accent,
+        secondary: t.accent,
+        surface: t.panelColor,
+        onSurface: t.textPrimary,
         onPrimary: Colors.black,
       ),
-      cardColor: kCardColor,
-      dividerColor: kBorderColor,
-      textTheme: const TextTheme(
-        displayLarge: TextStyle(
-            color: kTextPrimary, fontWeight: FontWeight.bold),
-        displayMedium: TextStyle(
-            color: kTextPrimary, fontWeight: FontWeight.bold),
-        headlineLarge: TextStyle(
-            color: kTextPrimary, fontWeight: FontWeight.bold),
-        headlineMedium: TextStyle(
-            color: kTextPrimary, fontWeight: FontWeight.w700),
-        titleLarge: TextStyle(
-            color: kTextPrimary, fontWeight: FontWeight.w600),
-        titleMedium: TextStyle(
-            color: kTextPrimary, fontWeight: FontWeight.w500),
-        bodyLarge: TextStyle(color: kTextPrimary),
-        bodyMedium: TextStyle(color: kTextSecondary),
-        labelLarge: TextStyle(
-            color: kTextPrimary, fontWeight: FontWeight.w600),
+      cardColor: t.cardColor,
+      dividerColor: t.borderColor,
+      textTheme: TextTheme(
+        displayLarge:  TextStyle(color: t.textPrimary, fontWeight: FontWeight.bold),
+        displayMedium: TextStyle(color: t.textPrimary, fontWeight: FontWeight.bold),
+        headlineLarge: TextStyle(color: t.textPrimary, fontWeight: FontWeight.bold),
+        headlineMedium:TextStyle(color: t.textPrimary, fontWeight: FontWeight.w700),
+        titleLarge:    TextStyle(color: t.textPrimary, fontWeight: FontWeight.w600),
+        titleMedium:   TextStyle(color: t.textPrimary, fontWeight: FontWeight.w500),
+        bodyLarge:     TextStyle(color: t.textPrimary),
+        bodyMedium:    TextStyle(color: t.textSecondary),
+        labelLarge:    TextStyle(color: t.textPrimary, fontWeight: FontWeight.w600),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: const Color(0xFF2A2A2A),
-        hintStyle: const TextStyle(color: kTextSecondary),
+        fillColor: t.cardColor,
+        hintStyle: TextStyle(color: t.textSecondary),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
           borderSide: BorderSide.none,
@@ -65,21 +59,20 @@ class DesktopApp extends StatelessWidget {
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       ),
-      iconTheme: const IconThemeData(color: kTextPrimary),
+      iconTheme: IconThemeData(color: t.textPrimary),
       progressIndicatorTheme:
-          const ProgressIndicatorThemeData(color: kAccent),
+          ProgressIndicatorThemeData(color: t.accent),
       sliderTheme: SliderThemeData(
-        activeTrackColor: kAccent,
-        inactiveTrackColor: const Color(0xFF3A3A3A),
-        thumbColor: Colors.white,
-        overlayColor: kAccent.withOpacity(0.2),
+        activeTrackColor:   t.accent,
+        inactiveTrackColor: t.borderColor,
+        thumbColor:         Colors.white,
+        overlayColor:       t.accent.withValues(alpha: 0.2),
         trackHeight: 3,
-        thumbShape:
-            const RoundSliderThumbShape(enabledThumbRadius: 6),
+        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
       ),
       scrollbarTheme: ScrollbarThemeData(
-        thumbColor: WidgetStateProperty.all(kBorderColor),
-        thickness: WidgetStateProperty.all(4),
+        thumbColor: WidgetStateProperty.all(t.borderColor),
+        thickness:  WidgetStateProperty.all(4),
         radius: const Radius.circular(2),
       ),
     );

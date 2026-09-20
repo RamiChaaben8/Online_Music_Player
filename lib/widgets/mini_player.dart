@@ -14,6 +14,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 
 import '../providers/player_provider.dart';
 import '../screens/now_playing_screen.dart';
+import 'device_picker.dart';
 
 class MiniPlayer extends ConsumerWidget {
   const MiniPlayer({super.key});
@@ -168,6 +169,7 @@ class MiniPlayer extends ConsumerWidget {
                     ref.read(playerProvider.notifier).skipToNext(),
                 tooltip: 'Next',
               ),
+              DevicePickerButton(size: 20),
             ],
 
             const SizedBox(width: 4),

@@ -10,10 +10,14 @@ import 'screens/search_screen.dart';
 import 'screens/library_screen.dart';
 import 'screens/home_screen.dart';
 import 'widgets/mini_player.dart';
+import 'widgets/remote_playback_banner.dart';
+import 'widgets/offline_indicator.dart';
 import 'providers/player_provider.dart';
 import 'providers/local_music_provider.dart';
+import 'providers/sync_provider.dart';
 import 'platform/permissions.dart';
 import 'desktop/shell/desktop_shell.dart';
+import 'screens/auth/auth_gate.dart';
 
 class TuneifyApp extends StatelessWidget {
   const TuneifyApp({super.key});
@@ -24,7 +28,9 @@ class TuneifyApp extends StatelessWidget {
       title: 'Tuneify',
       debugShowCheckedModeBanner: false,
       theme: _buildDarkTheme(),
-      home: Platform.isWindows ? const DesktopShell() : const AppShell(),
+      home: AuthGate(
+        child: Platform.isWindows ? const DesktopShell() : const AppShell(),
+      ),
     );
   }
 
@@ -151,6 +157,11 @@ class _AppShellState extends ConsumerState<AppShell> with WidgetsBindingObserver
     if (state == AppLifecycleState.resumed) {
       ref.read(localMusicProvider.notifier).scan();
     }
+    // Release active-device claim when app is fully closed so another
+    // device can auto-claim on next launch.
+    if (state == AppLifecycleState.detached) {
+      ref.read(syncProvider.notifier).service.releaseIfActive().catchError((_) {});
+    }
   }
 
   final List<Widget> _screens = const [
@@ -165,7 +176,26 @@ class _AppShellState extends ConsumerState<AppShell> with WidgetsBindingObserver
     final hasSong = playerState.currentSong != null;
 
     return Scaffold(
-      body: _screens[_currentIndex],
+      body: Stack(
+        children: [
+          _screens[_currentIndex],
+          const Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: SafeArea(
+              bottom: false,
+              child: RemotePlaybackBanner(),
+            ),
+          ),
+          const Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: OfflineIndicator(),
+          ),
+        ],
+      ),
       bottomNavigationBar: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

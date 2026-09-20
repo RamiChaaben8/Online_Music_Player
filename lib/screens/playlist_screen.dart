@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/song.dart';
+import '../models/playlist.dart';
 import '../providers/player_provider.dart';
 import '../providers/download_provider.dart';
 import '../providers/library_provider.dart';
@@ -16,6 +17,9 @@ import '../widgets/song_tile.dart';
 class PlaylistScreen extends ConsumerStatefulWidget {
   final String title;
   final List<Song> songs;
+  /// Pass the full Playlist object for custom playlists (enables remove-song button).
+  final Playlist? playlist;
+  /// Legacy: accepted for backward-compat — prefer [playlist] instead.
   final int? playlistKey;
   final IconData? icon;
   /// If set, locks the filter to this value (e.g. Local Music entry).
@@ -25,6 +29,7 @@ class PlaylistScreen extends ConsumerStatefulWidget {
     super.key,
     required this.title,
     required this.songs,
+    this.playlist,
     this.playlistKey,
     this.icon,
     this.forcedFilter,
@@ -277,17 +282,27 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
                         // Custom playlist: show remove button.
                         // For all other views, SongTile auto-shows
                         // the download button for online songs.
-                        trailing: widget.playlistKey != null
+                        trailing: widget.playlist != null
                             ? IconButton(
                                 icon: const Icon(
                                     Icons.remove_circle_outline,
                                     color: Color(0xFFB3B3B3)),
                                 onPressed: () => ref
                                     .read(libraryProvider.notifier)
-                                    .removeSongFromPlaylist(
-                                        widget.playlistKey!, song.id),
+                                    .removeSongFromPlaylistObj(
+                                        widget.playlist!, song.id),
                               )
-                            : null,
+                            : widget.playlistKey != null
+                                ? IconButton(
+                                    icon: const Icon(
+                                        Icons.remove_circle_outline,
+                                        color: Color(0xFFB3B3B3)),
+                                    onPressed: () => ref
+                                        .read(libraryProvider.notifier)
+                                        .removeSongFromPlaylist(
+                                            widget.playlistKey!, song.id),
+                                  )
+                                : null,
                       );
                     },
                     childCount: filtered.length,

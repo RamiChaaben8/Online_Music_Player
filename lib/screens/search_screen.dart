@@ -523,7 +523,7 @@ class _VideoOptionsMenu extends ConsumerWidget {
                     style: const TextStyle(color: Color(0xFF6A6A6A), fontSize: 12),
                   ),
                   onTap: () {
-                    ref.read(libraryProvider.notifier).addSongToPlaylist(pl.key as int, song);
+                    ref.read(libraryProvider.notifier).addSongToPlaylistObj(pl, song);
                     Navigator.pop(context);
                     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                       content: Text('Added to "${pl.name}"'),

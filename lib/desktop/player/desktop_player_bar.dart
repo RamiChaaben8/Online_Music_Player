@@ -13,6 +13,7 @@ import '../../providers/lyrics_provider.dart';
 import '../../providers/panel_provider.dart';
 import '../../providers/player_provider.dart';
 import '../../widgets/song_context_menu.dart';
+import '../../widgets/device_picker.dart';
 import '../theme/desktop_theme.dart';
 
 class DesktopPlayerBar extends ConsumerStatefulWidget {
@@ -551,6 +552,8 @@ class _VolumeControls extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.end,
       children: [
+        const DevicePickerButton(size: 20),
+
         // Lyrics button — opens fullscreen lyrics overlay
         Tooltip(
           message: panelMode == PanelMode.lyrics

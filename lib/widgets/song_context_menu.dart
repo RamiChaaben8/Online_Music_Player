@@ -104,7 +104,7 @@ Future<void> showSongContextMenu({
       if (currentPlaylist != null) {
         await ref
             .read(libraryProvider.notifier)
-            .removeSongFromPlaylist(currentPlaylist.key, song.id);
+            .removeSongFromPlaylistObj(currentPlaylist, song.id);
         if (context.mounted) {
           _snack(context, 'Removed from ${currentPlaylist.name}');
         }
@@ -198,7 +198,7 @@ Future<void> _addToPlaylist(
     return;
   }
 
-  final key = await showDialog<int>(
+  final playlist = await showDialog<Playlist>(
     context: context,
     builder: (ctx) => AlertDialog(
       backgroundColor: const Color(0xFF282828),
@@ -216,7 +216,7 @@ Future<void> _addToPlaylist(
               subtitle: Text('${p.songs.length} songs',
                   style: const TextStyle(
                       color: Color(0xFFB3B3B3), fontSize: 12)),
-              onTap: () => Navigator.pop(ctx, p.key),
+              onTap: () => Navigator.pop(ctx, p),
             );
           }).toList(),
         ),
@@ -231,15 +231,10 @@ Future<void> _addToPlaylist(
     ),
   );
 
-  if (key != null && context.mounted) {
-    await ref.read(libraryProvider.notifier).addSongToPlaylist(key, song);
+  if (playlist != null && context.mounted) {
+    await ref.read(libraryProvider.notifier).addSongToPlaylistObj(playlist, song);
     if (context.mounted) {
-      final name = ref
-          .read(libraryProvider)
-          .playlists
-          .firstWhere((p) => p.key == key)
-          .name;
-      _snack(context, 'Added to $name');
+      _snack(context, 'Added to ${playlist.name}');
     }
   }
 }
