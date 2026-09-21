@@ -41,8 +41,7 @@ class AudioPlayerService {
   }
 
   final AudioPlayer _player = AudioPlayer(
-    userAgent:
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
         '(KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36',
     audioLoadConfiguration: _loadConfig(),
   );
@@ -86,10 +85,9 @@ class AudioPlayerService {
   bool get shuffle => _shuffle;
   LoopMode get loopMode => _loopMode;
 
-  Song? get currentSong =>
-      (_currentIndex >= 0 && _currentIndex < _queue.length)
-          ? _queue[_currentIndex]
-          : null;
+  Song? get currentSong => (_currentIndex >= 0 && _currentIndex < _queue.length)
+      ? _queue[_currentIndex]
+      : null;
 
   // ── Public API ────────────────────────────────────────────────────────────
 
@@ -114,6 +112,15 @@ class AudioPlayerService {
 
   void addToQueue(Song song) {
     if (!_queue.any((s) => s.id == song.id)) _queue.add(song);
+  }
+
+  void setQueue(List<Song> queue, {int? currentIndex}) {
+    _queue = List.from(queue);
+    if (_queue.isEmpty) {
+      _currentIndex = -1;
+    } else if (currentIndex != null) {
+      _currentIndex = currentIndex.clamp(0, _queue.length - 1);
+    }
   }
 
   void playNext(Song song) {
@@ -202,7 +209,8 @@ class AudioPlayerService {
       title: song.title,
       artist: song.channelName,
       duration: song.duration,
-      artUri: song.thumbnailUrl.isNotEmpty ? Uri.parse(song.thumbnailUrl) : null,
+      artUri:
+          song.thumbnailUrl.isNotEmpty ? Uri.parse(song.thumbnailUrl) : null,
     );
 
     AudioSource source;
@@ -225,8 +233,7 @@ class AudioPlayerService {
         Uri.parse(streamUrl),
         tag: mediaItem,
         headers: {
-          'User-Agent':
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
               'AppleWebKit/537.36 (KHTML, like Gecko) '
               'Chrome/114.0.0.0 Safari/537.36',
         },

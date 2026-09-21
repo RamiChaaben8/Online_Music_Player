@@ -247,6 +247,12 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
           _applyRemoteSkip(skipForward: false, doc: doc);
         case RemoteCommand.playSong:
           _applyRemotePlaySong(doc);
+        case RemoteCommand.queueUpdate:
+          _service.setQueue(doc.queue, currentIndex: doc.queueIndex);
+          state = state.copyWith(
+            queue: doc.queue,
+            currentIndex: doc.queueIndex,
+          );
         case RemoteCommand.seek:
           _service
               .seek(Duration(milliseconds: doc.positionMs))
@@ -274,6 +280,11 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
               clearError: true,
             );
           }
+        case RemoteCommand.queueUpdate:
+          state = state.copyWith(
+            queue: doc.queue,
+            currentIndex: doc.queueIndex,
+          );
         case RemoteCommand.play:
           state = state.copyWith(isPlaying: true, isLoading: false);
         case RemoteCommand.pause:
@@ -555,7 +566,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   }
 
   Future<void> play() async {
-    if (state.isActiveDevice) {
+    if (_sync.service.isActive) {
       await _service.play();
       state = state.copyWith(isPlaying: true);
       _handler.updateCurrentSong();
@@ -567,7 +578,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   }
 
   Future<void> pause() async {
-    if (state.isActiveDevice) {
+    if (_sync.service.isActive) {
       await _service.pause();
       state = state.copyWith(isPlaying: false);
     } else {
@@ -605,7 +616,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   }
 
   Future<void> seek(Duration position) async {
-    if (state.isActiveDevice) {
+    if (_sync.service.isActive) {
       await _service.seek(position);
     }
     state = state.copyWith(position: position);
@@ -613,7 +624,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   }
 
   Future<void> skipToNext() async {
-    if (state.isActiveDevice) {
+    if (_sync.service.isActive) {
       state = state.copyWith(isLoading: true, clearError: true);
       await _service.skipToNext();
       state = state.copyWith(
@@ -634,7 +645,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   }
 
   Future<void> skipToPrevious() async {
-    if (state.isActiveDevice) {
+    if (_sync.service.isActive) {
       state = state.copyWith(isLoading: true, clearError: true);
       await _service.skipToPrevious();
       state = state.copyWith(
@@ -651,30 +662,58 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   }
 
   void addToQueue(Song song) {
-    _service.addToQueue(song);
-    state = state.copyWith(queue: _service.queue);
-    _sendCommand(RemoteCommand.playSong);
+    final queue = List<Song>.from(state.queue);
+    if (queue.any((item) => item.id == song.id)) return;
+    queue.add(song);
+    _updateQueue(queue);
   }
 
   void playNext(Song song) {
-    _service.playNext(song);
-    state = state.copyWith(queue: _service.queue);
-    _sendCommand(RemoteCommand.playSong);
+    final queue = List<Song>.from(state.queue)
+      ..removeWhere((item) => item.id == song.id);
+    final insertAt = (state.currentIndex + 1).clamp(0, queue.length);
+    queue.insert(insertAt, song);
+    _updateQueue(queue);
   }
 
   void removeFromQueue(int index) {
-    _service.removeFromQueue(index);
-    state = state.copyWith(queue: _service.queue);
-    _sendCommand(RemoteCommand.playSong);
+    final queue = List<Song>.from(state.queue);
+    if (index < 0 || index >= queue.length || index == state.currentIndex) {
+      return;
+    }
+    queue.removeAt(index);
+    final currentIndex = index < state.currentIndex
+        ? state.currentIndex - 1
+        : state.currentIndex;
+    _updateQueue(queue, currentIndex: currentIndex);
   }
 
   void reorderQueue(int oldIndex, int newIndex) {
-    _service.reorderQueue(oldIndex, newIndex);
-    state = state.copyWith(
-      queue: _service.queue,
-      currentIndex: _service.currentIndex,
-    );
-    _sendCommand(RemoteCommand.playSong);
+    final queue = List<Song>.from(state.queue);
+    if (oldIndex < 0 || oldIndex >= queue.length) return;
+    if (oldIndex < newIndex) newIndex--;
+    final song = queue.removeAt(oldIndex);
+    newIndex = newIndex.clamp(0, queue.length);
+    queue.insert(newIndex, song);
+
+    var currentIndex = state.currentIndex;
+    if (oldIndex == currentIndex) {
+      currentIndex = newIndex;
+    } else if (oldIndex < currentIndex && newIndex >= currentIndex) {
+      currentIndex--;
+    } else if (oldIndex > currentIndex && newIndex <= currentIndex) {
+      currentIndex++;
+    }
+    _updateQueue(queue, currentIndex: currentIndex);
+  }
+
+  void _updateQueue(List<Song> queue, {int? currentIndex}) {
+    final index = currentIndex ?? state.currentIndex;
+    state = state.copyWith(queue: queue, currentIndex: index);
+    if (_sync.service.isActive) {
+      _service.setQueue(queue, currentIndex: index);
+    }
+    _sendCommand(RemoteCommand.queueUpdate);
   }
 
   void toggleShuffle() {

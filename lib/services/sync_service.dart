@@ -38,7 +38,16 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 // ── Types ────────────────────────────────────────────────────────────────────
 
 /// The command written to Firestore by the acting device.
-enum RemoteCommand { play, pause, next, prev, playSong, seek, none }
+enum RemoteCommand {
+  play,
+  pause,
+  next,
+  prev,
+  playSong,
+  queueUpdate,
+  seek,
+  none
+}
 
 /// Parsed remote-command document from Firestore.
 class RemoteCommandDoc {
