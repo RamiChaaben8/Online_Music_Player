@@ -8,12 +8,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/song.dart';
 import '../services/youtube_service.dart';
+import '../services/playlist_import_service.dart';
 
 // Singleton YoutubeService
 final youtubeServiceProvider = Provider<YoutubeService>((ref) {
   final service = YoutubeService();
   ref.onDispose(service.dispose);
   return service;
+});
+
+final playlistImportServiceProvider = Provider<PlaylistImportService>((ref) {
+  return PlaylistImportService(ref.watch(youtubeServiceProvider));
 });
 
 // ─── Search state ────────────────────────────────────────────────────────────
@@ -85,6 +90,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
   void clear() => state = const SearchState();
 }
 
-final searchProvider = StateNotifierProvider<SearchNotifier, SearchState>((ref) {
+final searchProvider =
+    StateNotifierProvider<SearchNotifier, SearchState>((ref) {
   return SearchNotifier(ref.watch(youtubeServiceProvider));
 });

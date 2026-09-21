@@ -73,6 +73,25 @@ class FirestoreService {
     return ref.id;
   }
 
+  Future<String> createPlaylistWithSongs(
+    String uid,
+    String name,
+    List<Song> songs, {
+    String? description,
+  }) async {
+    final ref = _userCol(uid, 'playlists').doc();
+    await ref.set({
+      'name': name,
+      'description': description ?? '',
+      'coverUrl': songs.isEmpty ? '' : songs.first.thumbnailUrl,
+      'trackIds': songs.map((song) => song.id).toList(),
+      'tracks': songs.map(_songToMap).toList(),
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    return ref.id;
+  }
+
   Future<void> renamePlaylist(
       String uid, String playlistId, String name) async {
     await _userCol(uid, 'playlists').doc(playlistId).update({

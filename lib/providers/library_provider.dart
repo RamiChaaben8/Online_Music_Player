@@ -77,9 +77,10 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     _likesSub?.cancel();
 
     _playlistsSub = _fs.playlistsStream(uid).listen(
-      (playlists) => state = state.copyWith(playlists: playlists, isLoading: false),
-      onError: (_) => state = state.copyWith(isLoading: false),
-    );
+          (playlists) =>
+              state = state.copyWith(playlists: playlists, isLoading: false),
+          onError: (_) => state = state.copyWith(isLoading: false),
+        );
 
     _likesSub = _fs.likesStream(uid).listen((liked) {
       state = state.copyWith(likedSongs: liked);
@@ -142,13 +143,30 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
         await _fs.createPlaylist(_uid!, name, description: description);
         // Live listener will update state
       } catch (_) {
-        await _hive.createPlaylist(name, description: description).catchError((_) {});
+        await _hive
+            .createPlaylist(name, description: description)
+            .catchError((_) {});
         state = state.copyWith(playlists: _hive.getPlaylists());
       }
     } else {
       await _hive.createPlaylist(name, description: description);
       state = state.copyWith(playlists: _hive.getPlaylists());
     }
+  }
+
+  Future<void> createPlaylistWithSongs(String name, List<Song> songs) async {
+    if (_uid != null) {
+      await _fs.createPlaylistWithSongs(_uid!, name, songs);
+      return;
+    }
+
+    await _hive.createPlaylist(name);
+    final playlist = _hive.getPlaylists().last;
+    final key = playlist.key as int;
+    for (final song in songs) {
+      await _hive.addSongToPlaylist(key, song);
+    }
+    state = state.copyWith(playlists: _hive.getPlaylists());
   }
 
   /// Rename a playlist by Playlist object (primary — works for both Hive and Firestore playlists).
@@ -180,15 +198,19 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
 
   /// Rename a playlist. Pass the Playlist object — we extract the right ID.
   /// Legacy overload that accepts a hive key integer.
-  Future<void> renamePlaylist(int hiveKey, String name, {String? firestoreId}) async {
+  Future<void> renamePlaylist(int hiveKey, String name,
+      {String? firestoreId}) async {
     final fsId = firestoreId ?? _firestoreIdForHiveKey(hiveKey);
 
     // Optimistic UI
     state = state.copyWith(
       playlists: state.playlists.map((p) {
         if (_matches(p, hiveKey, fsId)) {
-          return Playlist(name: name, songs: p.songs,
-              createdAt: p.createdAt, description: p.description);
+          return Playlist(
+              name: name,
+              songs: p.songs,
+              createdAt: p.createdAt,
+              description: p.description);
         }
         return p;
       }).toList(),
@@ -206,9 +228,8 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     final hiveKey = playlist.key as int?;
 
     state = state.copyWith(
-      playlists: state.playlists
-          .where((p) => !_matchesPlaylist(p, playlist))
-          .toList(),
+      playlists:
+          state.playlists.where((p) => !_matchesPlaylist(p, playlist)).toList(),
     );
 
     if (hiveKey != null) {
@@ -225,9 +246,8 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     final fsId = firestoreId ?? _firestoreIdForHiveKey(hiveKey);
 
     state = state.copyWith(
-      playlists: state.playlists
-          .where((p) => !_matches(p, hiveKey, fsId))
-          .toList(),
+      playlists:
+          state.playlists.where((p) => !_matches(p, hiveKey, fsId)).toList(),
     );
 
     await _hive.deletePlaylist(hiveKey).catchError((_) {});
@@ -248,8 +268,11 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
       playlists: state.playlists.map((p) {
         if (_matchesPlaylist(p, playlist)) {
           if (!p.songs.any((s) => s.id == song.id)) {
-            return Playlist(name: p.name, songs: [...p.songs, song],
-                createdAt: p.createdAt, description: p.description);
+            return Playlist(
+                name: p.name,
+                songs: [...p.songs, song],
+                createdAt: p.createdAt,
+                description: p.description);
           }
         }
         return p;
@@ -273,8 +296,11 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
       playlists: state.playlists.map((p) {
         if (_matches(p, playlistKey, fsId)) {
           if (!p.songs.any((s) => s.id == song.id)) {
-            return Playlist(name: p.name, songs: [...p.songs, song],
-                createdAt: p.createdAt, description: p.description);
+            return Playlist(
+                name: p.name,
+                songs: [...p.songs, song],
+                createdAt: p.createdAt,
+                description: p.description);
           }
         }
         return p;
@@ -288,16 +314,19 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
   }
 
   /// Remove a song from a playlist — takes the Playlist object directly.
-  Future<void> removeSongFromPlaylistObj(Playlist playlist, String songId) async {
+  Future<void> removeSongFromPlaylistObj(
+      Playlist playlist, String songId) async {
     final fsId = playlist.firestoreId;
     final hiveKey = playlist.key as int?;
 
     state = state.copyWith(
       playlists: state.playlists.map((p) {
         if (_matchesPlaylist(p, playlist)) {
-          return Playlist(name: p.name,
+          return Playlist(
+              name: p.name,
               songs: p.songs.where((s) => s.id != songId).toList(),
-              createdAt: p.createdAt, description: p.description);
+              createdAt: p.createdAt,
+              description: p.description);
         }
         return p;
       }).toList(),
@@ -319,9 +348,11 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     state = state.copyWith(
       playlists: state.playlists.map((p) {
         if (_matches(p, playlistKey, fsId)) {
-          return Playlist(name: p.name,
+          return Playlist(
+              name: p.name,
               songs: p.songs.where((s) => s.id != songId).toList(),
-              createdAt: p.createdAt, description: p.description);
+              createdAt: p.createdAt,
+              description: p.description);
         }
         return p;
       }).toList(),
@@ -338,9 +369,7 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
   /// Get the Firestore ID for a playlist identified by its Hive key.
   String? _firestoreIdForHiveKey(int hiveKey) {
     try {
-      return state.playlists
-          .firstWhere((p) => p.key == hiveKey)
-          .firestoreId;
+      return state.playlists.firstWhere((p) => p.key == hiveKey).firestoreId;
     } catch (_) {
       return null;
     }

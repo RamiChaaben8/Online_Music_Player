@@ -13,6 +13,7 @@ import '../screens/playlist_screen.dart';
 import '../providers/auth_provider.dart';
 import '../providers/player_provider.dart';
 import 'auth/delete_account_screen.dart';
+import '../widgets/import_playlist_dialog.dart';
 
 /// Which songs to show in playlist/library screens.
 enum SongFilter { all, local, online }
@@ -51,13 +52,21 @@ class LibraryScreen extends ConsumerWidget {
             tooltip: 'Create playlist',
             onPressed: () => _showCreatePlaylistDialog(context, ref),
           ),
+          IconButton(
+            icon: const Icon(Icons.playlist_add),
+            tooltip: 'Import playlist',
+            onPressed: () => showImportPlaylistDialog(context, ref),
+          ),
           // Account menu
           PopupMenuButton<String>(
             icon: const Icon(Icons.account_circle_outlined),
             tooltip: 'Account',
             onSelected: (v) async {
               if (v == 'signout') {
-                await ref.read(playerProvider.notifier).pause().catchError((_) {});
+                await ref
+                    .read(playerProvider.notifier)
+                    .pause()
+                    .catchError((_) {});
                 await ref.read(authServiceProvider).signOut();
               } else if (v == 'delete') {
                 Navigator.push(
@@ -113,8 +122,8 @@ class LibraryScreen extends ConsumerWidget {
                 _FilterChip(
                   label: 'All',
                   selected: filter == SongFilter.all,
-                  onTap: () =>
-                      ref.read(songFilterProvider.notifier).state = SongFilter.all,
+                  onTap: () => ref.read(songFilterProvider.notifier).state =
+                      SongFilter.all,
                 ),
                 const SizedBox(width: 8),
                 _FilterChip(
@@ -122,8 +131,8 @@ class LibraryScreen extends ConsumerWidget {
                   icon: Icons.folder_outlined,
                   iconColor: const Color(0xFF1DB954),
                   selected: filter == SongFilter.local,
-                  onTap: () =>
-                      ref.read(songFilterProvider.notifier).state = SongFilter.local,
+                  onTap: () => ref.read(songFilterProvider.notifier).state =
+                      SongFilter.local,
                 ),
                 const SizedBox(width: 8),
                 _FilterChip(
@@ -131,8 +140,8 @@ class LibraryScreen extends ConsumerWidget {
                   icon: Icons.cloud_outlined,
                   iconColor: const Color(0xFF3D79F3),
                   selected: filter == SongFilter.online,
-                  onTap: () =>
-                      ref.read(songFilterProvider.notifier).state = SongFilter.online,
+                  onTap: () => ref.read(songFilterProvider.notifier).state =
+                      SongFilter.online,
                 ),
                 if (localState.isScanning) ...[
                   const SizedBox(width: 12),
@@ -344,9 +353,7 @@ class _FilterChip extends StatelessWidget {
               : const Color(0xFF2A2A2A),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: selected
-                ? const Color(0xFF1DB954)
-                : const Color(0xFF3A3A3A),
+            color: selected ? const Color(0xFF1DB954) : const Color(0xFF3A3A3A),
             width: 1,
           ),
         ),
@@ -364,7 +371,9 @@ class _FilterChip extends StatelessWidget {
             Text(
               label,
               style: TextStyle(
-                color: selected ? const Color(0xFF1DB954) : const Color(0xFFB3B3B3),
+                color: selected
+                    ? const Color(0xFF1DB954)
+                    : const Color(0xFFB3B3B3),
                 fontSize: 13,
                 fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
               ),
@@ -396,8 +405,7 @@ class _LibraryItemTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       leading: Container(
         width: 52,
         height: 52,
@@ -411,8 +419,7 @@ class _LibraryItemTile extends StatelessWidget {
           style: const TextStyle(
               color: Colors.white, fontWeight: FontWeight.w600)),
       subtitle: Text(subtitle,
-          style:
-              const TextStyle(color: Color(0xFFB3B3B3), fontSize: 13)),
+          style: const TextStyle(color: Color(0xFFB3B3B3), fontSize: 13)),
       onTap: onTap,
     );
   }
@@ -427,8 +434,7 @@ class _PlaylistTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return ListTile(
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       leading: ClipRRect(
         borderRadius: BorderRadius.circular(8),
         child: playlist.coverThumbnail != null
@@ -445,8 +451,7 @@ class _PlaylistTile extends ConsumerWidget {
           style: const TextStyle(
               color: Colors.white, fontWeight: FontWeight.w600)),
       subtitle: Text('${playlist.songs.length} songs',
-          style:
-              const TextStyle(color: Color(0xFFB3B3B3), fontSize: 13)),
+          style: const TextStyle(color: Color(0xFFB3B3B3), fontSize: 13)),
       onTap: () => Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => PlaylistScreen(
@@ -469,12 +474,10 @@ class _PlaylistTile extends ConsumerWidget {
         itemBuilder: (_) => [
           const PopupMenuItem(
               value: 'rename',
-              child: Text('Rename',
-                  style: TextStyle(color: Colors.white))),
+              child: Text('Rename', style: TextStyle(color: Colors.white))),
           const PopupMenuItem(
               value: 'delete',
-              child:
-                  Text('Delete', style: TextStyle(color: Colors.red))),
+              child: Text('Delete', style: TextStyle(color: Colors.red))),
         ],
       ),
     );
@@ -510,13 +513,14 @@ class _PlaylistTile extends ConsumerWidget {
           TextButton(
             onPressed: () {
               if (controller.text.trim().isNotEmpty) {
-                ref.read(libraryProvider.notifier).renamePlaylistObj(
-                    playlist, controller.text.trim());
+                ref
+                    .read(libraryProvider.notifier)
+                    .renamePlaylistObj(playlist, controller.text.trim());
                 Navigator.pop(context);
               }
             },
-            child: const Text('Save',
-                style: TextStyle(color: Color(0xFF1DB954))),
+            child:
+                const Text('Save', style: TextStyle(color: Color(0xFF1DB954))),
           ),
         ],
       ),
@@ -542,13 +546,10 @@ class _PlaylistTile extends ConsumerWidget {
                   style: TextStyle(color: Color(0xFFB3B3B3)))),
           TextButton(
             onPressed: () {
-              ref
-                  .read(libraryProvider.notifier)
-                  .deletePlaylistObj(playlist);
+              ref.read(libraryProvider.notifier).deletePlaylistObj(playlist);
               Navigator.pop(context);
             },
-            child:
-                const Text('Delete', style: TextStyle(color: Colors.red)),
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
           ),
         ],
       ),

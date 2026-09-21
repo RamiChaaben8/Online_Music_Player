@@ -18,6 +18,7 @@ import '../../providers/player_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../screens/auth/delete_account_screen.dart';
 import '../theme/desktop_theme.dart';
+import '../../widgets/import_playlist_dialog.dart';
 
 class DesktopSidebar extends ConsumerStatefulWidget {
   final Playlist? selectedPlaylist;
@@ -70,7 +71,9 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
         ),
       ),
       clipBehavior: Clip.antiAlias,
-      child: _collapsed ? _buildCollapsed(likedPlaylist, library) : _buildExpanded(likedPlaylist, library),
+      child: _collapsed
+          ? _buildCollapsed(likedPlaylist, library)
+          : _buildExpanded(likedPlaylist, library),
     );
   }
 
@@ -121,9 +124,8 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
           child: ListView(
             padding: const EdgeInsets.symmetric(vertical: 4),
             children: library.playlists.map((pl) {
-              final thumbUrl = pl.songs.isNotEmpty
-                  ? pl.songs.first.thumbnailUrl
-                  : '';
+              final thumbUrl =
+                  pl.songs.isNotEmpty ? pl.songs.first.thumbnailUrl : '';
               final isActive = widget.selectedPlaylist != null &&
                   _isSamePlaylist(widget.selectedPlaylist!, pl);
               return Tooltip(
@@ -131,8 +133,7 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
                 child: _IconOnlyTile(
                   thumbUrl: thumbUrl,
                   isActive: isActive,
-                  onTap: () =>
-                      widget.onPlaylistSelected(isActive ? null : pl),
+                  onTap: () => widget.onPlaylistSelected(isActive ? null : pl),
                 ),
               );
             }).toList(),
@@ -161,8 +162,7 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
                   onTap: () => setState(() => _collapsed = true),
                   child: const Padding(
                     padding: EdgeInsets.all(4),
-                    child: Icon(Icons.library_music,
-                        color: kAccent, size: 22),
+                    child: Icon(Icons.library_music, color: kAccent, size: 22),
                   ),
                 ),
               ),
@@ -177,16 +177,27 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
               ),
               const Spacer(),
               TextButton.icon(
-                onPressed: () =>
-                    _showCreatePlaylistDialog(context),
+                onPressed: () => _showCreatePlaylistDialog(context),
                 icon: const Icon(Icons.add, size: 16, color: kAccent),
                 label: const Text(
                   'Create',
                   style: TextStyle(color: kAccent, fontSize: 13),
                 ),
                 style: TextButton.styleFrom(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+              TextButton.icon(
+                onPressed: () => showImportPlaylistDialog(context, ref),
+                icon: const Icon(Icons.playlist_add, size: 16, color: kAccent),
+                label: const Text(
+                  'Import',
+                  style: TextStyle(color: kAccent, fontSize: 13),
+                ),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
                   minimumSize: Size.zero,
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
@@ -199,8 +210,8 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
                   onTap: () => _confirmSignOut(context),
                   child: const Padding(
                     padding: EdgeInsets.all(6),
-                    child: Icon(Icons.logout,
-                        color: Color(0xFFB3B3B3), size: 18),
+                    child:
+                        Icon(Icons.logout, color: Color(0xFFB3B3B3), size: 18),
                   ),
                 ),
               ),
@@ -210,11 +221,9 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
 
         // ── Filter chip ────────────────────────────────────────────
         Padding(
-          padding: const EdgeInsets.symmetric(
-              horizontal: 16, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
           child: Container(
-            padding: const EdgeInsets.symmetric(
-                horizontal: 14, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
             decoration: BoxDecoration(
               color: const Color(0xFF1A3321),
               borderRadius: BorderRadius.circular(999),
@@ -251,8 +260,7 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
           ),
         ),
 
-        const Divider(
-            color: kBorderColor, height: 16, thickness: 0.5),
+        const Divider(color: kBorderColor, height: 16, thickness: 0.5),
 
         // ── List ───────────────────────────────────────────────────
         Expanded(
@@ -262,29 +270,21 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
               if (likedPlaylist != null)
                 _LikedSongsTile(
                   playlist: likedPlaylist,
-                  isActive:
-                      widget.selectedPlaylist?.name == 'Liked Songs',
+                  isActive: widget.selectedPlaylist?.name == 'Liked Songs',
                   onTap: () {
                     final active =
                         widget.selectedPlaylist?.name == 'Liked Songs';
-                    widget.onPlaylistSelected(
-                        active ? null : likedPlaylist);
+                    widget.onPlaylistSelected(active ? null : likedPlaylist);
                   },
                 ),
-
               if (likedPlaylist != null)
-                const Divider(
-                    color: kBorderColor,
-                    height: 16,
-                    thickness: 0.5),
-
+                const Divider(color: kBorderColor, height: 16, thickness: 0.5),
               if (library.playlists.isEmpty)
                 const Padding(
                   padding: EdgeInsets.all(16),
                   child: Text(
                     'No playlists yet.\nTap + Create to add one.',
-                    style: TextStyle(
-                        color: kTextSecondary, fontSize: 13),
+                    style: TextStyle(color: kTextSecondary, fontSize: 13),
                     textAlign: TextAlign.center,
                   ),
                 )
@@ -295,10 +295,9 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
                   return _PlaylistTile(
                     playlist: playlist,
                     isActive: isActive,
-                    onTap: () => widget.onPlaylistSelected(
-                        isActive ? null : playlist),
-                    onOpen: () =>
-                        widget.onPlaylistSelected(playlist),
+                    onTap: () =>
+                        widget.onPlaylistSelected(isActive ? null : playlist),
+                    onOpen: () => widget.onPlaylistSelected(playlist),
                   );
                 }),
             ],
@@ -313,8 +312,7 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1E1E2E),
-        title: const Text('Account',
-            style: TextStyle(color: Colors.white)),
+        title: const Text('Account', style: TextStyle(color: Colors.white)),
         content: const Text(
           'What would you like to do?',
           style: TextStyle(color: Color(0xFFB3B3B3)),
@@ -326,16 +324,14 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
                 style: TextStyle(color: Color(0xFFB3B3B3))),
           ),
           TextButton(
-            onPressed: () =>
-                Navigator.pop(ctx, _SignOutAction.deleteAccount),
+            onPressed: () => Navigator.pop(ctx, _SignOutAction.deleteAccount),
             child: const Text('Delete Account',
                 style: TextStyle(color: Colors.redAccent)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
                 backgroundColor: kAccent, foregroundColor: Colors.black),
-            onPressed: () =>
-                Navigator.pop(ctx, _SignOutAction.signOut),
+            onPressed: () => Navigator.pop(ctx, _SignOutAction.signOut),
             child: const Text('Sign Out'),
           ),
         ],
@@ -352,8 +348,7 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
         if (!mounted) return;
         Navigator.push(
           context,
-          MaterialPageRoute(
-              builder: (_) => const DeleteAccountScreen()),
+          MaterialPageRoute(builder: (_) => const DeleteAccountScreen()),
         );
       case null:
         break;
@@ -366,8 +361,8 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: kPanelLight,
-        title: const Text('New Playlist',
-            style: TextStyle(color: kTextPrimary)),
+        title:
+            const Text('New Playlist', style: TextStyle(color: kTextPrimary)),
         content: TextField(
           controller: controller,
           autofocus: true,
@@ -387,24 +382,19 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel',
-                style: TextStyle(color: kTextSecondary)),
+            child:
+                const Text('Cancel', style: TextStyle(color: kTextSecondary)),
           ),
           ElevatedButton(
-            style:
-                ElevatedButton.styleFrom(backgroundColor: kAccent),
-            onPressed: () =>
-                Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('Create',
-                style: TextStyle(color: Colors.black)),
+            style: ElevatedButton.styleFrom(backgroundColor: kAccent),
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('Create', style: TextStyle(color: Colors.black)),
           ),
         ],
       ),
     );
     if (name != null && name.isNotEmpty) {
-      await ref
-          .read(libraryProvider.notifier)
-          .createPlaylist(name);
+      await ref.read(libraryProvider.notifier).createPlaylist(name);
     }
   }
 }
@@ -442,7 +432,7 @@ class _IconOnlyTileState extends State<_IconOnlyTile> {
   Widget build(BuildContext context) {
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
-      onExit:  (_) => setState(() => _hovered = false),
+      onExit: (_) => setState(() => _hovered = false),
       child: GestureDetector(
         onTap: widget.onTap,
         child: AnimatedContainer(
@@ -519,22 +509,18 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovering = true),
-      onExit:  (_) => setState(() => _hovering = false),
+      onExit: (_) => setState(() => _hovering = false),
       child: GestureDetector(
         // Right-click opens context menu
-        onSecondaryTapUp: (d) =>
-            _showMenu(context, d.globalPosition),
+        onSecondaryTapUp: (d) => _showMenu(context, d.globalPosition),
         child: Material(
-          color: widget.isActive
-              ? const Color(0xFF1A2A1A)
-              : Colors.transparent,
+          color: widget.isActive ? const Color(0xFF1A2A1A) : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
           child: InkWell(
             borderRadius: BorderRadius.circular(8),
             onTap: widget.onTap,
             child: Padding(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 12, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               child: Row(
                 children: [
                   // Thumbnail
@@ -562,8 +548,7 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
                               height: 48,
                               color: const Color(0xFF4A2C7A),
                               child: const Icon(Icons.queue_music,
-                                  color: Colors.white54,
-                                  size: 22),
+                                  color: Colors.white54, size: 22),
                             ),
                           ),
                   ),
@@ -572,17 +557,14 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
                   // Name + count
                   Expanded(
                     child: Column(
-                      crossAxisAlignment:
-                          CrossAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           widget.playlist.name,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            color: widget.isActive
-                                ? kAccent
-                                : kTextPrimary,
+                            color: widget.isActive ? kAccent : kTextPrimary,
                             fontSize: 14,
                             fontWeight: FontWeight.w500,
                           ),
@@ -593,8 +575,7 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                              color: kTextSecondary,
-                              fontSize: 12),
+                              color: kTextSecondary, fontSize: 12),
                         ),
                       ],
                     ),
@@ -602,24 +583,21 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
 
                   // ··· button (visible on hover or active)
                   AnimatedOpacity(
-                    opacity:
-                        (_hovering || widget.isActive) ? 1.0 : 0.0,
+                    opacity: (_hovering || widget.isActive) ? 1.0 : 0.0,
                     duration: const Duration(milliseconds: 150),
                     child: SizedBox(
                       width: 28,
                       height: 28,
                       child: IconButton(
                         padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(
-                            minWidth: 28, minHeight: 28),
+                        constraints:
+                            const BoxConstraints(minWidth: 28, minHeight: 28),
                         icon: const Icon(Icons.more_horiz,
                             color: kTextSecondary, size: 18),
                         onPressed: () {
                           // Get the button's position for the menu
-                          final box = context.findRenderObject()
-                              as RenderBox;
-                          final offset = box
-                              .localToGlobal(Offset.zero);
+                          final box = context.findRenderObject() as RenderBox;
+                          final offset = box.localToGlobal(Offset.zero);
                           _showMenu(
                             context,
                             Offset(offset.dx + box.size.width,
@@ -704,8 +682,7 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
         children: [
           Icon(icon, size: 16, color: color.withOpacity(0.85)),
           const SizedBox(width: 10),
-          Text(label,
-              style: TextStyle(color: color, fontSize: 13)),
+          Text(label, style: TextStyle(color: color, fontSize: 13)),
         ],
       ),
     );
@@ -719,8 +696,7 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
     ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
-            '${widget.playlist.songs.length} songs added to queue'),
+        content: Text('${widget.playlist.songs.length} songs added to queue'),
         backgroundColor: kAccent,
         duration: const Duration(seconds: 2),
       ),
@@ -728,8 +704,7 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
   }
 
   Future<void> _showRenameDialog() async {
-    final controller =
-        TextEditingController(text: widget.playlist.name);
+    final controller = TextEditingController(text: widget.playlist.name);
     final name = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -742,8 +717,7 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
           style: const TextStyle(color: kTextPrimary),
           decoration: InputDecoration(
             hintText: 'Playlist name',
-            hintStyle:
-                const TextStyle(color: kTextSecondary),
+            hintStyle: const TextStyle(color: kTextSecondary),
             filled: true,
             fillColor: kCardColor,
             border: OutlineInputBorder(
@@ -751,22 +725,18 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
               borderSide: BorderSide.none,
             ),
           ),
-          onSubmitted: (v) =>
-              Navigator.pop(ctx, v.trim()),
+          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel',
-                style: TextStyle(color: kTextSecondary)),
+            child:
+                const Text('Cancel', style: TextStyle(color: kTextSecondary)),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(
-                backgroundColor: kAccent),
-            onPressed: () =>
-                Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('Save',
-                style: TextStyle(color: Colors.black)),
+            style: ElevatedButton.styleFrom(backgroundColor: kAccent),
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('Save', style: TextStyle(color: Colors.black)),
           ),
         ],
       ),
@@ -792,15 +762,13 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel',
-                style: TextStyle(color: kTextSecondary)),
+            child:
+                const Text('Cancel', style: TextStyle(color: kTextSecondary)),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.redAccent),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Remove',
-                style: TextStyle(color: Colors.white)),
+            child: const Text('Remove', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -836,72 +804,65 @@ class _LikedSongsTileState extends State<_LikedSongsTile> {
   @override
   Widget build(BuildContext context) {
     return Material(
-        color: widget.isActive
-            ? const Color(0xFF1A2A1A)
-            : Colors.transparent,
+      color: widget.isActive ? const Color(0xFF1A2A1A) : Colors.transparent,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
         borderRadius: BorderRadius.circular(8),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(8),
-          onTap: widget.onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-                horizontal: 12, vertical: 6),
-            child: Row(
-              children: [
-                // Purple gradient icon
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        Color(0xFF4B2D8A),
-                        Color(0xFF7B4FE9),
-                      ],
-                    ),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: const Icon(Icons.favorite,
-                      color: Colors.white, size: 22),
-                ),
-                const SizedBox(width: 12),
-
-                // Title + count
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment:
-                        CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Liked Songs',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: widget.isActive
-                              ? kAccent
-                              : kTextPrimary,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'Playlist • ${widget.playlist.songs.length} songs',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                            color: kTextSecondary,
-                            fontSize: 12),
-                      ),
+        onTap: widget.onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          child: Row(
+            children: [
+              // Purple gradient icon
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Color(0xFF4B2D8A),
+                      Color(0xFF7B4FE9),
                     ],
                   ),
+                  borderRadius: BorderRadius.circular(6),
                 ),
-              ],
-            ),
+                child:
+                    const Icon(Icons.favorite, color: Colors.white, size: 22),
+              ),
+              const SizedBox(width: 12),
+
+              // Title + count
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Liked Songs',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: widget.isActive ? kAccent : kTextPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Playlist • ${widget.playlist.songs.length} songs',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style:
+                          const TextStyle(color: kTextSecondary, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
+      ),
     );
   }
 }
