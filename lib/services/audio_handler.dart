@@ -35,6 +35,7 @@ class TuneifyAudioHandler extends BaseAudioHandler with SeekHandler {
   // writes are handled correctly.
   Future<void> Function()? onPlay;
   Future<void> Function()? onPause;
+  Future<void> Function()? onStop;
   Future<void> Function()? onSkipToNext;
   Future<void> Function()? onSkipToPrevious;
   Future<void> Function(Duration)? onSeek;
@@ -225,7 +226,7 @@ class TuneifyAudioHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> stop() async {
-    await (onPause?.call() ?? _service.pause());
+    await (onStop?.call() ?? _service.stop());
     playbackState.add(playbackState.value.copyWith(
       processingState: AudioProcessingState.idle,
     ));

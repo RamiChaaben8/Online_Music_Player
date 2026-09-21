@@ -57,12 +57,6 @@ class HomeScreen extends ConsumerWidget {
                         ),
                       ),
                     ),
-                    // Settings / notification placeholder icon
-                    IconButton(
-                      icon: const Icon(Icons.notifications_none_outlined,
-                          color: Colors.white, size: 26),
-                      onPressed: () {},
-                    ),
                   ],
                 ),
               ),
@@ -125,6 +119,7 @@ class HomeScreen extends ConsumerWidget {
       ),
     );
   }
+
 }
 
 // ─── Quick-play 2-column grid ─────────────────────────────────────────────────
@@ -236,7 +231,10 @@ class _SectionRow extends StatelessWidget {
   final HomeSection section;
   final void Function(Song) onSongTap;
 
-  const _SectionRow({required this.section, required this.onSongTap});
+  const _SectionRow({
+    required this.section,
+    required this.onSongTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -248,27 +246,34 @@ class _SectionRow extends StatelessWidget {
           // Section header
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-            child: Column(
+            child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  section.title,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        section.title,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      if (section.subtitle.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          section.subtitle,
+                          style: const TextStyle(
+                            color: Color(0xFFB3B3B3),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
-                if (section.subtitle.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    section.subtitle,
-                    style: const TextStyle(
-                      color: Color(0xFFB3B3B3),
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
               ],
             ),
           ),
@@ -289,6 +294,8 @@ class _SectionRow extends StatelessWidget {
               height: 192,
               child: ListView.builder(
                 scrollDirection: Axis.horizontal,
+                primary: false,
+                physics: const ClampingScrollPhysics(),
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 itemCount: section.songs.length,
                 itemBuilder: (_, i) {

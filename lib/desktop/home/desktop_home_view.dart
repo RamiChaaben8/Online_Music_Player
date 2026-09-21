@@ -22,8 +22,6 @@ class DesktopHomeView extends ConsumerStatefulWidget {
 }
 
 class _DesktopHomeViewState extends ConsumerState<DesktopHomeView> {
-  String _activeFilter = 'All';
-
   @override
   Widget build(BuildContext context) {
     final homeState = ref.watch(homeProvider);
@@ -35,42 +33,6 @@ class _DesktopHomeViewState extends ConsumerState<DesktopHomeView> {
       ),
       child: CustomScrollView(
         slivers: [
-          // ── Filter chips ──────────────────────────────────────────────
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
-              child: Row(
-                children: ['All', 'Music', 'Podcasts'].map((label) {
-                  final isActive = _activeFilter == label;
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: GestureDetector(
-                      onTap: () => setState(() => _activeFilter = label),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 7),
-                        decoration: BoxDecoration(
-                          color: isActive
-                              ? kAccent
-                              : const Color(0xFF2A2A2A),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          label,
-                          style: TextStyle(
-                            color: isActive ? Colors.black : kTextPrimary,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
-            ),
-          ),
-
           // ── Home sections from homeProvider ───────────────────────────
           if (homeState.initialLoading)
             const SliverToBoxAdapter(
@@ -96,6 +58,8 @@ class _DesktopHomeViewState extends ConsumerState<DesktopHomeView> {
                         ? _buildSkeletonRow()
                         : ListView.builder(
                             scrollDirection: Axis.horizontal,
+                          primary: false,
+                          physics: const ClampingScrollPhysics(),
                             padding: const EdgeInsets.symmetric(horizontal: 20),
                             itemCount: section.songs.length,
                             itemBuilder: (ctx, j) => Padding(
@@ -129,13 +93,17 @@ class _DesktopHomeViewState extends ConsumerState<DesktopHomeView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SectionHeader(title: title, subtitle: subtitle),
+          _SectionHeader(
+            title: title,
+            subtitle: subtitle,
+          ),
           const SizedBox(height: 12),
           child,
         ],
       ),
     );
   }
+
 
   Widget _buildSkeletonRow() {
     return ListView.builder(
@@ -197,14 +165,6 @@ class _SectionHeader extends StatelessWidget {
               ),
             ),
           ],
-        ),
-        const Spacer(),
-        TextButton(
-          onPressed: () {},
-          child: const Text(
-            'Show all',
-            style: TextStyle(color: kTextSecondary, fontSize: 13),
-          ),
         ),
       ],
     );
@@ -413,5 +373,3 @@ class _DesktopMusicCardState extends ConsumerState<DesktopMusicCard> {
     );
   }
 }
-
-

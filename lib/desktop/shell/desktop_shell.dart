@@ -10,6 +10,7 @@ import '../../models/playlist.dart';
 import '../../providers/local_music_provider.dart';
 import '../../providers/panel_provider.dart';
 import '../../providers/player_provider.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/sync_provider.dart';
 import '../../providers/youtube_provider.dart';
 import '../../services/firestore_service.dart';
@@ -105,11 +106,11 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
     if (state == AppLifecycleState.resumed) {
       ref.read(localMusicProvider.notifier).scan();
     }
-    // On Windows, pause audio when the app is hidden/minimized.
+    // Saving is enough when Windows hides/minimizes the window. Playback must
+    // continue so the desktop app behaves like a background music player.
     if (state == AppLifecycleState.hidden ||
         state == AppLifecycleState.paused) {
       ref.read(playerProvider.notifier).saveSession().catchError((_) {});
-      ref.read(playerProvider.notifier).pauseLocal();
     }
     // Release active-device claim when app is fully closed so another
     // device can auto-claim on next launch.
@@ -121,7 +122,82 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
           .service
           .releaseIfActive()
           .catchError((_) {});
+      ref
+          .read(syncProvider.notifier)
+          .service
+          .unregisterCurrentDevice()
+          .catchError((_) {});
     }
+  }
+
+  Future<void> _showAccountMenu() async {
+    final user = ref.read(authServiceProvider).currentUser;
+    final action = await showDialog<_AccountAction>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: kPanelLight,
+        title: const Text(
+          'Account',
+          style: TextStyle(color: kTextPrimary, fontWeight: FontWeight.w700),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.person_outline, color: kAccent),
+              title: const Text('Profile',
+                  style: TextStyle(color: kTextPrimary)),
+              subtitle: Text(user?.email ?? 'Signed-in account',
+                  style: const TextStyle(color: kTextSecondary)),
+              onTap: () =>
+                  Navigator.pop(dialogContext, _AccountAction.profile),
+            ),
+            ListTile(
+              leading: const Icon(Icons.settings_outlined, color: kTextPrimary),
+              title: const Text('Settings',
+                  style: TextStyle(color: kTextPrimary)),
+              onTap: () =>
+                  Navigator.pop(dialogContext, _AccountAction.settings),
+            ),
+            ListTile(
+              leading: const Icon(Icons.logout, color: Colors.redAccent),
+              title: const Text('Sign out',
+                  style: TextStyle(color: Colors.redAccent)),
+              onTap: () =>
+                  Navigator.pop(dialogContext, _AccountAction.signOut),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (!mounted || action == null) return;
+    if (action == _AccountAction.signOut) {
+      await ref.read(playerProvider.notifier).pause().catchError((_) {});
+      await ref.read(authServiceProvider).signOut();
+    } else if (action == _AccountAction.profile) {
+      _showInfoDialog(
+          'Profile', user?.email ?? 'No profile details available.');
+    } else {
+      _showInfoDialog('Settings', 'Settings are coming soon.');
+    }
+  }
+
+  void _showInfoDialog(String title, String message) {
+    showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: kPanelLight,
+        title: Text(title, style: const TextStyle(color: kTextPrimary)),
+        content: Text(message, style: const TextStyle(color: kTextSecondary)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close', style: TextStyle(color: kAccent)),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -148,9 +224,13 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
                 onHome: () => _navigateTo(0),
                 onSearchTap: () => _navigateTo(1),
                 onSearch: (q) {
-                  _navigateTo(1);
                   ref.read(searchProvider.notifier).search(q);
                 },
+                // Called when user presses Enter or taps a recent search —
+                // the provider search is already fired inside the title bar,
+                // so we only need to navigate here.
+                onNavigateToSearch: (q) => _navigateTo(1),
+                onProfileTap: _showAccountMenu,
               ),
 
               // ── Main content row ──────────────────────────────────
@@ -167,13 +247,16 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
                         } else {
                           _navigateTo(0);
                         }
+
                       },
                     ),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 200),
-                        child: _buildCenterView(),
+                      child: ClipRect(
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 200),
+                          child: _buildCenterView(),
+                        ),
                       ),
                     ),
                     // Right panel — always NowPlaying or Queue.
@@ -245,9 +328,13 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
             playlist: p,
           );
         }
+
         return const DesktopHomeView(key: ValueKey('home'));
       default:
         return const DesktopHomeView(key: ValueKey('home'));
     }
+
   }
 }
+
+enum _AccountAction { profile, settings, signOut }

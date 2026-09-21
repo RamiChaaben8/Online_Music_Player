@@ -26,8 +26,20 @@ class PlaylistImportProgress {
 class _SpotifyTrack {
   final String title;
   final String query;
+  final String? artist;
 
-  const _SpotifyTrack({required this.title, required this.query});
+  const _SpotifyTrack({
+    required this.title,
+    required this.query,
+    this.artist,
+  });
+}
+
+class _SpotifyPlaylistData {
+  final String name;
+  final List<_SpotifyTrack> tracks;
+
+  const _SpotifyPlaylistData({required this.name, required this.tracks});
 }
 
 class PlaylistImportService {
@@ -181,71 +193,294 @@ class PlaylistImportService {
 
     final client = HttpClient();
     try {
-      final request = await client.getUrl(
-        Uri.parse('https://open.spotify.com/embed/playlist/$playlistId'),
-      );
-      request.headers.set(HttpHeaders.userAgentHeader, 'Mozilla/5.0');
-      final response = await request.close();
-      final html = await utf8.decoder.bind(response).join();
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        throw YoutubeServiceException('Could not read the Spotify playlist.');
-      }
-
-      final data = _spotifyEmbedData(html);
-      final entity = data?['props']?['pageProps']?['state']?['data']?['entity'];
-      if (entity is! Map) {
-        throw YoutubeServiceException(
-            'Spotify did not expose this public playlist.');
-      }
-
-      final name = entity['name'] as String? ?? 'Imported Spotify playlist';
-      final trackNames = _spotifyTrackNames(entity);
-      if (trackNames.isEmpty) {
-        throw YoutubeServiceException(
-            'Spotify did not expose any public tracks for this playlist.');
-      }
-
-      final songs = <Song>[];
-      final tracks = trackNames.take(200).toList();
-      for (var index = 0; index < tracks.length; index++) {
-        final track = tracks[index];
-        try {
-          var matches = await _youtube.search(track.query, maxResults: 3);
-          if (matches.isEmpty && track.query != track.title) {
-            matches = await _youtube.search(track.title, maxResults: 3);
-          }
-          if (matches.isNotEmpty) songs.add(matches.first);
-        } catch (_) {
-          // One unavailable or malformed search must not cancel the whole
-          // playlist import. Continue importing the remaining tracks.
-          if (track.query != track.title) {
-            try {
-              final matches = await _youtube.search(track.title, maxResults: 3);
-              if (matches.isNotEmpty) songs.add(matches.first);
-            } catch (_) {
-              // Skip only this track when both searches fail.
-            }
-          }
-        } finally {
-          onProgress?.call(PlaylistImportProgress(
-            source: 'Spotify',
-            current: index + 1,
-            total: tracks.length,
-          ));
+      final playlist = await _spotifyPathfinderPlaylist(client, playlistId);
+      if (playlist == null) {
+        final request = await client.getUrl(
+          Uri.parse('https://open.spotify.com/playlist/$playlistId'),
+        );
+        request.headers.set(HttpHeaders.userAgentHeader, 'Mozilla/5.0');
+        final response = await request.close();
+        final html = await utf8.decoder.bind(response).join();
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          throw YoutubeServiceException('Could not read the Spotify playlist.');
         }
+        final fallback = _spotifyPlaylistData(html);
+        if (fallback == null) {
+          throw YoutubeServiceException(
+              'Spotify did not expose this public playlist.');
+        }
+        return _importSpotifyTracks(fallback, onProgress: onProgress);
       }
-      if (songs.isEmpty)
-        throw YoutubeServiceException(
-            'No matching tracks were found on YouTube.');
-      return PlaylistImportResult(name: name, songs: songs);
+
+      return _importSpotifyTracks(playlist, onProgress: onProgress);
     } finally {
       client.close(force: true);
     }
   }
 
+  Future<PlaylistImportResult> _importSpotifyTracks(
+    _SpotifyPlaylistData playlist, {
+    void Function(PlaylistImportProgress progress)? onProgress,
+  }) async {
+    if (playlist.tracks.isEmpty) {
+      throw YoutubeServiceException(
+          'Spotify did not expose any public tracks for this playlist.');
+    }
+
+    final songs = <Song>[];
+    final tracks = playlist.tracks;
+    for (var start = 0; start < tracks.length; start += 2) {
+      final end = (start + 2).clamp(0, tracks.length);
+      final batch = tracks.sublist(start, end);
+      final matches = await Future.wait(batch.map(_findSpotifyTrack));
+      for (var offset = 0; offset < matches.length; offset++) {
+        final match = matches[offset];
+        if (match != null) songs.add(match);
+        onProgress?.call(PlaylistImportProgress(
+          source: 'Spotify',
+          current: start + offset + 1,
+          total: tracks.length,
+        ));
+      }
+    }
+    if (songs.isEmpty) {
+      throw YoutubeServiceException(
+          'No matching tracks were found on YouTube.');
+    }
+    return PlaylistImportResult(name: playlist.name, songs: songs);
+  }
+
+  Future<_SpotifyPlaylistData?> _spotifyPathfinderPlaylist(
+    HttpClient client,
+    String playlistId,
+  ) async {
+    try {
+      final embedRequest = await client.getUrl(
+        Uri.parse('https://open.spotify.com/embed/playlist/$playlistId'),
+      );
+      embedRequest.headers.set(HttpHeaders.userAgentHeader, 'Mozilla/5.0');
+      final embedResponse = await embedRequest.close();
+      final embedHtml = await utf8.decoder.bind(embedResponse).join();
+      if (embedResponse.statusCode < 200 || embedResponse.statusCode >= 300) {
+        return null;
+      }
+
+      final token = _spotifyAnonymousToken(embedHtml);
+      if (token == null) return null;
+
+      final extensions = jsonEncode({
+        'persistedQuery': {
+          'version': 1,
+          'sha256Hash':
+              'a65e12194ed5fc443a1cdebed5fabe33ca5b07b987185d63c72483867ad13cb4',
+        },
+      });
+
+      final tracks = <_SpotifyTrack>[];
+      String? name;
+      var offset = 0;
+      var totalCount = 0;
+      while (true) {
+        final variables = jsonEncode({
+          'uri': 'spotify:playlist:$playlistId',
+          'offset': offset,
+          'limit': 100,
+          'enableWatchFeedEntrypoint': false,
+        });
+        final pathfinderUri = Uri.parse(
+          'https://api-partner.spotify.com/pathfinder/v1/query',
+        ).replace(queryParameters: {
+          'operationName': 'fetchPlaylist',
+          'variables': variables,
+          'extensions': extensions,
+        });
+        final request = await client.getUrl(pathfinderUri);
+        request.headers
+          ..set(HttpHeaders.userAgentHeader, 'Mozilla/5.0')
+          ..set(HttpHeaders.authorizationHeader, 'Bearer $token')
+          ..set('app-platform', 'WebPlayer');
+        final response = await request.close();
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          return null;
+        }
+        final body = jsonDecode(await utf8.decoder.bind(response).join());
+        final playlist = body['data']?['playlistV2'];
+        final content = playlist is Map ? playlist['content'] : null;
+        if (playlist is! Map || content is! Map) return null;
+
+        name ??= playlist['name'] as String?;
+        tracks.addAll(_spotifyPathfinderTrackNames(content['items']));
+        totalCount = content['totalCount'] as int? ?? tracks.length;
+        final pagingInfo = content['pagingInfo'];
+        final nextOffset =
+            pagingInfo is Map ? pagingInfo['nextOffset'] as int? : null;
+        if (nextOffset == null ||
+            nextOffset <= offset ||
+            tracks.length >= totalCount) {
+          break;
+        }
+        offset = nextOffset;
+      }
+
+      return _SpotifyPlaylistData(
+        name: name ?? 'Imported Spotify playlist',
+        tracks: tracks,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String? _spotifyAnonymousToken(String html) {
+    final data = _spotifyEmbedData(html);
+    final session =
+        data?['props']?['pageProps']?['state']?['settings']?['session'];
+    if (session is! Map) return null;
+    final token = session['accessToken'];
+    return token is String && token.isNotEmpty ? token : null;
+  }
+
+  List<_SpotifyTrack> _spotifyPathfinderTrackNames(dynamic items) {
+    if (items is! List) return [];
+    final tracks = <_SpotifyTrack>[];
+    for (final item in items) {
+      final itemV2 = item is Map ? item['itemV2'] : null;
+      final data = itemV2 is Map ? itemV2['data'] : null;
+      if (data is! Map) continue;
+      final title = data['name'] as String?;
+      final artistsData = data['artists'];
+      final artists = artistsData is Map ? artistsData['items'] : null;
+      final artist = artists is List && artists.isNotEmpty
+          ? (artists.first is Map
+              ? ((artists.first['profile'] is Map)
+                  ? artists.first['profile']['name'] as String?
+                  : null)
+              : null)
+          : null;
+      if (title == null || title.trim().isEmpty) continue;
+      tracks.add(_SpotifyTrack(
+        title: title,
+        query:
+            artist == null || artist.trim().isEmpty ? title : '$title $artist',
+        artist: artist,
+      ));
+    }
+    return tracks;
+  }
+
+  Future<Song?> _findSpotifyTrack(_SpotifyTrack track) async {
+    final cleanTitle = track.title
+        .replaceAll(RegExp(r'\([^)]*\)|\[[^\]]*\]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    final titleWords = cleanTitle
+        .split(RegExp(r'[^A-Za-z0-9]+'))
+        .where((word) => word.length > 1)
+        .join(' ');
+    final queries = <String>[];
+    for (final query in [
+      track.query,
+      track.title,
+      if (cleanTitle != track.title) cleanTitle,
+      if (track.artist != null && cleanTitle != track.title)
+        '$cleanTitle ${track.artist}',
+      if (track.artist != null) '${track.artist} $cleanTitle',
+      if (titleWords != cleanTitle) titleWords,
+    ]) {
+      final normalized = query.trim();
+      if (normalized.isNotEmpty && !queries.contains(normalized)) {
+        queries.add(normalized);
+      }
+    }
+
+    for (final query in queries) {
+      for (var attempt = 0; attempt < 3; attempt++) {
+        try {
+          final matches = await _youtube.search(query, maxResults: 10);
+          if (matches.isNotEmpty) return matches.first;
+        } catch (_) {
+          // Retry transient YouTube failures before trying another query.
+        }
+        if (attempt < 2) {
+          await Future<void>.delayed(
+            Duration(milliseconds: 250 * (attempt + 1)),
+          );
+        }
+      }
+    }
+    return null;
+  }
+
   String? _spotifyPlaylistId(Uri uri) {
     final match = RegExp(r'/playlist/([A-Za-z0-9]+)').firstMatch(uri.path);
     return match?.group(1) ?? uri.queryParameters['si'];
+  }
+
+  _SpotifyPlaylistData? _spotifyPlaylistData(String html) {
+    final stateMatch = RegExp(
+      r'<script id="initialState" type="text/plain">(.*?)</script>',
+      dotAll: true,
+    ).firstMatch(html);
+    if (stateMatch != null) {
+      try {
+        final decoded = jsonDecode(
+          utf8.decode(base64Decode(stateMatch.group(1)!)),
+        );
+        final items = decoded['entities']?['items'];
+        if (items is Map && items.isNotEmpty) {
+          final playlist = items.values.first;
+          final content = playlist['content'];
+          final tracks = _spotifyPageTrackNames(content?['items']);
+          if (playlist is Map && content is Map) {
+            return _SpotifyPlaylistData(
+              name: playlist['name'] as String? ?? 'Imported Spotify playlist',
+              tracks: tracks,
+            );
+          }
+        }
+      } catch (_) {
+        // Fall back to the embed payload for older Spotify page responses.
+      }
+    }
+
+    final data = _spotifyEmbedData(html);
+    final entity = data?['props']?['pageProps']?['state']?['data']?['entity'];
+    if (entity is Map) {
+      final tracks = _spotifyTrackNames(entity);
+      return _SpotifyPlaylistData(
+        name: entity['name'] as String? ?? 'Imported Spotify playlist',
+        tracks: tracks,
+      );
+    }
+    return null;
+  }
+
+  List<_SpotifyTrack> _spotifyPageTrackNames(dynamic items) {
+    if (items is! List) return [];
+    final tracks = <_SpotifyTrack>[];
+    for (final item in items) {
+      final itemV2 = item is Map ? item['itemV2'] : null;
+      final data = itemV2 is Map ? itemV2['data'] : null;
+      if (data is! Map) continue;
+      final title = data['name'] as String?;
+      final artistsData = data['artists'];
+      final artists = artistsData is Map ? artistsData['items'] : null;
+      final artist = artists is List && artists.isNotEmpty
+          ? (artists.first is Map
+              ? ((artists.first['profile'] is Map)
+                  ? artists.first['profile']['name'] as String?
+                  : null)
+              : null)
+          : null;
+      if (title == null || title.trim().isEmpty) continue;
+      tracks.add(_SpotifyTrack(
+        title: title,
+        query:
+            artist == null || artist.trim().isEmpty ? title : '$title $artist',
+        artist: artist,
+      ));
+    }
+    return tracks;
   }
 
   Map<String, dynamic>? _spotifyEmbedData(String html) {
@@ -274,9 +509,7 @@ class PlaylistImportService {
       if (title == null || title.trim().isEmpty) continue;
       final query =
           artist == null || artist.trim().isEmpty ? title : '$title $artist';
-      if (!names.any((item) => item.query == query)) {
-        names.add(_SpotifyTrack(title: title, query: query));
-      }
+      names.add(_SpotifyTrack(title: title, query: query, artist: artist));
     }
     return names;
   }

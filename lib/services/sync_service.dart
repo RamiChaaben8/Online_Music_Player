@@ -200,6 +200,11 @@ class SyncService {
     _isActive = false;
   }
 
+  Future<void> unregisterCurrentDevice() async {
+    if (_uid == null || _deviceId == null) return;
+    await _fs.unregisterDevice(_uid!, _deviceId!);
+  }
+
   /// Transfer active playback to another device by claiming it as active.
   /// This device becomes passive immediately.
   Future<void> transferToDevice(

@@ -34,13 +34,15 @@ class _DesktopPlayerBarState extends ConsumerState<DesktopPlayerBar> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      final service = ref.read(audioHandlerProvider).service;
+      setState(() => _volume = service.volume);
       _applyVolume(_volume);
     });
   }
 
   void _applyVolume(double v) {
     try {
-      ref.read(audioHandlerProvider).service.player.setVolume(v);
+      ref.read(audioHandlerProvider).service.setVolume(v);
     } catch (_) {}
   }
 

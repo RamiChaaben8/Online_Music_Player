@@ -15,8 +15,6 @@ import '../../models/playlist.dart';
 import '../../providers/library_provider.dart';
 import '../../services/firestore_service.dart';
 import '../../providers/player_provider.dart';
-import '../../providers/auth_provider.dart';
-import '../../screens/auth/delete_account_screen.dart';
 import '../theme/desktop_theme.dart';
 import '../../widgets/import_playlist_dialog.dart';
 
@@ -176,43 +174,27 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
                 ),
               ),
               const Spacer(),
-              TextButton.icon(
-                onPressed: () => _showCreatePlaylistDialog(context),
-                icon: const Icon(Icons.add, size: 16, color: kAccent),
-                label: const Text(
-                  'Create',
-                  style: TextStyle(color: kAccent, fontSize: 13),
-                ),
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-              ),
-              TextButton.icon(
-                onPressed: () => showImportPlaylistDialog(context, ref),
-                icon: const Icon(Icons.playlist_add, size: 16, color: kAccent),
-                label: const Text(
-                  'Import',
-                  style: TextStyle(color: kAccent, fontSize: 13),
-                ),
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-              ),
-              // Sign-out button
               Tooltip(
-                message: 'Sign out',
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(8),
-                  onTap: () => _confirmSignOut(context),
-                  child: const Padding(
-                    padding: EdgeInsets.all(6),
-                    child:
-                        Icon(Icons.logout, color: Color(0xFFB3B3B3), size: 18),
-                  ),
+                message: 'Create playlist',
+                child: IconButton(
+                  onPressed: () => _showCreatePlaylistDialog(context),
+                  icon: const Icon(Icons.add, size: 18, color: kAccent),
+                  padding: const EdgeInsets.all(6),
+                  constraints:
+                      const BoxConstraints(minWidth: 30, minHeight: 30),
+                  splashRadius: 16,
+                ),
+              ),
+              Tooltip(
+                message: 'Import playlist',
+                child: IconButton(
+                  onPressed: () => showImportPlaylistDialog(context, ref),
+                  icon: const Icon(Icons.playlist_add,
+                      size: 18, color: kAccent),
+                  padding: const EdgeInsets.all(6),
+                  constraints:
+                      const BoxConstraints(minWidth: 30, minHeight: 30),
+                  splashRadius: 16,
                 ),
               ),
             ],
@@ -236,27 +218,6 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
                 fontWeight: FontWeight.w600,
               ),
             ),
-          ),
-        ),
-
-        // ── Search row ─────────────────────────────────────────────
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-          child: Row(
-            children: const [
-              Icon(Icons.search, color: kTextSecondary, size: 18),
-              SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Recents',
-                  style: TextStyle(
-                      color: kTextSecondary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500),
-                ),
-              ),
-              Icon(Icons.list, color: kTextSecondary, size: 18),
-            ],
           ),
         ),
 
@@ -307,54 +268,6 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
     );
   }
 
-  Future<void> _confirmSignOut(BuildContext context) async {
-    final action = await showDialog<_SignOutAction>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1E1E2E),
-        title: const Text('Account', style: TextStyle(color: Colors.white)),
-        content: const Text(
-          'What would you like to do?',
-          style: TextStyle(color: Color(0xFFB3B3B3)),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel',
-                style: TextStyle(color: Color(0xFFB3B3B3))),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, _SignOutAction.deleteAccount),
-            child: const Text('Delete Account',
-                style: TextStyle(color: Colors.redAccent)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-                backgroundColor: kAccent, foregroundColor: Colors.black),
-            onPressed: () => Navigator.pop(ctx, _SignOutAction.signOut),
-            child: const Text('Sign Out'),
-          ),
-        ],
-      ),
-    );
-
-    if (!mounted) return;
-
-    switch (action) {
-      case _SignOutAction.signOut:
-        await ref.read(playerProvider.notifier).pause().catchError((_) {});
-        await ref.read(authServiceProvider).signOut();
-      case _SignOutAction.deleteAccount:
-        if (!mounted) return;
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const DeleteAccountScreen()),
-        );
-      case null:
-        break;
-    }
-  }
-
   Future<void> _showCreatePlaylistDialog(BuildContext context) async {
     final controller = TextEditingController();
     final name = await showDialog<String>(
@@ -377,7 +290,7 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
               borderSide: BorderSide.none,
             ),
           ),
-          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+          onSubmitted: (value) => Navigator.pop(ctx, value.trim()),
         ),
         actions: [
           TextButton(
@@ -393,6 +306,7 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
         ],
       ),
     );
+    controller.dispose();
     if (name != null && name.isNotEmpty) {
       await ref.read(libraryProvider.notifier).createPlaylist(name);
     }
@@ -400,8 +314,6 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
 }
 
 // Top-level enum — cannot be declared inside a class in Dart
-enum _SignOutAction { signOut, deleteAccount }
-
 // ─── Icon-only tile (collapsed mode) ─────────────────────────────────────────
 
 class _IconOnlyTile extends StatefulWidget {
@@ -499,8 +411,6 @@ class _PlaylistTile extends ConsumerStatefulWidget {
 }
 
 class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
-  bool _hovering = false;
-
   @override
   Widget build(BuildContext context) {
     final thumbUrl = widget.playlist.songs.isNotEmpty
@@ -508,8 +418,6 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
         : '';
 
     return MouseRegion(
-      onEnter: (_) => setState(() => _hovering = true),
-      onExit: (_) => setState(() => _hovering = false),
       child: GestureDetector(
         // Right-click opens context menu
         onSecondaryTapUp: (d) => _showMenu(context, d.globalPosition),
@@ -581,32 +489,6 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
                     ),
                   ),
 
-                  // ··· button (visible on hover or active)
-                  AnimatedOpacity(
-                    opacity: (_hovering || widget.isActive) ? 1.0 : 0.0,
-                    duration: const Duration(milliseconds: 150),
-                    child: SizedBox(
-                      width: 28,
-                      height: 28,
-                      child: IconButton(
-                        padding: EdgeInsets.zero,
-                        constraints:
-                            const BoxConstraints(minWidth: 28, minHeight: 28),
-                        icon: const Icon(Icons.more_horiz,
-                            color: kTextSecondary, size: 18),
-                        onPressed: () {
-                          // Get the button's position for the menu
-                          final box = context.findRenderObject() as RenderBox;
-                          final offset = box.localToGlobal(Offset.zero);
-                          _showMenu(
-                            context,
-                            Offset(offset.dx + box.size.width,
-                                offset.dy + box.size.height / 2),
-                          );
-                        },
-                      ),
-                    ),
-                  ),
                 ],
               ),
             ),

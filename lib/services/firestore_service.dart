@@ -13,6 +13,7 @@
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:async';
 
 import '../models/song.dart';
 import '../models/playlist.dart';
@@ -228,6 +229,10 @@ class FirestoreService {
     }, SetOptions(merge: true));
   }
 
+  Future<void> unregisterDevice(String uid, String deviceId) async {
+    await _userCol(uid, 'devices').doc(deviceId).delete();
+  }
+
   /// Remove device registrations that have not sent a heartbeat recently.
   Future<void> removeStaleDevices(String uid,
       {required String keepDeviceId,
@@ -300,8 +305,12 @@ class FirestoreService {
   /// Stream of all registered devices (users/{uid}/devices collection).
   /// Each device doc has: name, platform, lastActiveAt.
   Stream<List<DeviceInfo>> devicesStream(String uid) {
-    final cutoff = DateTime.now().subtract(const Duration(minutes: 2));
-    return _userCol(uid, 'devices').snapshots().map((snap) {
+    final controller = StreamController<List<DeviceInfo>>();
+    Timer? refreshTimer;
+    StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? subscription;
+
+    List<DeviceInfo> parse(
+        QuerySnapshot<Map<String, dynamic>> snap) {
       final devices = snap.docs.map((d) {
         final lastActive = d.data()['lastActiveAt'];
         final lastActiveAt = lastActive is Timestamp
@@ -320,9 +329,30 @@ class FirestoreService {
       return devices
           .where((device) =>
               device.lastActiveAt != null &&
-              device.lastActiveAt!.isAfter(cutoff))
+              DateTime.now().difference(device.lastActiveAt!) <
+                  const Duration(seconds: 75))
           .toList();
+    }
+
+    Future<void> refresh() async {
+      try {
+        controller.add(parse(await _userCol(uid, 'devices').get()));
+      } catch (_) {
+        // The live snapshot subscription remains the source of truth.
+      }
+    }
+
+    subscription = _userCol(uid, 'devices').snapshots().listen((snap) {
+      controller.add(parse(snap));
     });
+    refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      refresh();
+    });
+    controller.onCancel = () async {
+      refreshTimer?.cancel();
+      await subscription?.cancel();
+    };
+    return controller.stream;
   }
 
   // ── Delete user data ──────────────────────────────────────────────────────

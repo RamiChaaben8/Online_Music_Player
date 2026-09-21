@@ -6,6 +6,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:audio_service/audio_service.dart';
+import 'package:hive/hive.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../models/song.dart';
@@ -52,6 +53,7 @@ class AudioPlayerService {
   int _currentIndex = -1;
   bool _shuffle = false;
   LoopMode _loopMode = LoopMode.off;
+  double _volume = 1.0;
 
   StreamSubscription<PlayerState>? _completionSub;
 
@@ -70,6 +72,18 @@ class AudioPlayerService {
   Stream<Song> get songChangeStream => _songChangeController.stream;
 
   AudioPlayerService(this._youtube);
+
+  double get volume => _volume;
+
+  /// Restore the last local volume before the app starts accepting playback.
+  Future<void> initialize() async {
+    final settings = Hive.box('settings');
+    final saved = settings.get('volume');
+    if (saved is num) {
+      _volume = saved.toDouble().clamp(0.0, 1.0);
+    }
+    await _player.setVolume(_volume);
+  }
 
   // ── Streams ───────────────────────────────────────────────────────────────
 
@@ -150,7 +164,13 @@ class AudioPlayerService {
 
   Future<void> play() => _player.play();
   Future<void> pause() => _player.pause();
+  Future<void> stop() => _player.stop();
   Future<void> seek(Duration position) => _player.seek(position);
+  Future<void> setVolume(double value) async {
+    _volume = value.clamp(0.0, 1.0);
+    await _player.setVolume(_volume);
+    await Hive.box('settings').put('volume', _volume);
+  }
 
   Future<void> skipToNext() async {
     if (_queue.isEmpty) return;

@@ -142,6 +142,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     // Wire OS media-button callbacks.
     _handler.onPlay = () => play();
     _handler.onPause = () => pause();
+    _handler.onStop = () => stop();
     _handler.onSkipToNext = () => skipToNext();
     _handler.onSkipToPrevious = () => skipToPrevious();
     _handler.onSeek = (pos) => seek(pos);
@@ -596,6 +597,15 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     if (mounted) state = state.copyWith(isPlaying: false);
   }
 
+  Future<void> stop() async {
+    if (_sync.service.isActive) {
+      await _service.stop();
+    }
+    if (mounted) {
+      state = state.copyWith(isPlaying: false, position: Duration.zero);
+    }
+  }
+
   /// Save the queue and current song for the next app session.
   Future<void> saveSession() {
     return _sync.service.savePlaybackState(
@@ -759,6 +769,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     }
     _handler.onPlay = null;
     _handler.onPause = null;
+    _handler.onStop = null;
     _handler.onSkipToNext = null;
     _handler.onSkipToPrevious = null;
     _handler.onSeek = null;

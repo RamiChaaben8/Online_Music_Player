@@ -54,6 +54,7 @@ class SearchState {
 
 class SearchNotifier extends StateNotifier<SearchState> {
   final YoutubeService _youtube;
+  int _requestId = 0;
 
   SearchNotifier(this._youtube) : super(const SearchState());
 
@@ -63,10 +64,12 @@ class SearchNotifier extends StateNotifier<SearchState> {
       return;
     }
 
+    final requestId = ++_requestId;
     state = state.copyWith(isLoading: true, query: query, clearError: true);
 
     try {
       final results = await _youtube.search(query);
+      if (requestId != _requestId) return;
       state = state.copyWith(results: results, isLoading: false);
 
       // Immediately start resolving stream URLs for the top results in the
@@ -78,8 +81,10 @@ class SearchNotifier extends StateNotifier<SearchState> {
         maxConcurrent: 4,
       );
     } on YoutubeServiceException catch (e) {
+      if (requestId != _requestId) return;
       state = state.copyWith(isLoading: false, error: e.message);
     } catch (e) {
+      if (requestId != _requestId) return;
       state = state.copyWith(
         isLoading: false,
         error: 'An unexpected error occurred. Check your connection.',
@@ -87,7 +92,10 @@ class SearchNotifier extends StateNotifier<SearchState> {
     }
   }
 
-  void clear() => state = const SearchState();
+  void clear() {
+    _requestId++;
+    state = const SearchState();
+  }
 }
 
 final searchProvider =

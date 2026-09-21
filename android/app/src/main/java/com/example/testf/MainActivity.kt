@@ -14,11 +14,13 @@ class MainActivity : AudioServiceActivity() {
 
     companion object {
         const val CHANNEL        = "com.example.testf/marquee"
+        const val LIFECYCLE_CHANNEL = "com.example.testf/lifecycle"
         const val PERM_CHANNEL   = "com.example.testf/permissions"
         const val PERM_REQ_CODE  = 1001
     }
 
     private lateinit var marquee: MarqueeNotificationHelper
+    private var lifecycleChannel: MethodChannel? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -27,6 +29,11 @@ class MainActivity : AudioServiceActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+
+        lifecycleChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            LIFECYCLE_CHANNEL,
+        )
 
         // ── Marquee notification channel ──────────────────────────────────
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
@@ -91,7 +98,11 @@ class MainActivity : AudioServiceActivity() {
     }
 
     override fun onDestroy() {
+        if (!isChangingConfigurations && isFinishing) {
+            lifecycleChannel?.invokeMethod("taskRemoved", null)
+        }
         marquee.dispose()
+        lifecycleChannel = null
         super.onDestroy()
     }
 }

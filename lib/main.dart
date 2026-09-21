@@ -115,6 +115,10 @@ Future<void> main() async {
     );
   }
 
+  // Restore local audio settings before the first frame. This prevents the
+  // first playback request from using a default volume for one track.
+  await audioHandler.service.initialize();
+
   runApp(ProviderScope(
     overrides: [
       // Give every provider in the tree the same handler instance that

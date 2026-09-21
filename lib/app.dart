@@ -4,6 +4,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 import 'dart:io';
 
 import 'screens/search_screen.dart';
@@ -28,6 +29,9 @@ class TuneifyApp extends StatelessWidget {
       title: 'Tuneify',
       debugShowCheckedModeBanner: false,
       theme: _buildDarkTheme(),
+      builder: (context, child) => _MediaKeyListener(
+        child: child ?? const SizedBox.shrink(),
+      ),
       home: AuthGate(
         child: Platform.isWindows ? const DesktopShell() : const AppShell(),
       ),
@@ -123,6 +127,64 @@ class TuneifyApp extends StatelessWidget {
   }
 }
 
+class _MediaKeyListener extends ConsumerStatefulWidget {
+  final Widget child;
+
+  const _MediaKeyListener({required this.child});
+
+  @override
+  ConsumerState<_MediaKeyListener> createState() => _MediaKeyListenerState();
+}
+
+class _MediaKeyListenerState extends ConsumerState<_MediaKeyListener> {
+  final FocusNode _focusNode = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focusNode.requestFocus();
+    });
+  }
+
+  KeyEventResult _onKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+
+    final player = ref.read(playerProvider.notifier);
+    switch (event.logicalKey) {
+      case LogicalKeyboardKey.mediaPlayPause:
+        player.togglePlayPause();
+        return KeyEventResult.handled;
+      case LogicalKeyboardKey.mediaStop:
+        player.stop();
+        return KeyEventResult.handled;
+      case LogicalKeyboardKey.mediaTrackNext:
+        player.skipToNext();
+        return KeyEventResult.handled;
+      case LogicalKeyboardKey.mediaTrackPrevious:
+        player.skipToPrevious();
+        return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Focus(
+      focusNode: _focusNode,
+      autofocus: true,
+      onKeyEvent: _onKeyEvent,
+      child: widget.child,
+    );
+  }
+}
+
 // ─── App Shell (bottom nav + mini-player) ─────────────────────────────────
 class AppShell extends ConsumerStatefulWidget {
   const AppShell({super.key});
@@ -134,11 +196,22 @@ class AppShell extends ConsumerStatefulWidget {
 class _AppShellState extends ConsumerState<AppShell>
     with WidgetsBindingObserver {
   int _currentIndex = 0;
+  static const _androidLifecycleChannel =
+      MethodChannel('com.example.testf/lifecycle');
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    if (Platform.isAndroid) {
+      _androidLifecycleChannel.setMethodCallHandler((call) async {
+        if (call.method == 'taskRemoved') {
+          final sync = ref.read(syncProvider.notifier).service;
+          await sync.releaseIfActive().catchError((_) {});
+          await sync.unregisterCurrentDevice().catchError((_) {});
+        }
+      });
+    }
     // Request storage permission then scan for local music on first frame
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _requestStoragePermission();
@@ -159,6 +232,9 @@ class _AppShellState extends ConsumerState<AppShell>
 
   @override
   void dispose() {
+    if (Platform.isAndroid) {
+      _androidLifecycleChannel.setMethodCallHandler(null);
+    }
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -177,6 +253,11 @@ class _AppShellState extends ConsumerState<AppShell>
           .read(syncProvider.notifier)
           .service
           .releaseIfActive()
+          .catchError((_) {});
+      ref
+          .read(syncProvider.notifier)
+          .service
+          .unregisterCurrentDevice()
           .catchError((_) {});
     }
     if (state == AppLifecycleState.paused ||
