@@ -17,6 +17,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/player_provider.dart';
 import '../providers/sync_provider.dart';
 import '../services/firestore_service.dart';
+import '../desktop/theme/desktop_theme.dart';
 
 // ── Button ────────────────────────────────────────────────────────────────────
 
@@ -28,8 +29,11 @@ class DevicePickerButton extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isActive = ref.watch(playerProvider.select((s) => s.isActiveDevice));
+    final theme = AppThemeScope.maybeOf(context);
     // Green = another device owns playback; white = we own it (or no active device)
-    final color = isActive ? Colors.white : const Color(0xFF1DB954);
+    final color = isActive
+        ? theme?.text ?? Colors.white
+        : theme?.button ?? const Color(0xFF1DB954);
 
     return IconButton(
       icon: Icon(Icons.cast, color: color, size: size),
@@ -44,7 +48,8 @@ class DevicePickerButton extends ConsumerWidget {
     final container = ProviderScope.containerOf(context);
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF121212),
+      backgroundColor:
+          AppThemeScope.maybeOf(context)?.main ?? const Color(0xFF121212),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -63,6 +68,7 @@ class DevicePickerSheet extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final theme = AppThemeScope.maybeOf(context);
     final playerState = ref.watch(playerProvider);
     final activeDevice = playerState.activeDevice;
     final isThisDeviceActive = playerState.isActiveDevice;
@@ -84,19 +90,19 @@ class DevicePickerSheet extends ConsumerWidget {
                 height: 4,
                 margin: const EdgeInsets.only(bottom: 16),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF4A4A4A),
+                  color: theme?.shadow ?? const Color(0xFF4A4A4A),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
             ),
 
             // ── Title ─────────────────────────────────────────────────────
-            const Padding(
+            Padding(
               padding: EdgeInsets.symmetric(horizontal: 20),
               child: Text(
                 'Connect to a device',
                 style: TextStyle(
-                  color: Colors.white,
+                  color: theme?.text ?? Colors.white,
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                 ),
@@ -110,8 +116,8 @@ class DevicePickerSheet extends ConsumerWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: Text(
                   'Playing on ${activeDevice.deviceName}',
-                  style: const TextStyle(
-                    color: Color(0xFF1DB954),
+                  style: TextStyle(
+                    color: theme?.button ?? const Color(0xFF1DB954),
                     fontSize: 13,
                   ),
                 ),
@@ -121,23 +127,26 @@ class DevicePickerSheet extends ConsumerWidget {
 
             // ── Device list ───────────────────────────────────────────────
             devicesAsync.when(
-              loading: () => const Padding(
+              loading: () => Padding(
                 padding: EdgeInsets.all(24),
                 child: Center(
                     child: CircularProgressIndicator(
-                        color: Color(0xFF1DB954), strokeWidth: 2)),
+                        color: theme?.button ?? const Color(0xFF1DB954),
+                        strokeWidth: 2)),
               ),
-              error: (_, __) => const Padding(
+              error: (_, __) => Padding(
                 padding: EdgeInsets.all(24),
                 child: Text('Could not load devices',
-                    style: TextStyle(color: Color(0xFFB3B3B3))),
+                    style: TextStyle(
+                        color: theme?.subtext ?? const Color(0xFFB3B3B3))),
               ),
               data: (devices) {
                 if (devices.isEmpty) {
-                  return const Padding(
+                  return Padding(
                     padding: EdgeInsets.all(24),
                     child: Text('No devices found',
-                        style: TextStyle(color: Color(0xFFB3B3B3))),
+                        style: TextStyle(
+                            color: theme?.subtext ?? const Color(0xFFB3B3B3))),
                   );
                 }
                 return ListView.builder(
@@ -167,7 +176,8 @@ class DevicePickerSheet extends ConsumerWidget {
                                   // Transfer playback to another same-account device.
                                   await ref
                                       .read(playerProvider.notifier)
-                                      .transferToDevice(device.deviceId, device.name);
+                                      .transferToDevice(
+                                          device.deviceId, device.name);
                                   if (context.mounted) Navigator.pop(context);
                                 },
                     );
@@ -186,8 +196,8 @@ class DevicePickerSheet extends ConsumerWidget {
                   width: double.infinity,
                   child: FilledButton.icon(
                     style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFF1DB954),
-                      foregroundColor: Colors.black,
+                      backgroundColor: theme?.button ?? const Color(0xFF1DB954),
+                      foregroundColor: theme?.text ?? Colors.black,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(32)),
@@ -195,13 +205,11 @@ class DevicePickerSheet extends ConsumerWidget {
                     icon: const Icon(Icons.headphones, size: 20),
                     label: const Text(
                       'Listen on this device',
-                      style: TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 15),
+                      style:
+                          TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                     ),
                     onPressed: () async {
-                      await ref
-                          .read(playerProvider.notifier)
-                          .listenHere();
+                      await ref.read(playerProvider.notifier).listenHere();
                       if (context.mounted) Navigator.pop(context);
                     },
                   ),
@@ -247,8 +255,11 @@ class _DeviceTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = AppThemeScope.maybeOf(context);
     final nameStyle = TextStyle(
-      color: isActive ? const Color(0xFF1DB954) : Colors.white,
+      color: isActive
+          ? theme?.button ?? const Color(0xFF1DB954)
+          : theme?.text ?? Colors.white,
       fontSize: 15,
       fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
     );
@@ -256,7 +267,9 @@ class _DeviceTile extends StatelessWidget {
     return ListTile(
       leading: Icon(
         _iconFor(device.platform),
-        color: isActive ? const Color(0xFF1DB954) : const Color(0xFFB3B3B3),
+        color: isActive
+            ? theme?.button ?? const Color(0xFF1DB954)
+            : theme?.subtext ?? const Color(0xFFB3B3B3),
         size: 28,
       ),
       title: Text(
@@ -264,15 +277,22 @@ class _DeviceTile extends StatelessWidget {
         style: nameStyle,
       ),
       subtitle: isActive
-          ? const Text('Now playing',
-              style: TextStyle(color: Color(0xFF1DB954), fontSize: 12))
+          ? Text('Now playing',
+              style: TextStyle(
+                  color: theme?.button ?? const Color(0xFF1DB954),
+                  fontSize: 12))
           : (isThisDevice
-              ? const Text('Tap to listen here',
-                  style: TextStyle(color: Color(0xFF777777), fontSize: 12))
-              : const Text('Tap to transfer here',
-                  style: TextStyle(color: Color(0xFF777777), fontSize: 12))),
+              ? Text('Tap to listen here',
+                  style: TextStyle(
+                      color: theme?.shadow ?? const Color(0xFF777777),
+                      fontSize: 12))
+              : Text('Tap to transfer here',
+                  style: TextStyle(
+                      color: theme?.shadow ?? const Color(0xFF777777),
+                      fontSize: 12))),
       trailing: isActive
-          ? const Icon(Icons.volume_up, color: Color(0xFF1DB954), size: 20)
+          ? Icon(Icons.volume_up,
+              color: theme?.button ?? const Color(0xFF1DB954), size: 20)
           : null,
       onTap: onTap,
     );

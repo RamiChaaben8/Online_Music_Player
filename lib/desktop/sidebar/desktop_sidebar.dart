@@ -61,8 +61,8 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeInOut,
       width: _collapsed ? _kCollapsedWidth : kSidebarWidth,
-      decoration: const BoxDecoration(
-        color: kPanelColor,
+      decoration: BoxDecoration(
+        color: context.appTheme.sidebar,
         borderRadius: BorderRadius.only(
           topRight: Radius.circular(12),
           bottomRight: Radius.circular(12),
@@ -80,7 +80,7 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
   Widget _buildCollapsed(Playlist? likedPlaylist, LibraryState library) {
     return Column(
       children: [
-        const SizedBox(height: 16),
+        SizedBox(height: 16),
 
         // Library icon — tap to expand
         Tooltip(
@@ -88,16 +88,17 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
           child: InkWell(
             borderRadius: BorderRadius.circular(8),
             onTap: () => setState(() => _collapsed = false),
-            child: const Padding(
+            child: Padding(
               padding: EdgeInsets.all(8),
-              child: Icon(Icons.library_music, color: kAccent, size: 24),
+              child: Icon(Icons.library_music,
+                  color: context.appTheme.button, size: 24),
             ),
           ),
         ),
 
-        const SizedBox(height: 8),
-        const Divider(color: kBorderColor, height: 1, thickness: 0.5),
-        const SizedBox(height: 8),
+        SizedBox(height: 8),
+        Divider(color: context.appTheme.shadow, height: 1, thickness: 0.5),
+        SizedBox(height: 8),
 
         // Liked Songs icon
         if (likedPlaylist != null)
@@ -105,8 +106,8 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
             message: 'Liked Songs',
             child: _IconOnlyTile(
               icon: Icons.favorite,
-              color: const Color(0xFF7B4FE9),
-              bgColor: const Color(0xFF2A1A4A),
+              color: context.appTheme.misc,
+              bgColor: context.appTheme.misc.withValues(alpha: 0.35),
               isActive: widget.selectedPlaylist?.name == 'Liked Songs',
               onTap: () {
                 final active = widget.selectedPlaylist?.name == 'Liked Songs';
@@ -115,12 +116,12 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
             ),
           ),
 
-        if (likedPlaylist != null) const SizedBox(height: 4),
+        if (likedPlaylist != null) SizedBox(height: 4),
 
         // Playlist icons
         Expanded(
           child: ListView(
-            padding: const EdgeInsets.symmetric(vertical: 4),
+            padding: EdgeInsets.symmetric(vertical: 4),
             children: library.playlists.map((pl) {
               final thumbUrl =
                   pl.songs.isNotEmpty ? pl.songs.first.thumbnailUrl : '';
@@ -149,7 +150,7 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
       children: [
         // ── Header ─────────────────────────────────────────────────
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 8, 8),
+          padding: EdgeInsets.fromLTRB(16, 16, 8, 8),
           child: Row(
             children: [
               // Library icon — tap to collapse
@@ -158,17 +159,18 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
                 child: InkWell(
                   borderRadius: BorderRadius.circular(8),
                   onTap: () => setState(() => _collapsed = true),
-                  child: const Padding(
+                  child: Padding(
                     padding: EdgeInsets.all(4),
-                    child: Icon(Icons.library_music, color: kAccent, size: 22),
+                    child: Icon(Icons.library_music,
+                        color: context.appTheme.button, size: 22),
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
-              const Text(
+              SizedBox(width: 8),
+              Text(
                 'Your Library',
                 style: TextStyle(
-                  color: kAccent,
+                  color: context.appTheme.button,
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                 ),
@@ -178,8 +180,9 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
                 message: 'Create playlist',
                 child: IconButton(
                   onPressed: () => _showCreatePlaylistDialog(context),
-                  icon: const Icon(Icons.add, size: 18, color: kAccent),
-                  padding: const EdgeInsets.all(6),
+                  icon:
+                      Icon(Icons.add, size: 18, color: context.appTheme.button),
+                  padding: EdgeInsets.all(6),
                   constraints:
                       const BoxConstraints(minWidth: 30, minHeight: 30),
                   splashRadius: 16,
@@ -189,9 +192,9 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
                 message: 'Import playlist',
                 child: IconButton(
                   onPressed: () => showImportPlaylistDialog(context, ref),
-                  icon: const Icon(Icons.playlist_add,
-                      size: 18, color: kAccent),
-                  padding: const EdgeInsets.all(6),
+                  icon: Icon(Icons.playlist_add,
+                      size: 18, color: context.appTheme.button),
+                  padding: EdgeInsets.all(6),
                   constraints:
                       const BoxConstraints(minWidth: 30, minHeight: 30),
                   splashRadius: 16,
@@ -203,17 +206,17 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
 
         // ── Filter chip ────────────────────────────────────────────
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            padding: EdgeInsets.symmetric(horizontal: 14, vertical: 6),
             decoration: BoxDecoration(
-              color: const Color(0xFF1A3321),
+              color: context.appTheme.tabActive,
               borderRadius: BorderRadius.circular(999),
             ),
-            child: const Text(
+            child: Text(
               'Playlists',
               style: TextStyle(
-                color: kAccent,
+                color: context.appTheme.button,
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
@@ -221,12 +224,12 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
           ),
         ),
 
-        const Divider(color: kBorderColor, height: 16, thickness: 0.5),
+        Divider(color: context.appTheme.shadow, height: 16, thickness: 0.5),
 
         // ── List ───────────────────────────────────────────────────
         Expanded(
           child: ListView(
-            padding: const EdgeInsets.only(bottom: 8),
+            padding: EdgeInsets.only(bottom: 8),
             children: [
               if (likedPlaylist != null)
                 _LikedSongsTile(
@@ -239,13 +242,15 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
                   },
                 ),
               if (likedPlaylist != null)
-                const Divider(color: kBorderColor, height: 16, thickness: 0.5),
+                Divider(
+                    color: context.appTheme.shadow, height: 16, thickness: 0.5),
               if (library.playlists.isEmpty)
-                const Padding(
+                Padding(
                   padding: EdgeInsets.all(16),
                   child: Text(
                     'No playlists yet.\nTap + Create to add one.',
-                    style: TextStyle(color: kTextSecondary, fontSize: 13),
+                    style: TextStyle(
+                        color: context.appTheme.subtext, fontSize: 13),
                     textAlign: TextAlign.center,
                   ),
                 )
@@ -274,33 +279,32 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
     final name = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: kPanelLight,
-        insetPadding:
-            const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
-        title:
-            const Text('New Playlist', style: TextStyle(color: kTextPrimary)),
+        backgroundColor: context.appTheme.card,
+        insetPadding: EdgeInsets.symmetric(horizontal: 40, vertical: 24),
+        title: Text('New Playlist',
+            style: TextStyle(color: context.appTheme.text)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
-          controller: controller,
-          autofocus: true,
-          style: const TextStyle(color: kTextPrimary),
-          decoration: InputDecoration(
-            hintText: 'Playlist name',
-            hintStyle: const TextStyle(color: kTextSecondary),
-            filled: true,
-            fillColor: kCardColor,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide.none,
-            ),
-          ),
+              controller: controller,
+              autofocus: true,
+              style: TextStyle(color: context.appTheme.text),
+              decoration: InputDecoration(
+                hintText: 'Playlist name',
+                hintStyle: TextStyle(color: context.appTheme.subtext),
+                filled: true,
+                fillColor: context.appTheme.card,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide.none,
+                ),
+              ),
               onSubmitted: (value) => Navigator.pop(ctx, value.trim()),
             ),
             DropdownButtonFormField<String>(
               value: visibility,
-              decoration: const InputDecoration(labelText: 'Privacy'),
+              decoration: InputDecoration(labelText: 'Privacy'),
               items: const [
                 DropdownMenuItem(value: 'private', child: Text('Private')),
                 DropdownMenuItem(value: 'friends', child: Text('Friends')),
@@ -313,21 +317,24 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child:
-                const Text('Cancel', style: TextStyle(color: kTextSecondary)),
+            child: Text('Cancel',
+                style: TextStyle(color: context.appTheme.subtext)),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: kAccent),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: context.appTheme.button),
             onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('Create', style: TextStyle(color: Colors.black)),
+            child:
+                Text('Create', style: TextStyle(color: context.appTheme.text)),
           ),
         ],
       ),
     );
     controller.dispose();
     if (name != null && name.isNotEmpty) {
-      await ref.read(libraryProvider.notifier).createPlaylist(name,
-          visibility: visibility);
+      await ref
+          .read(libraryProvider.notifier)
+          .createPlaylist(name, visibility: visibility);
     }
   }
 }
@@ -368,18 +375,20 @@ class _IconOnlyTileState extends State<_IconOnlyTile> {
         onTap: widget.onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
-          margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          margin: EdgeInsets.symmetric(horizontal: 8, vertical: 3),
           width: 48,
           height: 48,
           decoration: BoxDecoration(
             color: widget.isActive
-                ? const Color(0xFF1A2A1A)
+                ? context.appTheme.selectedRow
                 : _hovered
-                    ? const Color(0xFF2A2A2A)
-                    : Colors.transparent,
+                    ? context.appTheme.highlight
+                    : context.appTheme.main.withValues(alpha: 0),
             borderRadius: BorderRadius.circular(8),
             border: widget.isActive
-                ? Border.all(color: kAccent.withOpacity(0.5), width: 1)
+                ? Border.all(
+                    color: context.appTheme.button.withValues(alpha: 0.5),
+                    width: 1)
                 : null,
           ),
           child: ClipRRect(
@@ -400,10 +409,10 @@ class _IconOnlyTileState extends State<_IconOnlyTile> {
 
   Widget _iconBox() {
     return Container(
-      color: widget.bgColor ?? const Color(0xFF4A2C7A),
+      color: widget.bgColor ?? context.appTheme.misc.withValues(alpha: 0.7),
       child: Icon(
         widget.icon ?? Icons.queue_music,
-        color: widget.color ?? Colors.white54,
+        color: widget.color ?? context.appTheme.subtext.withValues(alpha: 0.54),
         size: 22,
       ),
     );
@@ -441,13 +450,15 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
         // Right-click opens context menu
         onSecondaryTapUp: (d) => _showMenu(context, d.globalPosition),
         child: Material(
-          color: widget.isActive ? const Color(0xFF1A2A1A) : Colors.transparent,
+          color: widget.isActive
+              ? context.appTheme.selectedRow
+              : context.appTheme.main.withValues(alpha: 0),
           borderRadius: BorderRadius.circular(8),
           child: InkWell(
             borderRadius: BorderRadius.circular(8),
             onTap: widget.onTap,
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               child: Row(
                 children: [
                   // Thumbnail
@@ -457,9 +468,11 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
                         ? Container(
                             width: 48,
                             height: 48,
-                            color: const Color(0xFF4A2C7A),
-                            child: const Icon(Icons.queue_music,
-                                color: Colors.white54, size: 22),
+                            color: context.appTheme.misc.withValues(alpha: 0.7),
+                            child: Icon(Icons.queue_music,
+                                color: context.appTheme.subtext
+                                    .withValues(alpha: 0.54),
+                                size: 22),
                           )
                         : CachedNetworkImage(
                             imageUrl: thumbUrl,
@@ -469,17 +482,21 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
                             placeholder: (_, __) => Container(
                                 width: 48,
                                 height: 48,
-                                color: const Color(0xFF4A2C7A)),
+                                color: context.appTheme.misc
+                                    .withValues(alpha: 0.7)),
                             errorWidget: (_, __, ___) => Container(
                               width: 48,
                               height: 48,
-                              color: const Color(0xFF4A2C7A),
-                              child: const Icon(Icons.queue_music,
-                                  color: Colors.white54, size: 22),
+                              color:
+                                  context.appTheme.misc.withValues(alpha: 0.7),
+                              child: Icon(Icons.queue_music,
+                                  color: context.appTheme.subtext
+                                      .withValues(alpha: 0.54),
+                                  size: 22),
                             ),
                           ),
                   ),
-                  const SizedBox(width: 12),
+                  SizedBox(width: 12),
 
                   // Name + count
                   Expanded(
@@ -491,32 +508,33 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            color: widget.isActive ? kAccent : kTextPrimary,
+                            color: widget.isActive
+                                ? context.appTheme.button
+                                : context.appTheme.text,
                             fontSize: 14,
                             fontWeight: FontWeight.w500,
                           ),
                         ),
-                        const SizedBox(height: 2),
+                        SizedBox(height: 2),
                         Text(
                           'Playlist • ${widget.playlist.songs.length} songs',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              color: kTextSecondary, fontSize: 12),
+                          style: TextStyle(
+                              color: context.appTheme.subtext, fontSize: 12),
                         ),
                       ],
                     ),
                   ),
                   IconButton(
                     tooltip: 'Playlist options',
-                    icon: const Icon(Icons.more_horiz,
-                        color: kTextSecondary, size: 22),
+                    icon: Icon(Icons.more_horiz,
+                        color: context.appTheme.subtext, size: 22),
                     onPressed: () {
                       final box = context.findRenderObject() as RenderBox;
                       _showMenu(context, box.localToGlobal(Offset.zero));
                     },
                   ),
-
                 ],
               ),
             ),
@@ -535,10 +553,10 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
         position.dx + 1,
         position.dy + 1,
       ),
-      color: const Color(0xFF1E1E2E),
+      color: context.appTheme.card,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
-        side: const BorderSide(color: Color(0xFF2E2E50)),
+        side: BorderSide(color: context.appTheme.shadow),
       ),
       items: [
         _menuItem(
@@ -566,7 +584,7 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
           _PlaylistAction.delete,
           Icons.delete_outline,
           'Remove playlist',
-          color: Colors.redAccent,
+          color: context.appTheme.notificationError,
         ),
       ],
     ).then((action) {
@@ -590,16 +608,17 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
     _PlaylistAction value,
     IconData icon,
     String label, {
-    Color color = Colors.white,
+    Color? color,
   }) {
+    final c = color ?? context.appTheme.text;
     return PopupMenuItem(
       value: value,
       height: 38,
       child: Row(
         children: [
-          Icon(icon, size: 16, color: color.withOpacity(0.85)),
-          const SizedBox(width: 10),
-          Text(label, style: TextStyle(color: color, fontSize: 13)),
+          Icon(icon, size: 16, color: c.withValues(alpha: 0.85)),
+          SizedBox(width: 10),
+          Text(label, style: TextStyle(color: c, fontSize: 13)),
         ],
       ),
     );
@@ -614,7 +633,7 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('${widget.playlist.songs.length} songs added to queue'),
-        backgroundColor: kAccent,
+        backgroundColor: context.appTheme.button,
         duration: const Duration(seconds: 2),
       ),
     );
@@ -625,18 +644,18 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
     final name = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: kPanelLight,
-        title: const Text('Rename Playlist',
-            style: TextStyle(color: kTextPrimary)),
+        backgroundColor: context.appTheme.card,
+        title: Text('Rename Playlist',
+            style: TextStyle(color: context.appTheme.text)),
         content: TextField(
           controller: controller,
           autofocus: true,
-          style: const TextStyle(color: kTextPrimary),
+          style: TextStyle(color: context.appTheme.text),
           decoration: InputDecoration(
             hintText: 'Playlist name',
-            hintStyle: const TextStyle(color: kTextSecondary),
+            hintStyle: TextStyle(color: context.appTheme.subtext),
             filled: true,
-            fillColor: kCardColor,
+            fillColor: context.appTheme.card,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
               borderSide: BorderSide.none,
@@ -647,13 +666,14 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child:
-                const Text('Cancel', style: TextStyle(color: kTextSecondary)),
+            child: Text('Cancel',
+                style: TextStyle(color: context.appTheme.subtext)),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: kAccent),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: context.appTheme.button),
             onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('Save', style: TextStyle(color: Colors.black)),
+            child: Text('Save', style: TextStyle(color: context.appTheme.text)),
           ),
         ],
       ),
@@ -663,15 +683,14 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
           .read(libraryProvider.notifier)
           .renamePlaylistObj(widget.playlist, name);
     }
-
   }
 
   Future<void> _showVisibilityMenu() async {
     final value = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        backgroundColor: kPanelLight,
-        title: const Text('Playlist privacy'),
+        backgroundColor: context.appTheme.card,
+        title: Text('Playlist privacy'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -680,8 +699,7 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
                 value: option,
                 groupValue: widget.playlist.visibility,
                 title: Text(option[0].toUpperCase() + option.substring(1)),
-                onChanged: (selected) =>
-                    Navigator.pop(dialogContext, selected),
+                onChanged: (selected) => Navigator.pop(dialogContext, selected),
               ),
           ],
         ),
@@ -698,23 +716,25 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: kPanelLight,
-        title: const Text('Remove Playlist',
-            style: TextStyle(color: kTextPrimary)),
+        backgroundColor: context.appTheme.card,
+        title: Text('Remove Playlist',
+            style: TextStyle(color: context.appTheme.text)),
         content: Text(
           'Remove "${widget.playlist.name}"? This cannot be undone.',
-          style: const TextStyle(color: kTextSecondary),
+          style: TextStyle(color: context.appTheme.subtext),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child:
-                const Text('Cancel', style: TextStyle(color: kTextSecondary)),
+            child: Text('Cancel',
+                style: TextStyle(color: context.appTheme.subtext)),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: context.appTheme.notificationError),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Remove', style: TextStyle(color: Colors.white)),
+            child:
+                Text('Remove', style: TextStyle(color: context.appTheme.text)),
           ),
         ],
       ),
@@ -750,13 +770,15 @@ class _LikedSongsTileState extends State<_LikedSongsTile> {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: widget.isActive ? const Color(0xFF1A2A1A) : Colors.transparent,
+      color: widget.isActive
+          ? context.appTheme.selectedRow
+          : context.appTheme.main.withValues(alpha: 0),
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
         onTap: widget.onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           child: Row(
             children: [
               // Purple gradient icon
@@ -764,20 +786,20 @@ class _LikedSongsTileState extends State<_LikedSongsTile> {
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
+                  gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      Color(0xFF4B2D8A),
-                      Color(0xFF7B4FE9),
+                      context.appTheme.misc.withValues(alpha: 0.65),
+                      context.appTheme.misc,
                     ],
                   ),
                   borderRadius: BorderRadius.circular(6),
                 ),
-                child:
-                    const Icon(Icons.favorite, color: Colors.white, size: 22),
+                child: Icon(Icons.favorite,
+                    color: context.appTheme.text, size: 22),
               ),
-              const SizedBox(width: 12),
+              SizedBox(width: 12),
 
               // Title + count
               Expanded(
@@ -789,18 +811,20 @@ class _LikedSongsTileState extends State<_LikedSongsTile> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: widget.isActive ? kAccent : kTextPrimary,
+                        color: widget.isActive
+                            ? context.appTheme.button
+                            : context.appTheme.text,
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
-                    const SizedBox(height: 2),
+                    SizedBox(height: 2),
                     Text(
                       'Playlist • ${widget.playlist.songs.length} songs',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style:
-                          const TextStyle(color: kTextSecondary, fontSize: 12),
+                      style: TextStyle(
+                          color: context.appTheme.subtext, fontSize: 12),
                     ),
                   ],
                 ),

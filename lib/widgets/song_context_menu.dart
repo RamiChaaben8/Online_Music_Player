@@ -16,6 +16,7 @@ import '../models/song.dart';
 import '../models/playlist.dart';
 import '../providers/library_provider.dart';
 import '../providers/player_provider.dart';
+import '../desktop/theme/desktop_theme.dart';
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
@@ -59,6 +60,7 @@ Future<void> showSongContextMenu({
 }) async {
   final library = ref.read(libraryProvider);
   final isLiked = library.isLiked(song.id);
+  final theme = AppThemeScope.maybeOf(context);
 
   final result = await showMenu<_Action>(
     context: context,
@@ -68,29 +70,31 @@ Future<void> showSongContextMenu({
       position.dx + 1,
       position.dy + 1,
     ),
-    color: const Color(0xFF282828),
+    color: theme?.card ?? const Color(0xFF282828),
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
     items: [
       PopupMenuItem(
         value: _Action.addToPlaylist,
-        child: _row(Icons.add, 'Add to playlist'),
+        child: _row(Icons.add, 'Add to playlist', theme: theme),
       ),
       if (currentPlaylist != null)
         PopupMenuItem(
           value: _Action.removeFromPlaylist,
-          child: _row(Icons.remove_circle_outline, 'Remove from this playlist'),
+          child: _row(Icons.remove_circle_outline, 'Remove from this playlist',
+              theme: theme),
         ),
       PopupMenuItem(
         value: _Action.toggleLike,
         child: _row(
           isLiked ? Icons.favorite : Icons.favorite_border,
           isLiked ? 'Remove from Liked Songs' : 'Save to your Liked Songs',
-          color: isLiked ? const Color(0xFF1DB954) : null,
+          color: isLiked ? theme?.button ?? const Color(0xFF1DB954) : null,
+          theme: theme,
         ),
       ),
       PopupMenuItem(
         value: _Action.addToQueue,
-        child: _row(Icons.queue_music, 'Add to queue'),
+        child: _row(Icons.queue_music, 'Add to queue', theme: theme),
       ),
     ],
   );
@@ -113,7 +117,8 @@ Future<void> showSongContextMenu({
       await ref.read(libraryProvider.notifier).toggleLike(song);
       if (context.mounted) {
         final liked = ref.read(libraryProvider).isLiked(song.id);
-        _snack(context, liked ? 'Saved to Liked Songs' : 'Removed from Liked Songs');
+        _snack(context,
+            liked ? 'Saved to Liked Songs' : 'Removed from Liked Songs');
       }
     case _Action.addToQueue:
       ref.read(playerProvider.notifier).addToQueue(song);
@@ -128,6 +133,7 @@ Future<void> showSongContextMenu({
 class SongMenuButton extends ConsumerWidget {
   final Song song;
   final Playlist? currentPlaylist;
+
   /// Icon colour. Defaults to [Color(0xFFB3B3B3)].
   final Color? color;
   final double size;
@@ -142,9 +148,11 @@ class SongMenuButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final theme = AppThemeScope.maybeOf(context);
     return IconButton(
       icon: Icon(Icons.more_horiz,
-          color: color ?? const Color(0xFFB3B3B3), size: size),
+          color: color ?? theme?.subtext ?? const Color(0xFFB3B3B3),
+          size: size),
       padding: EdgeInsets.zero,
       constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
       splashRadius: 16,
@@ -170,8 +178,8 @@ class SongMenuButton extends ConsumerWidget {
 
 enum _Action { addToPlaylist, removeFromPlaylist, toggleLike, addToQueue }
 
-Widget _row(IconData icon, String label, {Color? color}) {
-  final c = color ?? Colors.white;
+Widget _row(IconData icon, String label, {Color? color, AppThemeData? theme}) {
+  final c = color ?? theme?.text ?? Colors.white;
   return Row(
     children: [
       Icon(icon, color: c, size: 18),
@@ -185,7 +193,8 @@ void _snack(BuildContext context, String msg) {
   ScaffoldMessenger.of(context).clearSnackBars();
   ScaffoldMessenger.of(context).showSnackBar(SnackBar(
     content: Text(msg),
-    backgroundColor: const Color(0xFF1DB954),
+    backgroundColor:
+        AppThemeScope.maybeOf(context)?.button ?? const Color(0xFF1DB954),
     duration: const Duration(seconds: 2),
   ));
 }
@@ -197,13 +206,15 @@ Future<void> _addToPlaylist(
     _snack(context, 'No playlists yet — create one first');
     return;
   }
+  final theme = AppThemeScope.maybeOf(context);
 
   final playlist = await showDialog<Playlist>(
     context: context,
     builder: (ctx) => AlertDialog(
-      backgroundColor: const Color(0xFF282828),
-      title: const Text('Add to playlist',
-          style: TextStyle(color: Colors.white, fontSize: 16)),
+      backgroundColor:
+          AppThemeScope.maybeOf(context)?.card ?? const Color(0xFF282828),
+      title: Text('Add to playlist',
+          style: TextStyle(color: theme?.text ?? Colors.white, fontSize: 16)),
       content: SizedBox(
         width: 300,
         child: ListView(
@@ -212,10 +223,12 @@ Future<void> _addToPlaylist(
             return ListTile(
               dense: true,
               title: Text(p.name,
-                  style: const TextStyle(color: Colors.white, fontSize: 14)),
+                  style: TextStyle(
+                      color: theme?.text ?? Colors.white, fontSize: 14)),
               subtitle: Text('${p.songs.length} songs',
-                  style: const TextStyle(
-                      color: Color(0xFFB3B3B3), fontSize: 12)),
+                  style: TextStyle(
+                      color: theme?.subtext ?? const Color(0xFFB3B3B3),
+                      fontSize: 12)),
               onTap: () => Navigator.pop(ctx, p),
             );
           }).toList(),
@@ -224,15 +237,18 @@ Future<void> _addToPlaylist(
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(ctx),
-          child: const Text('Cancel',
-              style: TextStyle(color: Color(0xFFB3B3B3))),
+          child: Text('Cancel',
+              style:
+                  TextStyle(color: theme?.subtext ?? const Color(0xFFB3B3B3))),
         ),
       ],
     ),
   );
 
   if (playlist != null && context.mounted) {
-    await ref.read(libraryProvider.notifier).addSongToPlaylistObj(playlist, song);
+    await ref
+        .read(libraryProvider.notifier)
+        .addSongToPlaylistObj(playlist, song);
     if (context.mounted) {
       _snack(context, 'Added to ${playlist.name}');
     }

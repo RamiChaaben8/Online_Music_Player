@@ -19,6 +19,7 @@ import 'dart:convert';
 
 import '../models/song.dart';
 import '../models/playlist.dart';
+import '../models/listen_party.dart';
 
 class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -304,6 +305,182 @@ class FirestoreService {
         .collection('blocked')
         .doc(blockedUid)
         .delete();
+  }
+
+  // ── Listen parties ───────────────────────────────────────────────────────
+
+  Map<String, dynamic> _partySongMap(Song song) => {
+        'id': song.id,
+        'title': song.title,
+        'artist': song.channelName,
+        'coverUrl': song.thumbnailUrl,
+        'durationMs': song.duration.inMilliseconds,
+      };
+
+  Future<String> createListenParty({
+    required String uid,
+    required List<Song> queue,
+    int currentIndex = -1,
+    Song? currentSong,
+    bool isPlaying = false,
+    PartyControlMode controlMode = PartyControlMode.host,
+    bool openToFriends = false,
+  }) async {
+    final ref = _db.collection('parties').doc();
+    final now = DateTime.now();
+    await ref.set({
+      'hostUid': uid,
+      'memberUids': [uid],
+      'queue': queue.take(100).map(_partySongMap).toList(),
+      'currentIndex': currentIndex,
+      'currentSong': currentSong == null ? null : _partySongMap(currentSong),
+      'positionMs': 0,
+      'isPlaying': isPlaying,
+      'version': 1,
+      'controlMode': controlMode == PartyControlMode.everyone ? 'everyone' : 'host',
+      'openToFriends': openToFriends,
+      'createdAt': Timestamp.fromDate(now),
+      'updatedAt': FieldValue.serverTimestamp(),
+      'expiresAt': Timestamp.fromDate(now.add(const Duration(hours: 12))),
+    });
+    return ref.id;
+  }
+
+  Stream<ListenParty?> listenPartyStream(String partyId) {
+    return _db.collection('parties').doc(partyId).snapshots().map((doc) {
+      if (!doc.exists || doc.data() == null) return null;
+      return ListenParty.fromMap(doc.id, doc.data()!);
+    });
+  }
+
+  Future<ListenParty?> getListenParty(String partyId) async {
+    final doc = await _db.collection('parties').doc(partyId).get();
+    return doc.exists && doc.data() != null
+        ? ListenParty.fromMap(doc.id, doc.data()!)
+        : null;
+  }
+
+  Future<void> joinListenParty(String partyId, String uid) async {
+    await _db.collection('parties').doc(partyId).update({
+      'memberUids': FieldValue.arrayUnion([uid]),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<void> leaveListenParty(String partyId, String uid) async {
+    final ref = _db.collection('parties').doc(partyId);
+    final party = await getListenParty(partyId);
+    if (party == null) return;
+    if (party.hostUid == uid) {
+      await ref.delete();
+      return;
+    }
+    await ref.update({
+      'memberUids': FieldValue.arrayRemove([uid]),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<void> updateListenPartyState({
+    required String partyId,
+    required String uid,
+    required int expectedVersion,
+    required List<Song> queue,
+    required int currentIndex,
+    required Song? currentSong,
+    required int positionMs,
+    required bool isPlaying,
+  }) async {
+    final ref = _db.collection('parties').doc(partyId);
+    await _db.runTransaction((tx) async {
+      final snap = await tx.get(ref);
+      final data = snap.data();
+      if (!snap.exists || data == null) {
+        throw const FirestoreFriendException('This listen party no longer exists.');
+      }
+      if ((data['version'] as num?)?.toInt() != expectedVersion) {
+        throw const FirestoreFriendException('Party state changed. Please retry.');
+      }
+      tx.update(ref, {
+        'queue': queue.take(100).map(_partySongMap).toList(),
+        'currentIndex': currentIndex,
+        'currentSong': currentSong == null ? null : _partySongMap(currentSong),
+        'positionMs': positionMs,
+        'isPlaying': isPlaying,
+        'version': expectedVersion + 1,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    });
+  }
+
+  Future<void> inviteToListenParty({
+    required String partyId,
+    required String fromUid,
+    required String toUid,
+  }) async {
+    final profile = await getCachedPublicProfile(fromUid) ??
+        await getPublicProfile(fromUid);
+    await _db.collection('partyInvites').doc(toUid).collection('items').doc(partyId).set({
+      'partyId': partyId,
+      'fromUid': fromUid,
+      'fromName': profile?.displayName ?? 'A friend',
+      'partyName': 'Listen Party',
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  PartyInvite _partyInviteFromDoc(
+      String partyId, Map<String, dynamic> data) {
+    final createdAt = data['createdAt'];
+    return PartyInvite(
+      partyId: partyId,
+      fromUid: data['fromUid'] as String? ?? '',
+      fromName: data['fromName'] as String? ?? 'A friend',
+      partyName: data['partyName'] as String? ?? 'Listen Party',
+      createdAt: createdAt is Timestamp ? createdAt.toDate() : null,
+    );
+  }
+
+  Stream<List<PartyInvite>> listenPartyInvites(String uid) {
+    return _db.collection('partyInvites').doc(uid).collection('items').snapshots().map(
+          (snap) => snap.docs
+              .map((doc) => _partyInviteFromDoc(doc.id, doc.data()))
+              .toList(),
+        );
+  }
+
+  Future<List<PartyInvite>> getListenPartyInvites(String uid) async {
+    final snap = await _db.collection('partyInvites').doc(uid).collection('items').get();
+    return snap.docs
+        .map((doc) => _partyInviteFromDoc(doc.id, doc.data()))
+        .toList();
+  }
+
+  Future<void> deleteListenPartyInvite(String uid, String partyId) {
+    return _db.collection('partyInvites').doc(uid).collection('items').doc(partyId).delete();
+  }
+
+  Future<int> estimateServerClockOffset(String uid) async {
+    final ref = _userDoc(uid, 'state/clockSync');
+    var bestOffset = 0;
+    var bestRoundTrip = 1 << 62;
+    for (var i = 0; i < 3; i++) {
+      final startedAt = DateTime.now();
+      await ref.set({'serverTime': FieldValue.serverTimestamp()});
+      final snapshot = await ref.get(const GetOptions(source: Source.server));
+      final finishedAt = DateTime.now();
+      final serverTime = snapshot.data()?['serverTime'];
+      if (serverTime is! Timestamp) continue;
+      final roundTrip = finishedAt.difference(startedAt).inMilliseconds;
+      final midpoint = startedAt.millisecondsSinceEpoch +
+          (roundTrip / 2).round();
+      final offset = serverTime.millisecondsSinceEpoch - midpoint;
+      if (roundTrip < bestRoundTrip) {
+        bestRoundTrip = roundTrip;
+        bestOffset = offset;
+      }
+    }
+    return bestOffset;
   }
 
   // ── Playlists ─────────────────────────────────────────────────────────────

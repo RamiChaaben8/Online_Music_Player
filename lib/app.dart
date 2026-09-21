@@ -15,12 +15,14 @@ import 'screens/home_screen.dart';
 import 'widgets/mini_player.dart';
 import 'widgets/remote_playback_banner.dart';
 import 'widgets/offline_indicator.dart';
+import 'widgets/listen_party_controls.dart';
 import 'providers/player_provider.dart';
 import 'providers/local_music_provider.dart';
 import 'providers/sync_provider.dart';
 import 'providers/presence_provider.dart';
 import 'platform/permissions.dart';
 import 'desktop/shell/desktop_shell.dart';
+import 'desktop/theme/desktop_theme.dart';
 import 'screens/auth/auth_gate.dart';
 
 class TuneifyApp extends StatelessWidget {
@@ -28,6 +30,19 @@ class TuneifyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (Platform.isWindows) {
+      return AppThemeBuilder(
+        builder: (context, theme) => MaterialApp(
+          title: 'Tuneify',
+          debugShowCheckedModeBanner: false,
+          theme: _buildDesktopTheme(theme),
+          builder: (context, child) => _MediaKeyListener(
+            child: child ?? const SizedBox.shrink(),
+          ),
+          home: AuthGate(child: const DesktopShell()),
+        ),
+      );
+    }
     return MaterialApp(
       title: 'Tuneify',
       debugShowCheckedModeBanner: false,
@@ -37,6 +52,59 @@ class TuneifyApp extends StatelessWidget {
       ),
       home: AuthGate(
         child: Platform.isWindows ? const DesktopShell() : const AppShell(),
+      ),
+    );
+  }
+
+  ThemeData _buildDesktopTheme(AppThemeData t) {
+    return ThemeData(
+      useMaterial3: true,
+      brightness: t.brightness,
+      scaffoldBackgroundColor: t.main,
+      colorScheme: ColorScheme(
+        brightness: t.brightness,
+        primary: t.button,
+        onPrimary: t.text,
+        secondary: t.buttonActive,
+        onSecondary: t.text,
+        error: t.notificationError,
+        onError: t.text,
+        surface: t.main,
+        onSurface: t.text,
+      ),
+      cardColor: t.card,
+      dividerColor: t.shadow,
+      textTheme: TextTheme(
+        displayLarge: TextStyle(color: t.text, fontWeight: FontWeight.bold),
+        displayMedium: TextStyle(color: t.text, fontWeight: FontWeight.bold),
+        headlineLarge: TextStyle(color: t.text, fontWeight: FontWeight.bold),
+        headlineMedium: TextStyle(color: t.text, fontWeight: FontWeight.w700),
+        titleLarge: TextStyle(color: t.text, fontWeight: FontWeight.w600),
+        titleMedium: TextStyle(color: t.text, fontWeight: FontWeight.w500),
+        bodyLarge: TextStyle(color: t.text),
+        bodyMedium: TextStyle(color: t.subtext),
+        labelLarge: TextStyle(color: t.text, fontWeight: FontWeight.w600),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: t.card,
+        hintStyle: TextStyle(color: t.subtext),
+        border: const OutlineInputBorder(borderSide: BorderSide.none),
+      ),
+      iconTheme: IconThemeData(color: t.text),
+      progressIndicatorTheme: ProgressIndicatorThemeData(color: t.button),
+      sliderTheme: SliderThemeData(
+        activeTrackColor: t.button,
+        inactiveTrackColor: t.shadow,
+        thumbColor: t.text,
+        overlayColor: t.button.withValues(alpha: 0.2),
+        trackHeight: 3,
+        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+      ),
+      scrollbarTheme: ScrollbarThemeData(
+        thumbColor: WidgetStatePropertyAll(t.button),
+        thickness: const WidgetStatePropertyAll(4),
+        radius: const Radius.circular(2),
       ),
     );
   }
@@ -141,13 +209,38 @@ class _MediaKeyListener extends ConsumerStatefulWidget {
 
 class _MediaKeyListenerState extends ConsumerState<_MediaKeyListener> {
   final FocusNode _focusNode = FocusNode();
+  static const _mediaKeyChannel = MethodChannel('com.tuneify/media_keys');
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _focusNode.requestFocus();
-    });
+    if (Platform.isWindows) {
+      _mediaKeyChannel.setMethodCallHandler(_handleGlobalMediaKey);
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _focusNode.requestFocus();
+      });
+    }
+  }
+
+  Future<void> _handleGlobalMediaKey(MethodCall call) async {
+    if (call.method != 'mediaKey' || call.arguments is! String) return;
+
+    final player = ref.read(playerProvider.notifier);
+    switch (call.arguments as String) {
+      case 'playPause':
+        await player.togglePlayPause();
+        break;
+      case 'stop':
+        await player.stop();
+        break;
+      case 'next':
+        await player.skipToNext();
+        break;
+      case 'previous':
+        await player.skipToPrevious();
+        break;
+    }
   }
 
   KeyEventResult _onKeyEvent(FocusNode node, KeyEvent event) {
@@ -173,12 +266,17 @@ class _MediaKeyListenerState extends ConsumerState<_MediaKeyListener> {
 
   @override
   void dispose() {
+    if (Platform.isWindows) {
+      _mediaKeyChannel.setMethodCallHandler(null);
+    }
     _focusNode.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    if (Platform.isWindows) return widget.child;
+
     return Focus(
       focusNode: _focusNode,
       autofocus: true,
@@ -327,30 +425,38 @@ class _AppShellState extends ConsumerState<AppShell>
         children: [
           // Mini-player sits above the nav bar when a song is playing
           if (hasSong) const MiniPlayer(),
-          NavigationBar(
-            selectedIndex: _currentIndex,
-            onDestinationSelected: (i) => setState(() => _currentIndex = i),
-            destinations: const [
-              NavigationDestination(
-                icon: Icon(Icons.home_outlined),
-                selectedIcon: Icon(Icons.home),
-                label: 'Home',
+          Row(
+            children: [
+              Expanded(
+                child: NavigationBar(
+                  selectedIndex: _currentIndex,
+                  onDestinationSelected: (i) =>
+                      setState(() => _currentIndex = i),
+                  destinations: [
+                    NavigationDestination(
+                      icon: Icon(Icons.home_outlined),
+                      selectedIcon: Icon(Icons.home),
+                      label: 'Home',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.search_outlined),
+                      selectedIcon: Icon(Icons.search),
+                      label: 'Search',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.library_music_outlined),
+                      selectedIcon: Icon(Icons.library_music),
+                      label: 'Library',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.people_outline),
+                      selectedIcon: Icon(Icons.people),
+                      label: 'Friends',
+                    ),
+                  ],
+                ),
               ),
-              NavigationDestination(
-                icon: Icon(Icons.search_outlined),
-                selectedIcon: Icon(Icons.search),
-                label: 'Search',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.library_music_outlined),
-                selectedIcon: Icon(Icons.library_music),
-                label: 'Library',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.people_outline),
-                selectedIcon: Icon(Icons.people),
-                label: 'Friends',
-              ),
+              const SizedBox(width: 52, child: PartyInviteButton()),
             ],
           ),
         ],

@@ -42,8 +42,8 @@ class DesktopPlaylistView extends ConsumerWidget {
     final songs = live.songs;
 
     return Container(
-      decoration: const BoxDecoration(
-        color: kPanelColor,
+      decoration: BoxDecoration(
+        color: context.appTheme.main,
         borderRadius: BorderRadius.all(Radius.circular(12)),
       ),
       child: CustomScrollView(
@@ -57,48 +57,55 @@ class DesktopPlaylistView extends ConsumerWidget {
           if (songs.isNotEmpty)
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+                padding: EdgeInsets.fromLTRB(24, 0, 24, 8),
                 child: Row(
                   children: [
                     Text(
                       '${songs.length} song${songs.length == 1 ? '' : 's'}',
-                      style: const TextStyle(
-                          color: kTextSecondary, fontSize: 13),
+                      style: TextStyle(
+                          color: context.appTheme.subtext, fontSize: 13),
                     ),
                     const Spacer(),
                     // Column headers
-                    const SizedBox(
+                    SizedBox(
                       width: 56,
                       child: Text(
                         'Duration',
-                        style: TextStyle(color: kTextSecondary, fontSize: 12),
+                        style: TextStyle(
+                            color: context.appTheme.subtext, fontSize: 12),
                         textAlign: TextAlign.right,
                       ),
                     ),
-                    const SizedBox(width: 40),
+                    SizedBox(width: 40),
                   ],
                 ),
               ),
             ),
 
-          const SliverToBoxAdapter(
-            child: Divider(color: kBorderColor, height: 1, thickness: 0.5,
-                indent: 24, endIndent: 24),
+          SliverToBoxAdapter(
+            child: Divider(
+                color: context.appTheme.shadow,
+                height: 1,
+                thickness: 0.5,
+                indent: 24,
+                endIndent: 24),
           ),
 
           // ── Song list ─────────────────────────────────────────────────
           if (songs.isEmpty)
-            const SliverFillRemaining(
+            SliverFillRemaining(
               child: Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.queue_music, color: kTextSecondary, size: 56),
+                    Icon(Icons.queue_music,
+                        color: context.appTheme.subtext, size: 56),
                     SizedBox(height: 12),
                     Text(
                       'No songs yet.\nAdd songs using the ··· menu.',
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: kTextSecondary, fontSize: 14),
+                      style: TextStyle(
+                          color: context.appTheme.subtext, fontSize: 14),
                     ),
                   ],
                 ),
@@ -134,11 +141,10 @@ class _PlaylistHeader extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final thumb =
-        songs.isNotEmpty ? songs.first.thumbnailUrl : '';
+    final thumb = songs.isNotEmpty ? songs.first.thumbnailUrl : '';
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+      padding: EdgeInsets.fromLTRB(24, 28, 24, 20),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
@@ -149,9 +155,10 @@ class _PlaylistHeader extends ConsumerWidget {
                 ? Container(
                     width: 160,
                     height: 160,
-                    color: const Color(0xFF2A1A4A),
-                    child: const Icon(Icons.queue_music,
-                        color: Colors.white38, size: 60),
+                    color: context.appTheme.misc.withValues(alpha: 0.35),
+                    child: Icon(Icons.queue_music,
+                        color: context.appTheme.subtext.withValues(alpha: 0.38),
+                        size: 60),
                   )
                 : CachedNetworkImage(
                     imageUrl: thumb,
@@ -161,51 +168,53 @@ class _PlaylistHeader extends ConsumerWidget {
                     placeholder: (_, __) => Container(
                         width: 160,
                         height: 160,
-                        color: const Color(0xFF2A1A4A)),
+                        color: context.appTheme.misc.withValues(alpha: 0.35)),
                     errorWidget: (_, __, ___) => Container(
                       width: 160,
                       height: 160,
-                      color: const Color(0xFF2A1A4A),
-                      child: const Icon(Icons.queue_music,
-                          color: Colors.white38, size: 60),
+                      color: context.appTheme.misc.withValues(alpha: 0.35),
+                      child: Icon(Icons.queue_music,
+                          color:
+                              context.appTheme.subtext.withValues(alpha: 0.38),
+                          size: 60),
                     ),
                   ),
           ),
 
-          const SizedBox(width: 24),
+          SizedBox(width: 24),
 
           // Info + Play All
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'PLAYLIST',
                   style: TextStyle(
-                    color: kTextSecondary,
+                    color: context.appTheme.subtext,
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 1.4,
                   ),
                 ),
-                const SizedBox(height: 6),
+                SizedBox(height: 6),
                 Text(
                   playlist.name,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: kTextPrimary,
+                  style: TextStyle(
+                    color: context.appTheme.text,
                     fontSize: 32,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                const SizedBox(height: 8),
+                SizedBox(height: 8),
                 Text(
                   '${songs.length} song${songs.length == 1 ? '' : 's'}',
-                  style: const TextStyle(
-                      color: kTextSecondary, fontSize: 13),
+                  style:
+                      TextStyle(color: context.appTheme.subtext, fontSize: 13),
                 ),
-                const SizedBox(height: 20),
+                SizedBox(height: 20),
 
                 // Buttons row
                 Row(
@@ -213,10 +222,10 @@ class _PlaylistHeader extends ConsumerWidget {
                     // Play All
                     ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: kAccent,
-                        foregroundColor: Colors.black,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 24, vertical: 14),
+                        backgroundColor: context.appTheme.button,
+                        foregroundColor: context.appTheme.text,
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 24, vertical: 14),
                         shape: const StadiumBorder(),
                         elevation: 0,
                       ),
@@ -225,35 +234,33 @@ class _PlaylistHeader extends ConsumerWidget {
                           : () => ref
                               .read(playerProvider.notifier)
                               .playSong(songs.first, queue: songs),
-                      icon: const Icon(Icons.play_arrow, size: 22),
-                      label: const Text(
+                      icon: Icon(Icons.play_arrow, size: 22),
+                      label: Text(
                         'Play All',
                         style: TextStyle(
                             fontSize: 15, fontWeight: FontWeight.bold),
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    SizedBox(width: 12),
                     // Shuffle
                     OutlinedButton.icon(
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: kTextPrimary,
-                        side: const BorderSide(color: kBorderColor),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 20, vertical: 14),
+                        foregroundColor: context.appTheme.text,
+                        side: BorderSide(color: context.appTheme.shadow),
+                        padding:
+                            EdgeInsets.symmetric(horizontal: 20, vertical: 14),
                         shape: const StadiumBorder(),
                       ),
                       onPressed: songs.isEmpty
                           ? null
                           : () {
-                              ref
-                                  .read(playerProvider.notifier)
-                                  .toggleShuffle();
+                              ref.read(playerProvider.notifier).toggleShuffle();
                               ref
                                   .read(playerProvider.notifier)
                                   .playSong(songs.first, queue: songs);
                             },
-                      icon: const Icon(Icons.shuffle, size: 18),
-                      label: const Text('Shuffle'),
+                      icon: Icon(Icons.shuffle, size: 18),
+                      label: Text('Shuffle'),
                     ),
                   ],
                 ),
@@ -308,33 +315,32 @@ class _SongRowState extends ConsumerState<_SongRow> {
         onExit: (_) => setState(() => _hovered = false),
         child: Material(
           color: _hovered
-              ? const Color(0xFF2A2A2A)
+              ? context.appTheme.highlight
               : isPlaying
-                  ? const Color(0xFF1A2A1A)
-                  : Colors.transparent,
+                  ? context.appTheme.selectedRow
+                  : context.appTheme.main.withValues(alpha: 0),
           child: InkWell(
             onTap: () => ref
                 .read(playerProvider.notifier)
                 .playSong(widget.song, queue: widget.allSongs),
             child: Padding(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 24, vertical: 10),
+              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 10),
               child: Row(
                 children: [
                   // Index / equaliser
                   SizedBox(
                     width: 28,
                     child: isPlaying
-                        ? const Icon(Icons.graphic_eq,
-                            color: kAccent, size: 18)
+                        ? Icon(Icons.graphic_eq,
+                            color: context.appTheme.button, size: 18)
                         : Text(
                             '${widget.index + 1}',
-                            style: const TextStyle(
-                                color: kTextSecondary, fontSize: 13),
+                            style: TextStyle(
+                                color: context.appTheme.subtext, fontSize: 13),
                             textAlign: TextAlign.right,
                           ),
                   ),
-                  const SizedBox(width: 16),
+                  SizedBox(width: 16),
 
                   // Thumbnail
                   ClipRRect(
@@ -348,24 +354,28 @@ class _SongRowState extends ConsumerState<_SongRow> {
                             placeholder: (_, __) => Container(
                                 width: 44,
                                 height: 44,
-                                color: kCardColor),
+                                color: context.appTheme.card),
                             errorWidget: (_, __, ___) => Container(
                               width: 44,
                               height: 44,
-                              color: kCardColor,
-                              child: const Icon(Icons.music_note,
-                                  color: Colors.white54, size: 18),
+                              color: context.appTheme.card,
+                              child: Icon(Icons.music_note,
+                                  color: context.appTheme.subtext
+                                      .withValues(alpha: 0.54),
+                                  size: 18),
                             ),
                           )
                         : Container(
                             width: 44,
                             height: 44,
-                            color: kCardColor,
-                            child: const Icon(Icons.music_note,
-                                color: Colors.white54, size: 18),
+                            color: context.appTheme.card,
+                            child: Icon(Icons.music_note,
+                                color: context.appTheme.subtext
+                                    .withValues(alpha: 0.54),
+                                size: 18),
                           ),
                   ),
-                  const SizedBox(width: 14),
+                  SizedBox(width: 14),
 
                   // Title + artist
                   Expanded(
@@ -377,18 +387,20 @@ class _SongRowState extends ConsumerState<_SongRow> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            color: isPlaying ? kAccent : kTextPrimary,
+                            color: isPlaying
+                                ? context.appTheme.button
+                                : context.appTheme.text,
                             fontSize: 14,
                             fontWeight: FontWeight.w500,
                           ),
                         ),
-                        const SizedBox(height: 2),
+                        SizedBox(height: 2),
                         Text(
                           widget.song.channelName,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              color: kTextSecondary, fontSize: 12),
+                          style: TextStyle(
+                              color: context.appTheme.subtext, fontSize: 12),
                         ),
                       ],
                     ),
@@ -399,8 +411,8 @@ class _SongRowState extends ConsumerState<_SongRow> {
                     width: 56,
                     child: Text(
                       _fmt(widget.song.duration),
-                      style: const TextStyle(
-                          color: kTextSecondary, fontSize: 13),
+                      style: TextStyle(
+                          color: context.appTheme.subtext, fontSize: 13),
                       textAlign: TextAlign.right,
                     ),
                   ),

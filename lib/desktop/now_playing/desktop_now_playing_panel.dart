@@ -33,13 +33,13 @@ import '../theme/desktop_theme.dart';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const double _kVideoMin  = 230.0;
-const double _kBarWidth  =   7.0;
+const double _kVideoMin = 230.0;
+const double _kBarWidth = 7.0;
 
-const double _kSnapFrac  =   0.10;
-const int    _kAnimMs    =  150;
-const int    _kPauseMs   = 3000;
-const String _kPrefKey   = 'now_playing_video_height';
+const double _kSnapFrac = 0.10;
+const int _kAnimMs = 150;
+const int _kPauseMs = 3000;
+const String _kPrefKey = 'now_playing_video_height';
 
 // ─── Panel ───────────────────────────────────────────────────────────────────
 
@@ -53,23 +53,22 @@ class DesktopNowPlayingPanel extends ConsumerStatefulWidget {
 
 class _DesktopNowPlayingPanelState
     extends ConsumerState<DesktopNowPlayingPanel> {
-
   // Lyrics-only scroll controller — the panel itself never scrolls
   final ScrollController _lyricsScroll = ScrollController();
 
   // Video resize
-  double _videoHeight          = _kVideoMin;
-  double _videoMax             = _kVideoMin;
-  bool   _isDragging           = false;
+  double _videoHeight = _kVideoMin;
+  double _videoMax = _kVideoMin;
+  bool _isDragging = false;
   double _dragStartThumbOffset = 0;
 
   // Lyrics sync
   String? _lastVideoId;
-  int     _activeIndex      = -1;
+  int _activeIndex = -1;
   final List<GlobalKey> _lineKeys = [];
-  bool    _autoScrollPaused = false;
-  Timer?  _resumeTimer;
-  bool    _isAutoScrolling  = false;
+  bool _autoScrollPaused = false;
+  Timer? _resumeTimer;
+  bool _isAutoScrolling = false;
 
   @override
   void initState() {
@@ -194,10 +193,8 @@ class _DesktopNowPlayingPanelState
       if (ctx == null || !_lyricsScroll.hasClients) return;
 
       // Find the RenderBox of the lyric line and the lyrics scroll viewport
-      final RenderBox? lineBox =
-          ctx.findRenderObject() as RenderBox?;
-      final RenderBox? viewBox = _lyricsScroll
-          .position.context.storageContext
+      final RenderBox? lineBox = ctx.findRenderObject() as RenderBox?;
+      final RenderBox? viewBox = _lyricsScroll.position.context.storageContext
           .findRenderObject() as RenderBox?;
 
       if (lineBox == null || viewBox == null) return;
@@ -205,9 +202,10 @@ class _DesktopNowPlayingPanelState
       // Position of the line relative to the top of the scroll viewport
       final lineOffset =
           lineBox.localToGlobal(Offset.zero, ancestor: viewBox).dy;
-      final viewH    = _lyricsScroll.position.viewportDimension;
-      final target   = _lyricsScroll.offset + lineOffset -
-                       viewH * 0.35; // keep line ~35% from top
+      final viewH = _lyricsScroll.position.viewportDimension;
+      final target = _lyricsScroll.offset +
+          lineOffset -
+          viewH * 0.35; // keep line ~35% from top
 
       _isAutoScrolling = true;
       _lyricsScroll
@@ -224,9 +222,9 @@ class _DesktopNowPlayingPanelState
 
   @override
   Widget build(BuildContext context) {
-    final ps     = ref.watch(playerProvider);
+    final ps = ref.watch(playerProvider);
     final lyrics = ref.watch(lyricsProvider);
-    final song   = ps.currentSong;
+    final song = ps.currentSong;
 
     if (song != null && !song.isLocal) {
       if (song.id != _lastVideoId || lyrics.videoId != song.id) {
@@ -241,8 +239,8 @@ class _DesktopNowPlayingPanelState
 
     return Container(
       width: kNowPlayingWidth,
-      decoration: const BoxDecoration(
-        color: kPanelColor,
+      decoration: BoxDecoration(
+        color: context.appTheme.main,
         borderRadius: BorderRadius.only(
           topLeft: Radius.circular(12),
           bottomLeft: Radius.circular(12),
@@ -268,9 +266,8 @@ class _DesktopNowPlayingPanelState
         });
       }
 
-      final dur = _isDragging
-          ? Duration.zero
-          : const Duration(milliseconds: _kAnimMs);
+      final dur =
+          _isDragging ? Duration.zero : const Duration(milliseconds: _kAnimMs);
 
       final safeVideoH = _videoHeight.clamp(_kVideoMin, _videoMax);
 
@@ -304,10 +301,10 @@ class _DesktopNowPlayingPanelState
                         _scrollLyricsBy(event.scrollDelta.dy);
                       },
                       child: Padding(
-                        padding: const EdgeInsets.fromLTRB(10, 10, 10, 16),
+                        padding: EdgeInsets.fromLTRB(10, 10, 10, 16),
                         child: Container(
                           decoration: BoxDecoration(
-                            color: const Color(0xFF2a2a2a),
+                            color: context.appTheme.card,
                             borderRadius: BorderRadius.circular(12),
                           ),
                           clipBehavior: Clip.antiAlias,
@@ -318,7 +315,8 @@ class _DesktopNowPlayingPanelState
                               Expanded(
                                 child: _ThinScrollbar(
                                   controller: _lyricsScroll,
-                                  child: _buildLyricsInner(lyrics, ref.watch(playerProvider).position),
+                                  child: _buildLyricsInner(lyrics,
+                                      ref.watch(playerProvider).position),
                                 ),
                               ),
                             ],
@@ -340,12 +338,11 @@ class _DesktopNowPlayingPanelState
             videoMax: _videoMax,
             isDragging: _isDragging,
             onDragStart: (_, thumbOffset) => setState(() {
-              _isDragging           = true;
+              _isDragging = true;
               _dragStartThumbOffset = thumbOffset;
             }),
             onDragUpdate: (dy, trackH) {
-              final newOffset =
-                  (_dragStartThumbOffset + dy).clamp(0.0, trackH);
+              final newOffset = (_dragStartThumbOffset + dy).clamp(0.0, trackH);
               _setHeight(_thumbOffsetToHeight(newOffset, trackH));
             },
             onDragEnd: () {
@@ -365,15 +362,17 @@ class _DesktopNowPlayingPanelState
   // The inner scrollable widget that holds only the lyric lines.
   Widget _buildLyricsInner(LyricsState lyrics, Duration position) {
     if (lyrics.isLoading) {
-      return const SizedBox.expand(
+      return SizedBox.expand(
         child: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              CircularProgressIndicator(color: kAccent, strokeWidth: 2),
+              CircularProgressIndicator(
+                  color: context.appTheme.button, strokeWidth: 2),
               SizedBox(height: 10),
               Text('Loading lyrics…',
-                  style: TextStyle(color: kTextSecondary, fontSize: 13)),
+                  style:
+                      TextStyle(color: context.appTheme.subtext, fontSize: 13)),
             ],
           ),
         ),
@@ -384,17 +383,18 @@ class _DesktopNowPlayingPanelState
       return SizedBox.expand(
         child: Center(
           child: Padding(
-            padding: const EdgeInsets.all(24),
+            padding: EdgeInsets.all(24),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.music_off, color: kTextSecondary, size: 36),
-                const SizedBox(height: 10),
+                Icon(Icons.music_off,
+                    color: context.appTheme.subtext, size: 36),
+                SizedBox(height: 10),
                 Text(
                   lyrics.error ?? 'No lyrics available for this song.',
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      color: kTextSecondary, fontSize: 13),
+                  style:
+                      TextStyle(color: context.appTheme.subtext, fontSize: 13),
                 ),
               ],
             ),
@@ -408,15 +408,15 @@ class _DesktopNowPlayingPanelState
     return ListView.builder(
       controller: _lyricsScroll,
       physics: const NeverScrollableScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(14, 0, 14, 16),
+      padding: EdgeInsets.fromLTRB(14, 0, 14, 16),
       itemCount: lyrics.lines.length + 1, // +1 for footer
       itemBuilder: (context, i) {
         if (i == lyrics.lines.length) {
-          return const Padding(
+          return Padding(
             padding: EdgeInsets.only(top: 8),
             child: Text(
               'Lyrics provided by YouTube',
-              style: TextStyle(color: Color(0xFF666666), fontSize: 11),
+              style: TextStyle(color: context.appTheme.shadow, fontSize: 11),
             ),
           );
         }
@@ -446,16 +446,17 @@ class _LyricsHeader extends ConsumerWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(14, 12, 8, 8),
+          padding: EdgeInsets.fromLTRB(14, 12, 8, 8),
           child: Row(
             children: [
               // "Lyrics" label
-              const Icon(Icons.lyrics_outlined, color: kAccent, size: 13),
-              const SizedBox(width: 5),
-              const Text(
+              Icon(Icons.lyrics_outlined,
+                  color: context.appTheme.button, size: 13),
+              SizedBox(width: 5),
+              Text(
                 'Lyrics',
                 style: TextStyle(
-                  color: kAccent,
+                  color: context.appTheme.button,
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0.5,
@@ -465,17 +466,16 @@ class _LyricsHeader extends ConsumerWidget {
               const Spacer(),
 
               // Track selector — only shown when multiple tracks exist
-              if (hasMultipleTracks)
-                _TrackSelectorButton(lyrics: lyrics),
+              if (hasMultipleTracks) _TrackSelectorButton(lyrics: lyrics),
             ],
           ),
         ),
-        const Padding(
+        Padding(
           padding: EdgeInsets.symmetric(horizontal: 14),
-          child: Divider(
-              color: Color(0xFF3d3d3d), height: 1, thickness: 1),
+          child:
+              Divider(color: context.appTheme.shadow, height: 1, thickness: 1),
         ),
-        const SizedBox(height: 8),
+        SizedBox(height: 8),
       ],
     );
   }
@@ -502,29 +502,29 @@ class _TrackSelectorButton extends ConsumerWidget {
     return GestureDetector(
       onTapDown: (details) => _showMenu(context, ref, details.globalPosition),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+        padding: EdgeInsets.symmetric(horizontal: 7, vertical: 3),
         decoration: BoxDecoration(
-          color: const Color(0xFF1A1A2A),
+          color: context.appTheme.card,
           borderRadius: BorderRadius.circular(5),
-          border: Border.all(color: const Color(0xFF2E2E50), width: 1),
+          border: Border.all(color: context.appTheme.shadow, width: 1),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.subtitles_outlined,
-                color: kAccent, size: 11),
-            const SizedBox(width: 4),
+            Icon(Icons.subtitles_outlined,
+                color: context.appTheme.button, size: 11),
+            SizedBox(width: 4),
             Text(
               shortLabel,
-              style: const TextStyle(
-                color: kAccent,
+              style: TextStyle(
+                color: context.appTheme.button,
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
               ),
             ),
-            const SizedBox(width: 3),
-            const Icon(Icons.arrow_drop_down,
-                color: kAccent, size: 14),
+            SizedBox(width: 3),
+            Icon(Icons.arrow_drop_down,
+                color: context.appTheme.button, size: 14),
           ],
         ),
       ),
@@ -542,19 +542,19 @@ class _TrackSelectorButton extends ConsumerWidget {
             SizedBox(
               width: 18,
               child: isSelected
-                  ? const Icon(Icons.check, color: kAccent, size: 14)
+                  ? Icon(Icons.check, color: context.appTheme.button, size: 14)
                   : null,
             ),
-            const SizedBox(width: 4),
+            SizedBox(width: 4),
             Expanded(
               child: Text(
                 track.label,
                 style: TextStyle(
-                  color: isSelected ? kAccent : Colors.white,
+                  color: isSelected
+                      ? context.appTheme.button
+                      : context.appTheme.text,
                   fontSize: 13,
-                  fontWeight: isSelected
-                      ? FontWeight.w600
-                      : FontWeight.normal,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
                 ),
               ),
             ),
@@ -571,10 +571,10 @@ class _TrackSelectorButton extends ConsumerWidget {
         position.dx,
         position.dy + 40,
       ),
-      color: const Color(0xFF1E1E2E),
+      color: context.appTheme.card,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
-        side: const BorderSide(color: Color(0xFF2E2E50)),
+        side: BorderSide(color: context.appTheme.shadow),
       ),
       items: items,
     ).then((code) {
@@ -598,13 +598,13 @@ class _ThinScrollbar extends StatefulWidget {
 }
 
 class _ThinScrollbarState extends State<_ThinScrollbar> {
-  static const double _kBarW      =  6.0;
-  static const double _kThumbW    =  4.0;
+  static const double _kBarW = 6.0;
+  static const double _kThumbW = 4.0;
   static const double _kThumbMinH = 32.0;
-  static const double _kPadV      =  8.0;
+  static const double _kPadV = 8.0;
 
-  bool   _hovering        = false;
-  bool   _dragging        = false;
+  bool _hovering = false;
+  bool _dragging = false;
   double _dragStartLocalY = 0;
   double _dragStartScroll = 0;
 
@@ -628,7 +628,7 @@ class _ThinScrollbarState extends State<_ThinScrollbar> {
     if (trackH <= _kThumbMinH) return trackH.clamp(0.0, double.infinity);
     if (!sc.hasClients || sc.position.maxScrollExtent <= 0) return trackH;
     final visible = sc.position.viewportDimension;
-    final total   = visible + sc.position.maxScrollExtent;
+    final total = visible + sc.position.maxScrollExtent;
     return (trackH * visible / total).clamp(_kThumbMinH, trackH);
   }
 
@@ -641,20 +641,19 @@ class _ThinScrollbarState extends State<_ThinScrollbar> {
 
   void _dragStart(double localY) {
     setState(() {
-      _dragging        = true;
+      _dragging = true;
       _dragStartLocalY = localY;
-      _dragStartScroll = widget.controller.hasClients
-          ? widget.controller.offset
-          : 0;
+      _dragStartScroll =
+          widget.controller.hasClients ? widget.controller.offset : 0;
     });
   }
 
   void _dragUpdate(double localY, double trackH) {
     if (!_dragging || !widget.controller.hasClients) return;
-    final dy          = localY - _dragStartLocalY;
-    final tH          = _thumbH(trackH);
+    final dy = localY - _dragStartLocalY;
+    final tH = _thumbH(trackH);
     final scrollRange = widget.controller.position.maxScrollExtent;
-    final scrollable  = trackH - tH;
+    final scrollable = trackH - tH;
     if (scrollable <= 0) return;
     widget.controller.jumpTo(
       (_dragStartScroll + dy / scrollable * scrollRange)
@@ -666,7 +665,7 @@ class _ThinScrollbarState extends State<_ThinScrollbar> {
 
   void _trackTap(double localY, double trackH) {
     if (!widget.controller.hasClients) return;
-    final tH   = _thumbH(trackH);
+    final tH = _thumbH(trackH);
     final frac = ((localY - tH / 2) / (trackH - tH)).clamp(0.0, 1.0);
     widget.controller.animateTo(
       frac * widget.controller.position.maxScrollExtent,
@@ -687,7 +686,7 @@ class _ThinScrollbarState extends State<_ThinScrollbar> {
         Positioned.fill(
           child: Padding(
             // Leave room for the scrollbar on the right
-            padding: const EdgeInsets.only(right: _kBarW),
+            padding: EdgeInsets.only(right: _kBarW),
             child: widget.child,
           ),
         ),
@@ -701,34 +700,34 @@ class _ThinScrollbarState extends State<_ThinScrollbar> {
           child: MouseRegion(
             cursor: SystemMouseCursors.resizeUpDown,
             onEnter: (_) => setState(() => _hovering = true),
-            onExit:  (_) => setState(() => _hovering = false),
+            onExit: (_) => setState(() => _hovering = false),
             child: LayoutBuilder(builder: (context, constraints) {
               final totalH = constraints.maxHeight;
               final trackH = (totalH - 2 * _kPadV).clamp(0.0, double.infinity);
               return GestureDetector(
                 onTapDown: (d) =>
                     _trackTap(d.localPosition.dy - _kPadV, trackH),
-                onVerticalDragStart:  (d) =>
+                onVerticalDragStart: (d) =>
                     _dragStart(d.localPosition.dy - _kPadV),
                 onVerticalDragUpdate: (d) =>
                     _dragUpdate(d.localPosition.dy - _kPadV, trackH),
-                onVerticalDragEnd:    (_) => _dragEnd(),
-                onVerticalDragCancel: ()  => _dragEnd(),
+                onVerticalDragEnd: (_) => _dragEnd(),
+                onVerticalDragCancel: () => _dragEnd(),
                 child: SizedBox(
                   width: _kBarW,
                   height: totalH,
                   child: CustomPaint(
                     painter: _BarPainter(
-                      trackH:     trackH,
-                      padV:       _kPadV,
-                      thumbTop:   _thumbTop(trackH),
-                      thumbH:     _thumbH(trackH),
-                      thumbW:     _kThumbW,
-                      barW:       _kBarW,
+                      trackH: trackH,
+                      padV: _kPadV,
+                      thumbTop: _thumbTop(trackH),
+                      thumbH: _thumbH(trackH),
+                      thumbW: _kThumbW,
+                      barW: _kBarW,
                       thumbColor: (_hovering || _dragging)
-                          ? const Color(0xFF82b832)
-                          : const Color(0xFF5f7a2f),
-                      trackColor: const Color(0xFF1e1e1e),
+                          ? context.appTheme.buttonActive
+                          : context.appTheme.button,
+                      trackColor: context.appTheme.main,
                     ),
                   ),
                 ),
@@ -743,7 +742,7 @@ class _ThinScrollbarState extends State<_ThinScrollbar> {
 
 class _BarPainter extends CustomPainter {
   final double trackH, padV, thumbTop, thumbH, thumbW, barW;
-  final Color  thumbColor, trackColor;
+  final Color thumbColor, trackColor;
 
   const _BarPainter({
     required this.trackH,
@@ -769,8 +768,10 @@ class _BarPainter extends CustomPainter {
     );
     canvas.drawRRect(
       RRect.fromLTRBR(
-        cx - thumbW / 2, padV + thumbTop,
-        cx + thumbW / 2, padV + thumbTop + thumbH,
+        cx - thumbW / 2,
+        padV + thumbTop,
+        cx + thumbW / 2,
+        padV + thumbTop + thumbH,
         Radius.circular(thumbW / 2),
       ),
       Paint()..color = thumbColor,
@@ -779,8 +780,8 @@ class _BarPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_BarPainter old) =>
-      old.thumbTop   != thumbTop   ||
-      old.thumbH     != thumbH     ||
+      old.thumbTop != thumbTop ||
+      old.thumbH != thumbH ||
       old.thumbColor != thumbColor;
 }
 
@@ -788,7 +789,7 @@ class _BarPainter extends CustomPainter {
 
 class _DragBar extends StatefulWidget {
   final double panelHeight, videoHeight, videoMin, videoMax;
-  final bool   isDragging;
+  final bool isDragging;
   final void Function(double pointerY, double thumbOffset) onDragStart;
   final void Function(double dy, double trackH) onDragUpdate;
   final void Function() onDragEnd;
@@ -813,18 +814,16 @@ class _DragBar extends StatefulWidget {
 class _DragBarState extends State<_DragBar> {
   bool _hovering = false;
 
-  static const double _kThumbH    = 40.0;
-  static const double _kThumbW    =  4.0;
+  static const double _kThumbH = 40.0;
+  static const double _kThumbW = 4.0;
   static const double _kTrackPadV = 12.0;
 
-  double get _trackH =>
-      widget.panelHeight - 2 * _kTrackPadV - _kThumbH;
+  double get _trackH => widget.panelHeight - 2 * _kTrackPadV - _kThumbH;
 
   double get _thumbOffset {
     final range = widget.videoMax - widget.videoMin;
     if (range <= 0) return 0;
-    return ((widget.videoHeight - widget.videoMin) / range)
-            .clamp(0.0, 1.0) *
+    return ((widget.videoHeight - widget.videoMin) / range).clamp(0.0, 1.0) *
         _trackH;
   }
 
@@ -833,19 +832,17 @@ class _DragBarState extends State<_DragBar> {
     return MouseRegion(
       cursor: SystemMouseCursors.resizeUpDown,
       onEnter: (_) => setState(() => _hovering = true),
-      onExit:  (_) => setState(() => _hovering = false),
+      onExit: (_) => setState(() => _hovering = false),
       child: GestureDetector(
         onTapDown: (d) {
           final localY = d.localPosition.dy - _kTrackPadV;
-          widget.onTrackTap(
-              (localY / (_trackH + _kThumbH)).clamp(0.0, 1.0));
+          widget.onTrackTap((localY / (_trackH + _kThumbH)).clamp(0.0, 1.0));
         },
-        onVerticalDragStart:  (d) =>
+        onVerticalDragStart: (d) =>
             widget.onDragStart(d.globalPosition.dy, _thumbOffset),
-        onVerticalDragUpdate: (d) =>
-            widget.onDragUpdate(d.delta.dy, _trackH),
-        onVerticalDragEnd:    (_) => widget.onDragEnd(),
-        onVerticalDragCancel: ()  => widget.onDragEnd(),
+        onVerticalDragUpdate: (d) => widget.onDragUpdate(d.delta.dy, _trackH),
+        onVerticalDragEnd: (_) => widget.onDragEnd(),
+        onVerticalDragCancel: () => widget.onDragEnd(),
         child: SizedBox(
           width: _kBarWidth,
           height: widget.panelHeight,
@@ -854,12 +851,12 @@ class _DragBarState extends State<_DragBar> {
             children: [
               Container(
                 width: 2,
-                margin: const EdgeInsets.symmetric(
+                margin: EdgeInsets.symmetric(
                   vertical: _kTrackPadV,
                   horizontal: (_kBarWidth - 2) / 2,
                 ),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF2a2a2a),
+                  color: context.appTheme.card,
                   borderRadius: BorderRadius.circular(1),
                 ),
               ),
@@ -875,8 +872,8 @@ class _DragBarState extends State<_DragBar> {
                   height: _kThumbH,
                   decoration: BoxDecoration(
                     color: _hovering || widget.isDragging
-                        ? const Color(0xFF82b832)
-                        : const Color(0xFF5f7a2f),
+                        ? context.appTheme.buttonActive
+                        : context.appTheme.button,
                     borderRadius: BorderRadius.circular(_kThumbW / 2),
                   ),
                 ),
@@ -901,23 +898,31 @@ class _VideoCard extends StatelessWidget {
       fit: StackFit.expand,
       children: [
         ColoredBox(
-          color: Colors.black,
+          color: context.appTheme.text,
           child: VideoPreviewWidget(videoId: song.id, fit: BoxFit.cover),
         ),
-        const Positioned(
-          left: 0, right: 0, bottom: 0, height: 110,
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          height: 110,
           child: DecoratedBox(
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [Colors.transparent, Color(0xF2000000)],
+                colors: [
+                  context.appTheme.main.withValues(alpha: 0),
+                  context.appTheme.shadow.withValues(alpha: 0.95)
+                ],
               ),
             ),
           ),
         ),
         Positioned(
-          left: 16, right: 16, bottom: 16,
+          left: 16,
+          right: 16,
+          bottom: 16,
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
@@ -930,33 +935,34 @@ class _VideoCard extends StatelessWidget {
                       song.title,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: kTextPrimary,
+                      style: TextStyle(
+                        color: context.appTheme.text,
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
                         shadows: [
-                          Shadow(blurRadius: 10, color: Colors.black)
+                          Shadow(blurRadius: 10, color: context.appTheme.text)
                         ],
                       ),
                     ),
-                    const SizedBox(height: 3),
+                    SizedBox(height: 3),
                     Text(
                       song.channelName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: kTextSecondary,
+                      style: TextStyle(
+                        color: context.appTheme.subtext,
                         fontSize: 12,
                         shadows: [
-                          Shadow(blurRadius: 8, color: Colors.black)
+                          Shadow(blurRadius: 8, color: context.appTheme.text)
                         ],
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: 10),
-              const Icon(Icons.check_circle, color: kAccent, size: 20),
+              SizedBox(width: 10),
+              Icon(Icons.check_circle,
+                  color: context.appTheme.button, size: 20),
             ],
           ),
         ),
@@ -980,21 +986,24 @@ class _LyricLine extends StatelessWidget {
   });
 
   static const _fallbackFonts = [
-    'Malgun Gothic', 'Noto Sans KR', 'Noto Sans CJK',
-    'Microsoft YaHei', 'Segoe UI',
+    'Malgun Gothic',
+    'Noto Sans KR',
+    'Noto Sans CJK',
+    'Microsoft YaHei',
+    'Segoe UI',
   ];
 
   @override
   Widget build(BuildContext context) {
-    final dimColor   = Colors.white.withValues(alpha: 0.38);
-    final baseColor  = isActive ? Colors.white : dimColor;
-    final fontSize   = isActive ? 22.0 : 18.0;
+    final dimColor = context.appTheme.text.withValues(alpha: 0.38);
+    final baseColor = isActive ? context.appTheme.text : dimColor;
+    final fontSize = isActive ? 22.0 : 18.0;
     final fontWeight = isActive ? FontWeight.w700 : FontWeight.w500;
 
     // ── Karaoke word-by-word highlighting ──────────────────────────
     if (isActive && line.hasWordTiming) {
       return Padding(
-        padding: const EdgeInsets.only(bottom: 18),
+        padding: EdgeInsets.only(bottom: 18),
         child: Wrap(
           spacing: 0,
           runSpacing: 2,
@@ -1007,7 +1016,9 @@ class _LyricLine extends StatelessWidget {
                 fontSize: fontSize,
                 fontWeight: fontWeight,
                 height: 1.35,
-                color: lit ? kAccent : Colors.white.withValues(alpha: 0.55),
+                color: lit
+                    ? context.appTheme.button
+                    : context.appTheme.text.withValues(alpha: 0.55),
               ),
               child: Text('${word.text} '),
             );
@@ -1018,7 +1029,7 @@ class _LyricLine extends StatelessWidget {
 
     // ── Plain line (no word timing or not active) ───────────────────
     return Padding(
-      padding: const EdgeInsets.only(bottom: 18),
+      padding: EdgeInsets.only(bottom: 18),
       child: AnimatedDefaultTextStyle(
         duration: const Duration(milliseconds: 220),
         style: TextStyle(
@@ -1042,16 +1053,18 @@ class _Placeholder extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: kCardColor,
-      child: const Column(
+      color: context.appTheme.card,
+      child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.music_video, color: Colors.white12, size: 72),
+          Icon(Icons.music_video,
+              color: context.appTheme.subtext.withValues(alpha: 0.12),
+              size: 72),
           SizedBox(height: 16),
           Text(
             'Play a song to\nsee the video',
             textAlign: TextAlign.center,
-            style: TextStyle(color: kTextSecondary, fontSize: 14),
+            style: TextStyle(color: context.appTheme.subtext, fontSize: 14),
           ),
         ],
       ),

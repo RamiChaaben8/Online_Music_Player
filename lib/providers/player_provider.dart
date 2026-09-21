@@ -523,20 +523,36 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
 
   // ── Playback ─────────────────────────────────────────────────────────────
 
-  void playSong(Song song, {List<Song>? queue}) {
+  void playSong(
+    Song song, {
+    List<Song>? queue,
+    bool suppressRemoteCommand = false,
+  }) {
     // If this device is passive, claim it first.
     if (!state.isActiveDevice) {
       _sync.service.claimAsActiveDevice().then((_) {
         if (!mounted) return;
         state = state.copyWith(isActiveDevice: true);
-        _doPlaySong(song, queue: queue);
+        _doPlaySong(
+          song,
+          queue: queue,
+          suppressRemoteCommand: suppressRemoteCommand,
+        );
       });
       return;
     }
-    _doPlaySong(song, queue: queue);
+    _doPlaySong(
+      song,
+      queue: queue,
+      suppressRemoteCommand: suppressRemoteCommand,
+    );
   }
 
-  void _doPlaySong(Song song, {List<Song>? queue}) {
+  void _doPlaySong(
+    Song song, {
+    List<Song>? queue,
+    bool suppressRemoteCommand = false,
+  }) {
     state = state.copyWith(
       currentSong: song,
       isLoading: true,
@@ -556,7 +572,9 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       _handler.updateCurrentSong();
       _pushMarquee();
       _library.addToRecentlyPlayed(song).catchError((_) {});
-      _sendCommand(RemoteCommand.playSong);
+      if (!suppressRemoteCommand) {
+        _sendCommand(RemoteCommand.playSong);
+      }
     }).catchError((e) {
       if (!mounted) return;
       state = state.copyWith(
@@ -636,16 +654,21 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   Future<void> skipToNext() async {
     if (_sync.service.isActive) {
       state = state.copyWith(isLoading: true, clearError: true);
-      await _service.skipToNext();
-      state = state.copyWith(
-        currentSong: _service.currentSong,
-        currentIndex: _service.currentIndex,
-        isLoading: false,
-      );
-      _handler.updateCurrentSong();
-      _pushMarquee();
-      if (_service.currentSong != null) {
-        _library.addToRecentlyPlayed(_service.currentSong!).catchError((_) {});
+      try {
+        await _service.skipToNext();
+        state = state.copyWith(
+          currentSong: _service.currentSong,
+          queue: _service.queue,
+          currentIndex: _service.currentIndex,
+          isLoading: false,
+        );
+        _handler.updateCurrentSong();
+        _pushMarquee();
+        if (_service.currentSong != null) {
+          _library.addToRecentlyPlayed(_service.currentSong!).catchError((_) {});
+        }
+      } catch (error) {
+        state = state.copyWith(isLoading: false, error: 'Could not skip: $error');
       }
     } else {
       // Passive: show loading spinner; real song update comes via playSong observe.
@@ -657,14 +680,19 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   Future<void> skipToPrevious() async {
     if (_sync.service.isActive) {
       state = state.copyWith(isLoading: true, clearError: true);
-      await _service.skipToPrevious();
-      state = state.copyWith(
-        currentSong: _service.currentSong,
-        currentIndex: _service.currentIndex,
-        isLoading: false,
-      );
-      _handler.updateCurrentSong();
-      _pushMarquee();
+      try {
+        await _service.skipToPrevious();
+        state = state.copyWith(
+          currentSong: _service.currentSong,
+          queue: _service.queue,
+          currentIndex: _service.currentIndex,
+          isLoading: false,
+        );
+        _handler.updateCurrentSong();
+        _pushMarquee();
+      } catch (error) {
+        state = state.copyWith(isLoading: false, error: 'Could not skip: $error');
+      }
     } else {
       state = state.copyWith(isLoading: true, clearError: true);
     }

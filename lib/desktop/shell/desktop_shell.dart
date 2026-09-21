@@ -89,7 +89,6 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    AppThemeNotifier.instance.addListener(_onThemeChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(localMusicProvider.notifier).scan();
       final uid = ref.read(authServiceProvider).currentUser?.uid;
@@ -105,11 +104,8 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    AppThemeNotifier.instance.removeListener(_onThemeChanged);
     super.dispose();
   }
-
-  void _onThemeChanged() => setState(() {});
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -153,39 +149,73 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
     final user = ref.read(authServiceProvider).currentUser;
     final action = await showDialog<_AccountAction>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: kPanelLight,
-        title: const Text(
-          'Account',
-          style: TextStyle(color: kTextPrimary, fontWeight: FontWeight.w700),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.person_outline, color: kAccent),
-              title:
-                  const Text('Profile', style: TextStyle(color: kTextPrimary)),
-              subtitle: Text(user?.email ?? 'Signed-in account',
-                  style: const TextStyle(color: kTextSecondary)),
-              onTap: () => Navigator.pop(dialogContext, _AccountAction.profile),
-            ),
-            ListTile(
-              leading: const Icon(Icons.settings_outlined, color: kTextPrimary),
-              title:
-                  const Text('Settings', style: TextStyle(color: kTextPrimary)),
-              onTap: () =>
-                  Navigator.pop(dialogContext, _AccountAction.settings),
-            ),
-            ListTile(
-              leading: const Icon(Icons.logout, color: Colors.redAccent),
-              title: const Text('Sign out',
-                  style: TextStyle(color: Colors.redAccent)),
-              onTap: () => Navigator.pop(dialogContext, _AccountAction.signOut),
-            ),
-          ],
-        ),
-      ),
+      builder: (dialogContext) {
+        final currentTheme = dialogContext.appTheme;
+        return AlertDialog(
+          backgroundColor: currentTheme.card,
+          title: Text(
+            'Account',
+            style: TextStyle(
+                color: currentTheme.text, fontWeight: FontWeight.w700),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: Icon(Icons.person_outline, color: currentTheme.button),
+                title:
+                    Text('Profile', style: TextStyle(color: currentTheme.text)),
+                subtitle: Text(user?.email ?? 'Signed-in account',
+                    style: TextStyle(color: currentTheme.subtext)),
+                onTap: () =>
+                    Navigator.pop(dialogContext, _AccountAction.profile),
+              ),
+              ListTile(
+                leading:
+                    Icon(Icons.palette_outlined, color: currentTheme.button),
+                title:
+                    Text('Theme', style: TextStyle(color: currentTheme.text)),
+                subtitle: DropdownButton<AppThemeData>(
+                  value: currentTheme,
+                  isExpanded: true,
+                  underline: const SizedBox.shrink(),
+                  dropdownColor: currentTheme.card,
+                  style: TextStyle(color: currentTheme.text),
+                  items: AppThemeData.all
+                      .map(
+                        (theme) => DropdownMenuItem<AppThemeData>(
+                          value: theme,
+                          child: Text(theme.name),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (theme) {
+                    if (theme != null) {
+                      AppThemeNotifier.instance.setTheme(theme);
+                    }
+                  },
+                ),
+              ),
+              ListTile(
+                leading:
+                    Icon(Icons.settings_outlined, color: currentTheme.text),
+                title: Text('Settings',
+                    style: TextStyle(color: currentTheme.text)),
+                onTap: () =>
+                    Navigator.pop(dialogContext, _AccountAction.settings),
+              ),
+              ListTile(
+                leading:
+                    Icon(Icons.logout, color: currentTheme.notificationError),
+                title: Text('Sign out',
+                    style: TextStyle(color: currentTheme.notificationError)),
+                onTap: () =>
+                    Navigator.pop(dialogContext, _AccountAction.signOut),
+              ),
+            ],
+          ),
+        );
+      },
     );
 
     if (!mounted || action == null) return;
@@ -210,13 +240,15 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
     showDialog<void>(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: kPanelLight,
-        title: Text(title, style: const TextStyle(color: kTextPrimary)),
-        content: Text(message, style: const TextStyle(color: kTextSecondary)),
+        backgroundColor: context.appTheme.card,
+        title: Text(title, style: TextStyle(color: context.appTheme.text)),
+        content:
+            Text(message, style: TextStyle(color: context.appTheme.subtext)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Close', style: TextStyle(color: kAccent)),
+            child:
+                Text('Close', style: TextStyle(color: context.appTheme.button)),
           ),
         ],
       ),
@@ -231,7 +263,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
     final panelMode = ref.watch(panelModeProvider);
 
     return Scaffold(
-      backgroundColor: AppThemeNotifier.instance.value.bgColor,
+      backgroundColor: context.appTheme.main,
       body: LayoutBuilder(
         builder: (context, constraints) {
           final wideEnough = constraints.maxWidth >= 1100;
@@ -276,7 +308,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
                         }
                       },
                     ),
-                    const SizedBox(width: 8),
+                    SizedBox(width: 8),
                     Expanded(
                       child: ClipRect(
                         child: AnimatedSwitcher(
@@ -288,7 +320,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
                     // Right panel — always NowPlaying or Queue.
                     // LyricsPanel is a separate fullscreen overlay (below).
                     if (wideEnough) ...[
-                      const SizedBox(width: 8),
+                      SizedBox(width: 8),
                       if (panelMode == PanelMode.queue)
                         QueuePanel(
                           key: const ValueKey('queue'),
@@ -304,7 +336,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
                 ),
               ),
 
-              const SizedBox(height: 8),
+              SizedBox(height: 8),
 
               // ── Offline indicator ─────────────────────────────────
               const OfflineIndicator(),

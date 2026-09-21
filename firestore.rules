@@ -28,6 +28,14 @@ service cloud.firestore {
         : data.members[0];
     }
 
+    function partyMember(party) {
+      return signedIn() && request.auth.uid in party.memberUids;
+    }
+
+    function partyFriend(uid) {
+      return acceptedFriend(uid);
+    }
+
     match /publicProfiles/{uid} {
       allow read: if signedIn();
       allow create: if signedIn()
@@ -99,6 +107,59 @@ service cloud.firestore {
         && (request.resource.data.activity == null
           || request.resource.data.activity is map);
       allow delete: if signedIn() && request.auth.uid == uid;
+    }
+
+    match /parties/{partyId} {
+      allow read: if signedIn()
+        && request.auth.uid in resource.data.memberUids;
+      allow create: if signedIn()
+        && request.resource.data.hostUid == request.auth.uid
+        && request.resource.data.memberUids.size() == 1
+        && request.resource.data.memberUids[0] == request.auth.uid
+        && request.resource.data.queue.size() <= 100
+        && request.resource.data.controlMode in ['host', 'everyone']
+        && request.resource.data.openToFriends is bool
+        && request.resource.data.expiresAt is timestamp
+        && request.resource.data.expiresAt > request.time
+        && request.resource.data.expiresAt <= request.time + duration.value(12, 'h');
+      allow update: if signedIn()
+        && request.resource.data.memberUids.size() <= 8
+        && request.resource.data.queue.size() <= 100
+        && request.resource.data.hostUid == resource.data.hostUid
+        && request.resource.data.expiresAt == resource.data.expiresAt
+        && (
+          (
+            request.auth.uid in resource.data.memberUids
+            && (
+              request.auth.uid == resource.data.hostUid
+              || resource.data.controlMode == 'everyone'
+              || request.resource.data.memberUids.size() < resource.data.memberUids.size()
+            )
+          )
+          || (
+            request.auth.uid in request.resource.data.memberUids
+            && !(request.auth.uid in resource.data.memberUids)
+            && request.resource.data.memberUids.size() == resource.data.memberUids.size() + 1
+            && (
+              (
+                resource.data.openToFriends == true
+                && acceptedFriend(resource.data.hostUid)
+              )
+              || exists(/databases/$(database)/documents/partyInvites/$(request.auth.uid)/items/$(partyId))
+            )
+          )
+        );
+      allow delete: if signedIn() && request.auth.uid == resource.data.hostUid;
+    }
+
+    match /partyInvites/{uid}/items/{partyId} {
+      allow read, delete: if signedIn() && request.auth.uid == uid;
+      allow create: if signedIn()
+        && request.auth.uid == request.resource.data.fromUid
+        && request.auth.uid != uid
+        && exists(/databases/$(database)/documents/parties/$(partyId))
+        && request.auth.uid in get(/databases/$(database)/documents/parties/$(partyId)).data.memberUids
+        && partyFriend(uid);
     }
 
     match /users/{uid}/blocked/{blockedUid} {

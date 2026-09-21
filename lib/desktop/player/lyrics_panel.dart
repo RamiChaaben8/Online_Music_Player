@@ -28,10 +28,10 @@ import '../theme/desktop_theme.dart';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const double _kLeftMin     = 220.0;
-const double _kLeftMax     = 600.0;
+const double _kLeftMin = 220.0;
+const double _kLeftMax = 600.0;
 const double _kLeftDefault = 340.0;
-const double _kDividerW    =   8.0;
+const double _kDividerW = 8.0;
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -92,9 +92,9 @@ class _LyricsPanelState extends ConsumerState<LyricsPanel> {
 
   @override
   Widget build(BuildContext context) {
-    final ps     = ref.watch(playerProvider);
+    final ps = ref.watch(playerProvider);
     final lyrics = ref.watch(lyricsProvider);
-    final song   = ps.currentSong;
+    final song = ps.currentSong;
 
     // Trigger fetch on song change
     if (song != null && song.id != _lastVideoId) {
@@ -108,7 +108,7 @@ class _LyricsPanelState extends ConsumerState<LyricsPanel> {
     if (lyrics.hasLyrics) _syncActive(lyrics.lines, ps.position);
 
     return Material(
-      color: const Color(0xFF0A0A0A),
+      color: context.appTheme.main,
       child: Stack(
         children: [
           // ── Side-by-side layout ───────────────────────────────────
@@ -123,8 +123,7 @@ class _LyricsPanelState extends ConsumerState<LyricsPanel> {
               // ── Draggable divider ─────────────────────────────────
               _Divider(
                 onDelta: (dx) => setState(() {
-                  _leftWidth =
-                      (_leftWidth + dx).clamp(_kLeftMin, _kLeftMax);
+                  _leftWidth = (_leftWidth + dx).clamp(_kLeftMin, _kLeftMax);
                 }),
               ),
 
@@ -136,8 +135,7 @@ class _LyricsPanelState extends ConsumerState<LyricsPanel> {
                     // Song info header
                     if (song != null)
                       Padding(
-                        padding:
-                            const EdgeInsets.fromLTRB(20, 20, 56, 0),
+                        padding: EdgeInsets.fromLTRB(20, 20, 56, 0),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -145,45 +143,44 @@ class _LyricsPanelState extends ConsumerState<LyricsPanel> {
                               song.title,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Colors.white,
+                              style: TextStyle(
+                                color: context.appTheme.text,
                                 fontSize: 20,
                                 fontWeight: FontWeight.w800,
                                 height: 1.2,
                               ),
                             ),
-                            const SizedBox(height: 4),
+                            SizedBox(height: 4),
                             Text(
                               song.channelName,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Color(0xFF9A9A9A),
+                              style: TextStyle(
+                                color: context.appTheme.subtext,
                                 fontSize: 14,
                               ),
                             ),
-                            const SizedBox(height: 14),
+                            SizedBox(height: 14),
                             // "Lyrics" chip
                             Container(
-                              padding: const EdgeInsets.symmetric(
+                              padding: EdgeInsets.symmetric(
                                   horizontal: 10, vertical: 4),
                               decoration: BoxDecoration(
-                                color: const Color(0xFF1A1A2A),
+                                color: context.appTheme.card,
                                 borderRadius: BorderRadius.circular(6),
                                 border: Border.all(
-                                    color: const Color(0xFF2E2E50),
-                                    width: 1),
+                                    color: context.appTheme.shadow, width: 1),
                               ),
-                              child: const Row(
+                              child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Icon(Icons.lyrics_outlined,
-                                      color: kAccent, size: 14),
+                                      color: context.appTheme.button, size: 14),
                                   SizedBox(width: 5),
                                   Text(
                                     'Lyrics',
                                     style: TextStyle(
-                                      color: kAccent,
+                                      color: context.appTheme.button,
                                       fontSize: 12,
                                       fontWeight: FontWeight.w700,
                                     ),
@@ -191,16 +188,14 @@ class _LyricsPanelState extends ConsumerState<LyricsPanel> {
                                 ],
                               ),
                             ),
-                            const SizedBox(height: 16),
+                            SizedBox(height: 16),
                           ],
                         ),
                       ),
 
                     // Thin separator
-                    const Divider(
-                        height: 1,
-                        thickness: 1,
-                        color: Color(0xFF1E1E1E)),
+                    Divider(
+                        height: 1, thickness: 1, color: context.appTheme.main),
 
                     // Scrollable lyrics box
                     Expanded(
@@ -211,8 +206,7 @@ class _LyricsPanelState extends ConsumerState<LyricsPanel> {
                         ),
                         slivers: [
                           _buildLyricsSliver(lyrics, ps.position),
-                          const SliverToBoxAdapter(
-                              child: SizedBox(height: 60)),
+                          const SliverToBoxAdapter(child: SizedBox(height: 60)),
                         ],
                       ),
                     ),
@@ -231,12 +225,12 @@ class _LyricsPanelState extends ConsumerState<LyricsPanel> {
               child: Container(
                 width: 34,
                 height: 34,
-                decoration: const BoxDecoration(
-                  color: Colors.black54,
+                decoration: BoxDecoration(
+                  color: context.appTheme.shadow.withValues(alpha: 0.54),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.close,
-                    color: Colors.white, size: 18),
+                child:
+                    Icon(Icons.close, color: context.appTheme.text, size: 18),
               ),
             ),
           ),
@@ -249,16 +243,17 @@ class _LyricsPanelState extends ConsumerState<LyricsPanel> {
 
   Widget _buildLyricsSliver(LyricsState lyrics, Duration position) {
     if (lyrics.isLoading) {
-      return const SliverFillRemaining(
+      return SliverFillRemaining(
         child: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              CircularProgressIndicator(color: kAccent, strokeWidth: 2),
+              CircularProgressIndicator(
+                  color: context.appTheme.button, strokeWidth: 2),
               SizedBox(height: 12),
               Text('Loading lyrics…',
-                  style: TextStyle(
-                      color: Color(0xFF9A9A9A), fontSize: 14)),
+                  style:
+                      TextStyle(color: context.appTheme.subtext, fontSize: 14)),
             ],
           ),
         ),
@@ -269,18 +264,18 @@ class _LyricsPanelState extends ConsumerState<LyricsPanel> {
       return SliverFillRemaining(
         child: Center(
           child: Padding(
-            padding: const EdgeInsets.all(32),
+            padding: EdgeInsets.all(32),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.lyrics_outlined,
-                    color: Color(0xFF444466), size: 48),
-                const SizedBox(height: 14),
+                Icon(Icons.lyrics_outlined,
+                    color: context.appTheme.misc, size: 48),
+                SizedBox(height: 14),
                 Text(
                   lyrics.error ?? 'No lyrics available for this song.',
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      color: Color(0xFF9A9A9A), fontSize: 15),
+                  style:
+                      TextStyle(color: context.appTheme.subtext, fontSize: 15),
                 ),
               ],
             ),
@@ -290,25 +285,24 @@ class _LyricsPanelState extends ConsumerState<LyricsPanel> {
     }
 
     return SliverPadding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+      padding: EdgeInsets.symmetric(horizontal: 20),
       sliver: SliverList(
         delegate: SliverChildBuilderDelegate(
           (context, i) {
             if (i == lyrics.lines.length) {
-              return const Padding(
+              return Padding(
                 padding: EdgeInsets.only(top: 28),
                 child: Text(
                   'Lyrics provided by YouTube',
-                  style: TextStyle(
-                      color: Color(0xFF555577), fontSize: 12),
+                  style:
+                      TextStyle(color: context.appTheme.shadow, fontSize: 12),
                 ),
               );
             }
 
             final isActive = i == _activeIndex;
-            final isPast   = i < _activeIndex;
-            final key =
-                i < _lineKeys.length ? _lineKeys[i] : GlobalKey();
+            final isPast = i < _activeIndex;
+            final key = i < _lineKeys.length ? _lineKeys[i] : GlobalKey();
 
             return _LyricLine(
               key: key,
@@ -343,7 +337,7 @@ class _DividerState extends State<_Divider> {
     return MouseRegion(
       cursor: SystemMouseCursors.resizeColumn,
       onEnter: (_) => setState(() => _hovered = true),
-      onExit:  (_) => setState(() => _hovered = false),
+      onExit: (_) => setState(() => _hovered = false),
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onHorizontalDragUpdate: (d) => widget.onDelta(d.delta.dx),
@@ -355,8 +349,8 @@ class _DividerState extends State<_Divider> {
               width: 2,
               height: double.infinity,
               color: _hovered
-                  ? kAccent.withOpacity(0.6)
-                  : Colors.white.withOpacity(0.08),
+                  ? context.appTheme.button.withValues(alpha: 0.6)
+                  : context.appTheme.text.withValues(alpha: 0.08),
             ),
           ),
         ),
@@ -386,14 +380,17 @@ class _VideoHeader extends StatelessWidget {
           const _Placeholder(),
 
         // Right-edge fade to blend into the divider/dark bg
-        const Positioned.fill(
+        Positioned.fill(
           child: DecoratedBox(
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.centerLeft,
                 end: Alignment.centerRight,
                 stops: [0.75, 1.0],
-                colors: [Colors.transparent, Color(0xCC0A0A0A)],
+                colors: [
+                  context.appTheme.main.withValues(alpha: 0),
+                  context.appTheme.shadow.withValues(alpha: 0.8)
+                ],
               ),
             ),
           ),
@@ -407,10 +404,11 @@ class _Placeholder extends StatelessWidget {
   const _Placeholder();
   @override
   Widget build(BuildContext context) {
-    return const ColoredBox(
-      color: Color(0xFF1A1A2A),
+    return ColoredBox(
+      color: context.appTheme.card,
       child: Center(
-        child: Icon(Icons.music_note, color: Colors.white12, size: 80),
+        child: Icon(Icons.music_note,
+            color: context.appTheme.subtext.withValues(alpha: 0.12), size: 80),
       ),
     );
   }
@@ -437,7 +435,7 @@ class _LyricLine extends StatelessWidget {
     // ── Karaoke word-by-word when active and timing available ───────
     if (isActive && line.hasWordTiming) {
       return Padding(
-        padding: const EdgeInsets.only(bottom: 16),
+        padding: EdgeInsets.only(bottom: 16),
         child: Wrap(
           spacing: 0,
           runSpacing: 2,
@@ -449,7 +447,9 @@ class _LyricLine extends StatelessWidget {
                 fontSize: 22,
                 fontWeight: FontWeight.w800,
                 height: 1.3,
-                color: lit ? kAccent : Colors.white.withValues(alpha: 0.45),
+                color: lit
+                    ? context.appTheme.button
+                    : context.appTheme.text.withValues(alpha: 0.45),
               ),
               child: Text('${word.text} '),
             );
@@ -460,15 +460,15 @@ class _LyricLine extends StatelessWidget {
 
     // ── Plain line ──────────────────────────────────────────────────
     return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
+      padding: EdgeInsets.only(bottom: 16),
       child: AnimatedDefaultTextStyle(
         duration: const Duration(milliseconds: 220),
         style: TextStyle(
           color: isActive
-              ? Colors.white
+              ? context.appTheme.text
               : isPast
-                  ? const Color(0xFF3A3A3A)
-                  : const Color(0xFF888888),
+                  ? context.appTheme.shadow
+                  : context.appTheme.subtext,
           fontSize: isActive ? 22 : 18,
           fontWeight: isActive ? FontWeight.w800 : FontWeight.w500,
           height: 1.3,

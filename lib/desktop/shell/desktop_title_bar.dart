@@ -13,6 +13,7 @@ import '../../providers/player_provider.dart';
 import '../../providers/search_history_provider.dart';
 import '../../providers/youtube_provider.dart';
 import '../theme/desktop_theme.dart';
+import '../../widgets/listen_party_controls.dart';
 
 class DesktopTitleBar extends ConsumerStatefulWidget {
   final int currentView; // 0=home, 1=search, 2=playlist, 3=friends
@@ -64,21 +65,17 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
   @override
   void initState() {
     super.initState();
-    AppThemeNotifier.instance.addListener(_onThemeChanged);
     _searchFocus.addListener(_onSearchFocusChanged);
   }
 
   @override
   void dispose() {
-    AppThemeNotifier.instance.removeListener(_onThemeChanged);
     _searchFocus.removeListener(_onSearchFocusChanged);
     _suggestionTimer?.cancel();
     _searchController.dispose();
     _searchFocus.dispose();
     super.dispose();
   }
-
-  void _onThemeChanged() => setState(() {});
 
   void _onSearchFocusChanged() {
     if (!mounted) return;
@@ -188,13 +185,12 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = AppThemeNotifier.instance.value;
-    final isRed = theme.name == 'Red';
+    final theme = context.appTheme;
 
     return Container(
       height: kTopBarHeight,
-      color: theme.bgColor,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      color: theme.sidebar,
+      padding: EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: [
           // ── Left: nav controls ─────────────────────────────────────────
@@ -205,7 +201,7 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
             onPressed: widget.onBack,
             theme: theme,
           ),
-          const SizedBox(width: 4),
+          SizedBox(width: 4),
           _navBtn(
             Icons.arrow_forward_ios,
             size: 16,
@@ -227,61 +223,29 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
                   onPressed: widget.onHome,
                   tooltip: 'Home',
                 ),
-                const SizedBox(width: 8),
+                SizedBox(width: 8),
                 _buildSearchField(theme),
               ],
             ),
           ),
 
-          // ── Right: theme toggle + bell + people + avatar ───────────────
-          Tooltip(
-            message: isRed ? 'Switch to Green theme' : 'Switch to Red theme',
-            child: GestureDetector(
-              onTap: () => AppThemeNotifier.instance.toggle(),
-              child: Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: theme.cardColor,
-                  border: Border.all(
-                    color: theme.accent.withValues(alpha: 0.5),
-                    width: 1.5,
-                  ),
-                ),
-                child: Center(
-                  child: Container(
-                    width: 14,
-                    height: 14,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: isRed
-                          ? const Color(0xFF1DB954)
-                          : const Color(0xFFE8173A),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          _iconBtn(Icons.notifications_none_outlined,
-              color: theme.textSecondary),
-          const SizedBox(width: 4),
+          // ── Right: party invite + friends + avatar ─────────────────────
+          const PartyInviteButton(),
+          SizedBox(width: 4),
           _iconBtn(
             Icons.people_outline,
             color: widget.currentView == 3 ? theme.accent : theme.textSecondary,
             onPressed: widget.onFriendsTap,
             tooltip: 'Friends',
           ),
-          const SizedBox(width: 8),
+          SizedBox(width: 8),
           Tooltip(
             message: 'Account',
             child: InkWell(
               borderRadius: BorderRadius.circular(24),
               onTap: widget.onProfileTap,
               child: Padding(
-                padding: const EdgeInsets.all(2),
+                padding: EdgeInsets.all(2),
                 child: CircleAvatar(
                   radius: 16,
                   backgroundColor: theme.cardColor,
@@ -291,14 +255,14 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
               ),
             ),
           ),
-          const SizedBox(width: 8),
+          SizedBox(width: 8),
         ],
       ),
     );
   }
 
   // ── Search field + overlay portal ──────────────────────────────────────────
-  Widget _buildSearchField(AppThemeData theme) {
+  Widget _buildSearchField(DesktopStyle theme) {
     return Focus(
       onKeyEvent: _onKey,
       child: OverlayPortal(
@@ -329,9 +293,9 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
               ),
               child: Row(
                 children: [
-                  const SizedBox(width: 12),
+                  SizedBox(width: 12),
                   Icon(Icons.search, color: theme.textSecondary, size: 18),
-                  const SizedBox(width: 8),
+                  SizedBox(width: 8),
                   Expanded(
                     child: TextField(
                       controller: _searchController,
@@ -359,7 +323,7 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
                           const BoxConstraints(minWidth: 30, minHeight: 30),
                       onPressed: _clearSearch,
                     ),
-                  const SizedBox(width: 6),
+                  SizedBox(width: 6),
                 ],
               ),
             ),
@@ -381,7 +345,7 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
   }
 
   // ── Dropdown panel ─────────────────────────────────────────────────────────
-  Widget _buildSearchDropdown(AppThemeData theme) {
+  Widget _buildSearchDropdown(DesktopStyle theme) {
     final history = ref.watch(searchHistoryProvider);
     final searchState = ref.watch(searchProvider);
 
@@ -393,7 +357,7 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
 
     if (searchState.isLoading) {
       content = Padding(
-        padding: const EdgeInsets.all(24),
+        padding: EdgeInsets.all(24),
         child: Center(
           child: SizedBox(
             width: 24,
@@ -412,7 +376,7 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+            padding: EdgeInsets.fromLTRB(16, 14, 16, 6),
             child: Text(
               'Suggestions',
               style:
@@ -422,7 +386,7 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
           ListView.separated(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            padding: const EdgeInsets.only(bottom: 8),
+            padding: EdgeInsets.only(bottom: 8),
             itemCount: suggestions.length,
             separatorBuilder: (_, __) => Divider(
               height: 1,
@@ -448,7 +412,7 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
       );
     } else if (searchState.query.isNotEmpty && searchState.error != null) {
       content = Padding(
-        padding: const EdgeInsets.all(20),
+        padding: EdgeInsets.all(20),
         child: Text(
           searchState.error!,
           style: TextStyle(color: theme.textSecondary),
@@ -456,7 +420,7 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
       );
     } else if (searchState.query.isNotEmpty && !searchState.isLoading) {
       content = Padding(
-        padding: const EdgeInsets.all(20),
+        padding: EdgeInsets.all(20),
         child: Text(
           'No suggestions found',
           style: TextStyle(color: theme.textSecondary),
@@ -464,7 +428,7 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
       );
     } else if (history.isEmpty) {
       content = Padding(
-        padding: const EdgeInsets.all(20),
+        padding: EdgeInsets.all(20),
         child: Text(
           'Search for songs, artists, or videos',
           style: TextStyle(color: theme.textSecondary),
@@ -477,7 +441,7 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 12, 8),
+            padding: EdgeInsets.fromLTRB(16, 14, 12, 8),
             child: Row(
               children: [
                 Text(
@@ -549,7 +513,7 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
     double size = 20,
     bool enabled = true,
     VoidCallback? onPressed,
-    required AppThemeData theme,
+    required DesktopStyle theme,
   }) {
     return IconButton(
       onPressed: enabled ? onPressed : null,
@@ -573,7 +537,7 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
     VoidCallback? onPressed,
     String? tooltip,
   }) {
-    final theme = AppThemeNotifier.instance.value;
+    final theme = context.appTheme;
     return IconButton(
       onPressed: onPressed ?? () {},
       icon: Icon(icon, color: color ?? theme.textSecondary, size: size),
@@ -589,7 +553,7 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
 
 class _SuggestionTile extends StatefulWidget {
   final Song song;
-  final AppThemeData theme;
+  final DesktopStyle theme;
   final VoidCallback onTap;
 
   const _SuggestionTile({
@@ -618,8 +582,8 @@ class _SuggestionTileState extends State<_SuggestionTile> {
         child: Container(
           color: _hovered
               ? theme.textSecondary.withValues(alpha: 0.08)
-              : Colors.transparent,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              : context.appTheme.main.withValues(alpha: 0),
+          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           child: Row(
             children: [
               // Thumbnail
@@ -640,8 +604,10 @@ class _SuggestionTileState extends State<_SuggestionTile> {
                           width: 36,
                           height: 36,
                           color: theme.cardColor,
-                          child: const Icon(Icons.music_note,
-                              color: Colors.white54, size: 16),
+                          child: Icon(Icons.music_note,
+                              color: context.appTheme.subtext
+                                  .withValues(alpha: 0.54),
+                              size: 16),
                         ),
                       )
                     : Container(
@@ -652,7 +618,7 @@ class _SuggestionTileState extends State<_SuggestionTile> {
                             color: theme.textSecondary, size: 16),
                       ),
               ),
-              const SizedBox(width: 10),
+              SizedBox(width: 10),
               // Title + channel
               Expanded(
                 child: Column(
@@ -667,7 +633,7 @@ class _SuggestionTileState extends State<_SuggestionTile> {
                           fontSize: 13,
                           fontWeight: FontWeight.w500),
                     ),
-                    const SizedBox(height: 2),
+                    SizedBox(height: 2),
                     Text(
                       song.channelName,
                       maxLines: 1,
@@ -678,7 +644,7 @@ class _SuggestionTileState extends State<_SuggestionTile> {
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
+              SizedBox(width: 8),
               Icon(Icons.play_arrow, color: theme.accent, size: 18),
             ],
           ),

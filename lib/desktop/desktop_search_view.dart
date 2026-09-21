@@ -17,8 +17,7 @@ class DesktopSearchView extends ConsumerStatefulWidget {
   const DesktopSearchView({super.key});
 
   @override
-  ConsumerState<DesktopSearchView> createState() =>
-      _DesktopSearchViewState();
+  ConsumerState<DesktopSearchView> createState() => _DesktopSearchViewState();
 }
 
 class _DesktopSearchViewState extends ConsumerState<DesktopSearchView> {
@@ -49,37 +48,37 @@ class _DesktopSearchViewState extends ConsumerState<DesktopSearchView> {
     final searchState = ref.watch(searchProvider);
 
     return Container(
-      decoration: const BoxDecoration(
-        color: kPanelColor,
+      decoration: BoxDecoration(
+        color: context.appTheme.main,
         borderRadius: BorderRadius.all(Radius.circular(12)),
       ),
       child: Column(
         children: [
           // ── Search bar ────────────────────────────────────────────────
           Padding(
-            padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+            padding: EdgeInsets.fromLTRB(24, 24, 24, 16),
             child: Container(
               height: 52,
               decoration: BoxDecoration(
-                color: const Color(0xFF2A2A2A),
+                color: context.appTheme.highlight,
                 borderRadius: BorderRadius.circular(999),
               ),
               child: Row(
                 children: [
-                  const SizedBox(width: 16),
-                  const Icon(Icons.search, color: kTextSecondary, size: 22),
-                  const SizedBox(width: 12),
+                  SizedBox(width: 16),
+                  Icon(Icons.search, color: context.appTheme.subtext, size: 22),
+                  SizedBox(width: 12),
                   Expanded(
                     child: TextField(
                       controller: _controller,
                       focusNode: _focusNode,
-                      style: const TextStyle(
-                          color: kTextPrimary, fontSize: 16),
-                      decoration: const InputDecoration(
+                      style:
+                          TextStyle(color: context.appTheme.text, fontSize: 16),
+                      decoration: InputDecoration(
                         border: InputBorder.none,
                         hintText: 'What do you want to play?',
                         hintStyle: TextStyle(
-                            color: kTextSecondary, fontSize: 16),
+                            color: context.appTheme.subtext, fontSize: 16),
                         isDense: true,
                         contentPadding: EdgeInsets.zero,
                       ),
@@ -88,15 +87,15 @@ class _DesktopSearchViewState extends ConsumerState<DesktopSearchView> {
                   ),
                   if (_controller.text.isNotEmpty)
                     IconButton(
-                      icon: const Icon(Icons.close,
-                          color: kTextSecondary, size: 20),
+                      icon: Icon(Icons.close,
+                          color: context.appTheme.subtext, size: 20),
                       onPressed: () {
                         _controller.clear();
                         ref.read(searchProvider.notifier).clear();
                         setState(() {});
                       },
                     ),
-                  const SizedBox(width: 8),
+                  SizedBox(width: 8),
                 ],
               ),
             ),
@@ -113,8 +112,8 @@ class _DesktopSearchViewState extends ConsumerState<DesktopSearchView> {
 
   Widget _buildBody(SearchState searchState) {
     if (searchState.isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(color: kAccent),
+      return Center(
+        child: CircularProgressIndicator(color: context.appTheme.button),
       );
     }
 
@@ -123,11 +122,12 @@ class _DesktopSearchViewState extends ConsumerState<DesktopSearchView> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline, color: Colors.red, size: 40),
-            const SizedBox(height: 12),
+            Icon(Icons.error_outline,
+                color: context.appTheme.notificationError, size: 40),
+            SizedBox(height: 12),
             Text(
               searchState.error!,
-              style: const TextStyle(color: kTextSecondary),
+              style: TextStyle(color: context.appTheme.subtext),
               textAlign: TextAlign.center,
             ),
           ],
@@ -136,15 +136,15 @@ class _DesktopSearchViewState extends ConsumerState<DesktopSearchView> {
     }
 
     if (searchState.results.isEmpty && searchState.query.isEmpty) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.search, color: kTextSecondary, size: 56),
+            Icon(Icons.search, color: context.appTheme.subtext, size: 56),
             SizedBox(height: 12),
             Text(
               'Search for songs, artists, or albums',
-              style: TextStyle(color: kTextSecondary, fontSize: 16),
+              style: TextStyle(color: context.appTheme.subtext, fontSize: 16),
             ),
           ],
         ),
@@ -155,14 +155,13 @@ class _DesktopSearchViewState extends ConsumerState<DesktopSearchView> {
       return Center(
         child: Text(
           'No results for "${searchState.query}"',
-          style:
-              const TextStyle(color: kTextSecondary, fontSize: 16),
+          style: TextStyle(color: context.appTheme.subtext, fontSize: 16),
         ),
       );
     }
 
     return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
+      padding: EdgeInsets.symmetric(horizontal: 8),
       itemCount: searchState.results.length,
       itemBuilder: (ctx, i) {
         final song = searchState.results[i];
@@ -183,7 +182,6 @@ class _DesktopSearchViewState extends ConsumerState<DesktopSearchView> {
     );
   }
 }
-
 
 // ─── Search result row ────────────────────────────────────────────────────────
 
@@ -209,19 +207,19 @@ class _SearchResultRowState extends ConsumerState<_SearchResultRow> {
 
   @override
   Widget build(BuildContext context) {
-    final ps         = ref.watch(playerProvider);
-    final isPlaying  = ps.currentSong?.id == widget.song.id && ps.isPlaying;
-    final isCurrent  = ps.currentSong?.id == widget.song.id;
+    final ps = ref.watch(playerProvider);
+    final isPlaying = ps.currentSong?.id == widget.song.id && ps.isPlaying;
+    final isCurrent = ps.currentSong?.id == widget.song.id;
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: Material(
         color: isCurrent
-            ? const Color(0xFF1A2A1A)   // green tint when current
+            ? context.appTheme.selectedRow // green tint when current
             : _hovered
-                ? const Color(0xFF2A2A2A)
-                : Colors.transparent,
+                ? context.appTheme.highlight
+                : context.appTheme.main.withValues(alpha: 0),
         borderRadius: BorderRadius.circular(8),
         child: InkWell(
           borderRadius: BorderRadius.circular(8),
@@ -230,7 +228,7 @@ class _SearchResultRowState extends ConsumerState<_SearchResultRow> {
                 queue: widget.allResults,
               ),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Row(
               children: [
                 // Index — green speaker icon when this song is current
@@ -238,20 +236,18 @@ class _SearchResultRowState extends ConsumerState<_SearchResultRow> {
                   width: 28,
                   child: isCurrent
                       ? Icon(
-                          isPlaying
-                              ? Icons.volume_up
-                              : Icons.volume_mute,
-                          color: kAccent,
+                          isPlaying ? Icons.volume_up : Icons.volume_mute,
+                          color: context.appTheme.button,
                           size: 16,
                         )
                       : Text(
                           '${widget.index + 1}',
-                          style: const TextStyle(
-                              color: kTextSecondary, fontSize: 13),
+                          style: TextStyle(
+                              color: context.appTheme.subtext, fontSize: 13),
                           textAlign: TextAlign.right,
                         ),
                 ),
-                const SizedBox(width: 16),
+                SizedBox(width: 16),
 
                 // Thumbnail
                 ClipRRect(
@@ -263,24 +259,30 @@ class _SearchResultRowState extends ConsumerState<_SearchResultRow> {
                           height: 48,
                           fit: BoxFit.cover,
                           placeholder: (_, __) => Container(
-                              width: 48, height: 48, color: kCardColor),
+                              width: 48,
+                              height: 48,
+                              color: context.appTheme.card),
                           errorWidget: (_, __, ___) => Container(
                             width: 48,
                             height: 48,
-                            color: kCardColor,
-                            child: const Icon(Icons.music_note,
-                                color: Colors.white54, size: 20),
+                            color: context.appTheme.card,
+                            child: Icon(Icons.music_note,
+                                color: context.appTheme.subtext
+                                    .withValues(alpha: 0.54),
+                                size: 20),
                           ),
                         )
                       : Container(
                           width: 48,
                           height: 48,
-                          color: kCardColor,
-                          child: const Icon(Icons.music_note,
-                              color: Colors.white54, size: 20),
+                          color: context.appTheme.card,
+                          child: Icon(Icons.music_note,
+                              color: context.appTheme.subtext
+                                  .withValues(alpha: 0.54),
+                              size: 20),
                         ),
                 ),
-                const SizedBox(width: 16),
+                SizedBox(width: 16),
 
                 // Title + artist — green when current
                 Expanded(
@@ -292,20 +294,22 @@ class _SearchResultRowState extends ConsumerState<_SearchResultRow> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: isCurrent ? kAccent : kTextPrimary,
+                          color: isCurrent
+                              ? context.appTheme.button
+                              : context.appTheme.text,
                           fontSize: 14,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
-                      const SizedBox(height: 2),
+                      SizedBox(height: 2),
                       Text(
                         widget.song.channelName,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: isCurrent
-                              ? kAccent.withOpacity(0.7)
-                              : kTextSecondary,
+                              ? context.appTheme.button.withValues(alpha: 0.7)
+                              : context.appTheme.subtext,
                           fontSize: 12,
                         ),
                       ),
@@ -316,13 +320,13 @@ class _SearchResultRowState extends ConsumerState<_SearchResultRow> {
                 // Duration
                 if (widget.durationStr.isNotEmpty)
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    padding: EdgeInsets.symmetric(horizontal: 8),
                     child: Text(
                       widget.durationStr,
                       style: TextStyle(
                         color: isCurrent
-                            ? kAccent.withOpacity(0.7)
-                            : kTextSecondary,
+                            ? context.appTheme.button.withValues(alpha: 0.7)
+                            : context.appTheme.subtext,
                         fontSize: 13,
                       ),
                     ),
@@ -334,7 +338,7 @@ class _SearchResultRowState extends ConsumerState<_SearchResultRow> {
                   duration: const Duration(milliseconds: 150),
                   child: SongMenuButton(song: widget.song),
                 ),
-                const SizedBox(width: 4),
+                SizedBox(width: 4),
 
                 // Play button — pause icon when this song is playing
                 IconButton(
@@ -342,7 +346,7 @@ class _SearchResultRowState extends ConsumerState<_SearchResultRow> {
                     isPlaying
                         ? Icons.pause_circle_filled
                         : Icons.play_circle_fill,
-                    color: kAccent,
+                    color: context.appTheme.button,
                     size: 32,
                   ),
                   onPressed: () {

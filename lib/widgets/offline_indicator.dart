@@ -14,6 +14,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../desktop/theme/desktop_theme.dart';
 
 // ── Provider ──────────────────────────────────────────────────────────────────
 
@@ -59,25 +60,27 @@ class OfflineIndicator extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final isOffline = ref.watch(offlineProvider);
     if (!isOffline) return const SizedBox.shrink();
+    final theme = AppThemeScope.maybeOf(context);
+    final warning = theme?.notificationError ?? Colors.orange;
 
     return Material(
-      color: Colors.transparent,
+      color: theme?.main.withValues(alpha: 0) ?? Colors.transparent,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
-          color: const Color(0xFF332200),
+          color: warning.withValues(alpha: 0.16),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.orange.withOpacity(0.4)),
+          border: Border.all(color: warning.withValues(alpha: 0.4)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
-          children: const [
-            Icon(Icons.wifi_off, color: Colors.orange, size: 16),
+          children: [
+            Icon(Icons.wifi_off, color: warning, size: 16),
             SizedBox(width: 8),
             Text(
               'Offline — changes will sync when reconnected',
-              style: TextStyle(color: Colors.orange, fontSize: 12),
+              style: TextStyle(color: warning, fontSize: 12),
             ),
           ],
         ),

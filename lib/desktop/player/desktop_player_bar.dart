@@ -15,6 +15,7 @@ import '../../providers/player_provider.dart';
 import '../../widgets/song_context_menu.dart';
 import '../../widgets/device_picker.dart';
 import '../theme/desktop_theme.dart';
+import '../../widgets/listen_party_controls.dart';
 
 class DesktopPlayerBar extends ConsumerStatefulWidget {
   const DesktopPlayerBar({super.key});
@@ -87,7 +88,7 @@ class _DesktopPlayerBarState extends ConsumerState<DesktopPlayerBar> {
         : (_draggingProgress ? _dragProgress : 0.0);
 
     return Container(
-      color: kBgColor,
+      color: context.appTheme.player,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -98,8 +99,7 @@ class _DesktopPlayerBarState extends ConsumerState<DesktopPlayerBar> {
             duration: duration,
             onSeek: (fraction) {
               final target = Duration(
-                  milliseconds:
-                      (fraction * duration.inMilliseconds).toInt());
+                  milliseconds: (fraction * duration.inMilliseconds).toInt());
               ref.read(playerProvider.notifier).seek(target);
             },
             onDragStart: (f) => setState(() {
@@ -109,9 +109,8 @@ class _DesktopPlayerBarState extends ConsumerState<DesktopPlayerBar> {
             onDragUpdate: (f) => setState(() => _dragProgress = f),
             onDragEnd: (f) {
               setState(() => _draggingProgress = false);
-              final target = Duration(
-                  milliseconds:
-                      (f * duration.inMilliseconds).toInt());
+              final target =
+                  Duration(milliseconds: (f * duration.inMilliseconds).toInt());
               ref.read(playerProvider.notifier).seek(target);
             },
           ),
@@ -120,7 +119,7 @@ class _DesktopPlayerBarState extends ConsumerState<DesktopPlayerBar> {
           SizedBox(
             height: 76,
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              padding: EdgeInsets.symmetric(horizontal: 16),
               child: Row(
                 children: [
                   // Left: song info
@@ -165,6 +164,7 @@ class _DesktopPlayerBarState extends ConsumerState<DesktopPlayerBar> {
                       onQueueToggle: () => _togglePanel(PanelMode.queue),
                     ),
                   ),
+                  const ListenPartyControls(),
                 ],
               ),
             ),
@@ -205,14 +205,14 @@ class _ProgressBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: [
           Text(
             _fmt(position),
-            style: const TextStyle(color: kTextSecondary, fontSize: 11),
+            style: TextStyle(color: context.appTheme.subtext, fontSize: 11),
           ),
-          const SizedBox(width: 8),
+          SizedBox(width: 8),
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
@@ -243,7 +243,7 @@ class _ProgressBar extends StatelessWidget {
                           Container(
                             height: 3,
                             decoration: BoxDecoration(
-                              color: const Color(0xFF3A3A3A),
+                              color: context.appTheme.shadow,
                               borderRadius: BorderRadius.circular(2),
                             ),
                           ),
@@ -252,7 +252,7 @@ class _ProgressBar extends StatelessWidget {
                             child: Container(
                               height: 3,
                               decoration: BoxDecoration(
-                                color: kAccent,
+                                color: context.appTheme.button,
                                 borderRadius: BorderRadius.circular(2),
                               ),
                             ),
@@ -263,8 +263,8 @@ class _ProgressBar extends StatelessWidget {
                             child: Container(
                               width: 10,
                               height: 10,
-                              decoration: const BoxDecoration(
-                                color: Colors.white,
+                              decoration: BoxDecoration(
+                                color: context.appTheme.text,
                                 shape: BoxShape.circle,
                               ),
                             ),
@@ -277,10 +277,10 @@ class _ProgressBar extends StatelessWidget {
               },
             ),
           ),
-          const SizedBox(width: 8),
+          SizedBox(width: 8),
           Text(
             _fmt(duration),
-            style: const TextStyle(color: kTextSecondary, fontSize: 11),
+            style: TextStyle(color: context.appTheme.subtext, fontSize: 11),
           ),
         ],
       ),
@@ -296,15 +296,14 @@ class _SongInfo extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (song == null) return const SizedBox.shrink();
+    if (song == null) return SizedBox.shrink();
 
     final s = song!;
     final ps = ref.watch(playerProvider);
     final queue = ps.queue;
     final idx = ps.currentIndex;
-    final next = (queue.length > 1 && idx >= 0)
-        ? queue[(idx + 1) % queue.length]
-        : null;
+    final next =
+        (queue.length > 1 && idx >= 0) ? queue[(idx + 1) % queue.length] : null;
 
     return SongContextMenu(
       song: s,
@@ -318,25 +317,28 @@ class _SongInfo extends ConsumerWidget {
                     width: 48,
                     height: 48,
                     fit: BoxFit.cover,
-                    placeholder: (_, __) =>
-                        Container(width: 48, height: 48, color: kCardColor),
+                    placeholder: (_, __) => Container(
+                        width: 48, height: 48, color: context.appTheme.card),
                     errorWidget: (_, __, ___) => Container(
                       width: 48,
                       height: 48,
-                      color: kCardColor,
-                      child: const Icon(Icons.music_note,
-                          color: Colors.white54, size: 20),
+                      color: context.appTheme.card,
+                      child: Icon(Icons.music_note,
+                          color:
+                              context.appTheme.subtext.withValues(alpha: 0.54),
+                          size: 20),
                     ),
                   )
                 : Container(
                     width: 48,
                     height: 48,
-                    color: kCardColor,
-                    child: const Icon(Icons.music_note,
-                        color: Colors.white54, size: 20),
+                    color: context.appTheme.card,
+                    child: Icon(Icons.music_note,
+                        color: context.appTheme.subtext.withValues(alpha: 0.54),
+                        size: 20),
                   ),
           ),
-          const SizedBox(width: 10),
+          SizedBox(width: 10),
           Expanded(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -346,27 +348,28 @@ class _SongInfo extends ConsumerWidget {
                   s.title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: kTextPrimary,
+                  style: TextStyle(
+                    color: context.appTheme.text,
                     fontSize: 13,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                const SizedBox(height: 2),
+                SizedBox(height: 2),
                 Text(
                   s.channelName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: kTextSecondary, fontSize: 11),
+                  style:
+                      TextStyle(color: context.appTheme.subtext, fontSize: 11),
                 ),
               ],
             ),
           ),
           SongMenuButton(song: s, size: 16),
           if (next != null) ...[
-            const SizedBox(width: 8),
-            Container(width: 1, height: 36, color: const Color(0xFF3A3A3A)),
-            const SizedBox(width: 10),
+            SizedBox(width: 8),
+            Container(width: 1, height: 36, color: context.appTheme.shadow),
+            SizedBox(width: 10),
             ClipRRect(
               borderRadius: BorderRadius.circular(3),
               child: next.thumbnailUrl.isNotEmpty
@@ -375,34 +378,38 @@ class _SongInfo extends ConsumerWidget {
                       width: 30,
                       height: 30,
                       fit: BoxFit.cover,
-                      placeholder: (_, __) =>
-                          Container(width: 30, height: 30, color: kCardColor),
+                      placeholder: (_, __) => Container(
+                          width: 30, height: 30, color: context.appTheme.card),
                       errorWidget: (_, __, ___) => Container(
                         width: 30,
                         height: 30,
-                        color: kCardColor,
-                        child: const Icon(Icons.music_note,
-                            color: Colors.white54, size: 12),
+                        color: context.appTheme.card,
+                        child: Icon(Icons.music_note,
+                            color: context.appTheme.subtext
+                                .withValues(alpha: 0.54),
+                            size: 12),
                       ),
                     )
                   : Container(
                       width: 30,
                       height: 30,
-                      color: kCardColor,
-                      child: const Icon(Icons.music_note,
-                          color: Colors.white54, size: 12),
+                      color: context.appTheme.card,
+                      child: Icon(Icons.music_note,
+                          color:
+                              context.appTheme.subtext.withValues(alpha: 0.54),
+                          size: 12),
                     ),
             ),
-            const SizedBox(width: 8),
+            SizedBox(width: 8),
             Expanded(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'Next',
                     style: TextStyle(
-                      color: kAccent,
+                      color: context.appTheme.button,
                       fontSize: 9,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 0.5,
@@ -412,8 +419,8 @@ class _SongInfo extends ConsumerWidget {
                     next.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: kTextPrimary,
+                    style: TextStyle(
+                      color: context.appTheme.text,
                       fontSize: 11,
                       fontWeight: FontWeight.w500,
                     ),
@@ -422,7 +429,8 @@ class _SongInfo extends ConsumerWidget {
                     next.channelName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: kTextSecondary, fontSize: 10),
+                    style: TextStyle(
+                        color: context.appTheme.subtext, fontSize: 10),
                   ),
                 ],
               ),
@@ -463,7 +471,9 @@ class _TransportControls extends StatelessWidget {
   Widget build(BuildContext context) {
     final repeatIcon =
         loopMode == LoopMode.one ? Icons.repeat_one : Icons.repeat;
-    final repeatColor = loopMode != LoopMode.off ? kAccent : kTextSecondary;
+    final repeatColor = loopMode != LoopMode.off
+        ? context.appTheme.button
+        : context.appTheme.subtext;
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -471,19 +481,22 @@ class _TransportControls extends StatelessWidget {
         IconButton(
           onPressed: onShuffle,
           icon: Icon(Icons.shuffle,
-              color: shuffle ? kAccent : kTextSecondary, size: 20),
+              color:
+                  shuffle ? context.appTheme.button : context.appTheme.subtext,
+              size: 20),
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
         ),
         IconButton(
           onPressed: onPrev,
-          icon: const Icon(Icons.skip_previous, color: kTextPrimary, size: 28),
+          icon:
+              Icon(Icons.skip_previous, color: context.appTheme.text, size: 28),
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
         ),
-        const SizedBox(width: 4),
+        SizedBox(width: 4),
         Material(
-          color: kAccent,
+          color: context.appTheme.button,
           shape: const CircleBorder(),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
@@ -493,24 +506,24 @@ class _TransportControls extends StatelessWidget {
               height: 52,
               child: Center(
                 child: isLoading
-                    ? const Padding(
+                    ? Padding(
                         padding: EdgeInsets.all(14),
                         child: CircularProgressIndicator(
-                            color: Colors.black, strokeWidth: 2.5),
+                            color: context.appTheme.text, strokeWidth: 2.5),
                       )
                     : Icon(
                         isPlaying ? Icons.pause : Icons.play_arrow,
-                        color: Colors.black,
+                        color: context.appTheme.text,
                         size: 28,
                       ),
               ),
             ),
           ),
         ),
-        const SizedBox(width: 4),
+        SizedBox(width: 4),
         IconButton(
           onPressed: onNext,
-          icon: const Icon(Icons.skip_next, color: kTextPrimary, size: 28),
+          icon: Icon(Icons.skip_next, color: context.appTheme.text, size: 28),
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
         ),
@@ -567,9 +580,11 @@ class _VolumeControls extends StatelessWidget {
           child: IconButton(
             icon: Icon(
               panelMode == PanelMode.lyrics
-                  ? Icons.lyrics          // filled when active
+                  ? Icons.lyrics // filled when active
                   : Icons.lyrics_outlined,
-              color: panelMode == PanelMode.lyrics ? kAccent : kTextSecondary,
+              color: panelMode == PanelMode.lyrics
+                  ? context.appTheme.button
+                  : context.appTheme.subtext,
               size: 20,
             ),
             onPressed: onLyricsToggle,
@@ -584,7 +599,9 @@ class _VolumeControls extends StatelessWidget {
           child: IconButton(
             icon: Icon(
               Icons.queue_music_outlined,
-              color: panelMode == PanelMode.queue ? kAccent : kTextSecondary,
+              color: panelMode == PanelMode.queue
+                  ? context.appTheme.button
+                  : context.appTheme.subtext,
               size: 20,
             ),
             onPressed: onQueueToggle,
@@ -597,7 +614,7 @@ class _VolumeControls extends StatelessWidget {
         Tooltip(
           message: muted ? 'Unmute' : 'Mute',
           child: IconButton(
-            icon: Icon(volIcon, color: kTextSecondary, size: 20),
+            icon: Icon(volIcon, color: context.appTheme.subtext, size: 20),
             onPressed: onMuteToggle,
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
@@ -609,15 +626,13 @@ class _VolumeControls extends StatelessWidget {
           width: 80,
           child: SliderTheme(
             data: SliderTheme.of(context).copyWith(
-              activeTrackColor: kAccent,
-              inactiveTrackColor: const Color(0xFF3A3A3A),
-              thumbColor: Colors.white,
-              overlayColor: kAccent.withValues(alpha: 0.2),
+              activeTrackColor: context.appTheme.button,
+              inactiveTrackColor: context.appTheme.shadow,
+              thumbColor: context.appTheme.text,
+              overlayColor: context.appTheme.button.withValues(alpha: 0.2),
               trackHeight: 3,
-              thumbShape:
-                  const RoundSliderThumbShape(enabledThumbRadius: 5),
-              overlayShape:
-                  const RoundSliderOverlayShape(overlayRadius: 10),
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 10),
             ),
             child: Slider(
               value: volume,
@@ -630,8 +645,8 @@ class _VolumeControls extends StatelessWidget {
 
         // Fullscreen placeholder
         IconButton(
-          icon: const Icon(Icons.fullscreen_outlined,
-              color: kTextSecondary, size: 20),
+          icon: Icon(Icons.fullscreen_outlined,
+              color: context.appTheme.subtext, size: 20),
           onPressed: () {},
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(minWidth: 32, minHeight: 32),

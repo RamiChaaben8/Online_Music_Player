@@ -11,15 +11,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/player_provider.dart';
 import '../services/sync_service.dart';
+import '../desktop/theme/desktop_theme.dart';
 
 class RemotePlaybackBanner extends ConsumerWidget {
   const RemotePlaybackBanner({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final remote = ref.watch(
-        playerProvider.select((s) => s.remoteCommand));
+    final remote = ref.watch(playerProvider.select((s) => s.remoteCommand));
     if (remote == null) return const SizedBox.shrink();
+    final theme = AppThemeScope.maybeOf(context);
 
     final song = remote.currentSong;
     final deviceName = remote.deviceName;
@@ -29,14 +30,15 @@ class RemotePlaybackBanner extends ConsumerWidget {
         remote.command == RemoteCommand.prev;
 
     return Material(
-      color: Colors.transparent,
+      color: theme?.main.withValues(alpha: 0) ?? Colors.transparent,
       child: Container(
         margin: const EdgeInsets.fromLTRB(8, 4, 8, 4),
         decoration: BoxDecoration(
-          color: const Color(0xFF1A2A1A),
+          color: theme?.selectedRow ?? const Color(0xFF1A2A1A),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: const Color(0xFF1DB954).withOpacity(0.45),
+            color: (theme?.button ?? const Color(0xFF1DB954))
+                .withValues(alpha: 0.45),
           ),
         ),
         child: Padding(
@@ -45,7 +47,7 @@ class RemotePlaybackBanner extends ConsumerWidget {
             children: [
               Icon(
                 isPlaying ? Icons.cast_connected : Icons.cast,
-                color: const Color(0xFF1DB954),
+                color: theme?.button ?? const Color(0xFF1DB954),
                 size: 18,
               ),
 
@@ -58,8 +60,8 @@ class RemotePlaybackBanner extends ConsumerWidget {
                   children: [
                     Text(
                       'Remote from $deviceName',
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: theme?.text ?? Colors.white,
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                       ),
@@ -70,8 +72,8 @@ class RemotePlaybackBanner extends ConsumerWidget {
                         song.title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Color(0xFFB3B3B3),
+                        style: TextStyle(
+                          color: theme?.subtext ?? const Color(0xFFB3B3B3),
                           fontSize: 12,
                         ),
                       ),
@@ -84,9 +86,11 @@ class RemotePlaybackBanner extends ConsumerWidget {
               GestureDetector(
                 onTap: () =>
                     ref.read(playerProvider.notifier).dismissRemoteBanner(),
-                child: const Padding(
+                child: Padding(
                   padding: EdgeInsets.all(4),
-                  child: Icon(Icons.close, color: Color(0xFFB3B3B3), size: 16),
+                  child: Icon(Icons.close,
+                      color: theme?.subtext ?? const Color(0xFFB3B3B3),
+                      size: 16),
                 ),
               ),
             ],

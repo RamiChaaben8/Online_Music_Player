@@ -23,11 +23,15 @@ class FlutterWindow : public Win32Window {
                          LPARAM const lparam) noexcept override;
 
  private:
+  void RegisterMediaKeys();
+  void UnregisterMediaKeys();
+
   // The project to run.
   flutter::DartProject project_;
 
   // The Flutter instance hosted by this window.
   std::unique_ptr<flutter::FlutterViewController> flutter_controller_;
+  bool media_keys_registered_ = false;
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_
