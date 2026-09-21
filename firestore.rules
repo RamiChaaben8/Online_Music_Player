@@ -88,6 +88,19 @@ service cloud.firestore {
       allow delete: if signedIn() && request.auth.uid in resource.data.members;
     }
 
+    match /presence/{uid} {
+      allow read: if signedIn()
+        && (request.auth.uid == uid || acceptedFriend(uid));
+      allow create, update: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.online is bool
+        && request.resource.data.lastActiveAt is timestamp
+        && request.resource.data.deviceName is string
+        && (request.resource.data.activity == null
+          || request.resource.data.activity is map);
+      allow delete: if signedIn() && request.auth.uid == uid;
+    }
+
     match /users/{uid}/blocked/{blockedUid} {
       allow read, write: if signedIn() && request.auth.uid == uid;
     }

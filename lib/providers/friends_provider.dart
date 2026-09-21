@@ -37,6 +37,10 @@ class FriendsState {
 
   List<Friendship> get accepted =>
       friendships.where((item) => item.status == 'accepted').toList();
+
+  List<Friendship> get outgoingRequests => friendships
+      .where((item) => item.status == 'pending')
+      .toList();
 }
 
 class FriendsNotifier extends StateNotifier<FriendsState> {
@@ -46,6 +50,8 @@ class FriendsNotifier extends StateNotifier<FriendsState> {
   String? _uid;
 
   FriendsNotifier(this._service) : super(const FriendsState());
+
+  String? get uid => _uid;
 
   void initForUser(String uid) {
     if (_uid == uid) return;
@@ -99,20 +105,23 @@ class FriendsNotifier extends StateNotifier<FriendsState> {
     }
   }
 
-  Future<void> sendRequest(String toUid) async {
+  Future<bool> sendRequest(String toUid) async {
     final uid = _uid;
-    if (uid == null) return;
-    await _run(() => _service.sendFriendRequest(uid, toUid));
+    if (uid == null) return false;
+    return _run(() => _service.sendFriendRequest(uid, toUid));
   }
 
-  Future<void> accept(Friendship friendship) =>
-      _run(() => _service.acceptFriendRequest(friendship.id));
+  Future<void> accept(Friendship friendship) async {
+    await _run(() => _service.acceptFriendRequest(friendship.id));
+  }
 
-  Future<void> decline(Friendship friendship) =>
-      _run(() => _service.declineFriendRequest(friendship.id));
+  Future<void> decline(Friendship friendship) async {
+    await _run(() => _service.declineFriendRequest(friendship.id));
+  }
 
-  Future<void> unfriend(Friendship friendship) =>
-      _run(() => _service.unfriend(friendship.id));
+  Future<void> unfriend(Friendship friendship) async {
+    await _run(() => _service.unfriend(friendship.id));
+  }
 
   Future<void> block(String otherUid) async {
     final uid = _uid;
@@ -124,17 +133,21 @@ class FriendsNotifier extends StateNotifier<FriendsState> {
     if (uid != null) await _run(() => _service.unblockUser(uid, otherUid));
   }
 
-  Future<void> _run(Future<void> Function() action) async {
+  Future<bool> _run(Future<void> Function() action) async {
     state = state.copyWith(clearError: true);
     try {
       await action();
       if (Platform.isWindows) await refresh();
+      return true;
     } on FirestoreFriendException catch (error) {
       state = state.copyWith(error: error.message);
+      return false;
     } on FirebaseException catch (error) {
       state = state.copyWith(error: _firebaseError(error));
+      return false;
     } catch (error) {
       state = state.copyWith(error: 'Could not complete that action: $error');
+      return false;
     }
   }
 

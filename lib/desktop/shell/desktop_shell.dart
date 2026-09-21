@@ -12,6 +12,7 @@ import '../../providers/panel_provider.dart';
 import '../../providers/player_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/sync_provider.dart';
+import '../../providers/presence_provider.dart';
 import '../../providers/youtube_provider.dart';
 import '../../services/firestore_service.dart';
 import '../home/desktop_home_view.dart';
@@ -91,6 +92,13 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
     AppThemeNotifier.instance.addListener(_onThemeChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(localMusicProvider.notifier).scan();
+      final uid = ref.read(authServiceProvider).currentUser?.uid;
+      if (uid != null) {
+        ref.read(presenceProvider.notifier).start(
+              uid,
+              playerState: ref.read(playerProvider),
+            );
+      }
     });
   }
 
@@ -107,16 +115,25 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       ref.read(localMusicProvider.notifier).scan();
+      final uid = ref.read(authServiceProvider).currentUser?.uid;
+      if (uid != null) {
+        ref.read(presenceProvider.notifier).start(
+              uid,
+              playerState: ref.read(playerProvider),
+            );
+      }
     }
     // Saving is enough when Windows hides/minimizes the window. Playback must
     // continue so the desktop app behaves like a background music player.
     if (state == AppLifecycleState.hidden ||
         state == AppLifecycleState.paused) {
       ref.read(playerProvider.notifier).saveSession().catchError((_) {});
+      ref.read(presenceProvider.notifier).stop();
     }
     // Release active-device claim when app is fully closed so another
     // device can auto-claim on next launch.
     if (state == AppLifecycleState.detached) {
+      ref.read(presenceProvider.notifier).stop();
       ref.read(playerProvider.notifier).saveSession().catchError((_) {});
       ref.read(playerProvider.notifier).pauseLocal();
       ref
@@ -208,6 +225,9 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<PlayerState>(playerProvider, (_, next) {
+      ref.read(presenceProvider.notifier).updateFromPlayer(next);
+    });
     final panelMode = ref.watch(panelModeProvider);
 
     return Scaffold(

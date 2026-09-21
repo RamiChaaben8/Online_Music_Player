@@ -1,18 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../services/firestore_service.dart';
+import '../providers/presence_provider.dart';
 
-class PrivacySettingsScreen extends StatefulWidget {
+class PrivacySettingsScreen extends ConsumerStatefulWidget {
   final User user;
 
   const PrivacySettingsScreen({super.key, required this.user});
 
   @override
-  State<PrivacySettingsScreen> createState() => _PrivacySettingsScreenState();
+  ConsumerState<PrivacySettingsScreen> createState() =>
+      _PrivacySettingsScreenState();
 }
 
-class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
+class _PrivacySettingsScreenState
+    extends ConsumerState<PrivacySettingsScreen> {
   final _service = FirestoreService();
   Map<String, bool> _privacy = const {
     'showOnlineStatus': true,
@@ -42,6 +46,7 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
     setState(() => _privacy = next);
     try {
       await _service.updatePrivacy(widget.user.uid, next);
+      await ref.read(presenceProvider.notifier).updatePrivacy(next);
     } catch (_) {
       if (mounted) {
         setState(() => _privacy = old);
@@ -55,6 +60,7 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
   Future<void> _saveAll() async {
     try {
       await _service.updatePrivacy(widget.user.uid, _privacy);
+      await ref.read(presenceProvider.notifier).updatePrivacy(_privacy);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Privacy settings saved.')),

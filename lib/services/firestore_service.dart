@@ -116,6 +116,33 @@ class FirestoreService {
     });
   }
 
+  Future<void> updatePresence({
+    required String uid,
+    required String deviceName,
+    required bool online,
+    required bool showOnlineStatus,
+    required bool showActivity,
+    required Map<String, dynamic>? activity,
+    bool writeActivity = true,
+  }) async {
+    final data = <String, dynamic>{
+      'online': online && showOnlineStatus,
+      'lastActiveAt': FieldValue.serverTimestamp(),
+      'deviceName': deviceName,
+    };
+    if (writeActivity || !showActivity || !showOnlineStatus) {
+      data['activity'] = showActivity && showOnlineStatus ? activity : null;
+    }
+    await _db.collection('presence').doc(uid).set(data, SetOptions(merge: true));
+  }
+
+  Stream<PresenceInfo?> presenceStream(String uid) {
+    return _db.collection('presence').doc(uid).snapshots().map((doc) {
+      if (!doc.exists || doc.data() == null) return null;
+      return PresenceInfo.fromMap(doc.data()!);
+    });
+  }
+
   String friendshipId(String a, String b) {
     final members = [a, b]..sort();
     return '${members[0]}_${members[1]}';
@@ -779,6 +806,40 @@ class FirestoreFriendException implements Exception {
   const FirestoreFriendException(this.message);
   @override
   String toString() => message;
+}
+
+class PresenceInfo {
+  final bool online;
+  final DateTime? lastActiveAt;
+  final String deviceName;
+  final Map<String, dynamic>? activity;
+
+  const PresenceInfo({
+    required this.online,
+    required this.lastActiveAt,
+    required this.deviceName,
+    required this.activity,
+  });
+
+  factory PresenceInfo.fromMap(Map<String, dynamic> data) {
+    final timestamp = data['lastActiveAt'];
+    final rawActivity = data['activity'];
+    return PresenceInfo(
+      online: data['online'] as bool? ?? false,
+      lastActiveAt:
+          timestamp is Timestamp ? timestamp.toDate() : null,
+      deviceName: data['deviceName'] as String? ?? 'Unknown device',
+      activity: rawActivity is Map
+          ? rawActivity.cast<String, dynamic>()
+          : null,
+    );
+  }
+
+  bool get isOnline =>
+      online &&
+      lastActiveAt != null &&
+      DateTime.now().difference(lastActiveAt!) <
+          const Duration(seconds: 150);
 }
 
 class Friendship {

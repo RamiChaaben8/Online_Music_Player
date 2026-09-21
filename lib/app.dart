@@ -5,6 +5,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
+import 'providers/auth_provider.dart';
 import 'dart:io';
 
 import 'screens/search_screen.dart';
@@ -17,6 +18,7 @@ import 'widgets/offline_indicator.dart';
 import 'providers/player_provider.dart';
 import 'providers/local_music_provider.dart';
 import 'providers/sync_provider.dart';
+import 'providers/presence_provider.dart';
 import 'platform/permissions.dart';
 import 'desktop/shell/desktop_shell.dart';
 import 'screens/auth/auth_gate.dart';
@@ -207,6 +209,7 @@ class _AppShellState extends ConsumerState<AppShell>
     if (Platform.isAndroid) {
       _androidLifecycleChannel.setMethodCallHandler((call) async {
         if (call.method == 'taskRemoved') {
+          await ref.read(presenceProvider.notifier).stop();
           final sync = ref.read(syncProvider.notifier).service;
           await sync.releaseIfActive().catchError((_) {});
           await sync.unregisterCurrentDevice().catchError((_) {});
@@ -218,6 +221,13 @@ class _AppShellState extends ConsumerState<AppShell>
       await _requestStoragePermission();
       if (mounted) {
         ref.read(localMusicProvider.notifier).scan();
+        final uid = ref.read(authServiceProvider).currentUser?.uid;
+        if (uid != null) {
+          ref.read(presenceProvider.notifier).start(
+                uid,
+                playerState: ref.read(playerProvider),
+              );
+        }
       }
     });
   }
@@ -244,10 +254,18 @@ class _AppShellState extends ConsumerState<AppShell>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       ref.read(localMusicProvider.notifier).scan();
+      final uid = ref.read(authServiceProvider).currentUser?.uid;
+      if (uid != null) {
+        ref.read(presenceProvider.notifier).start(
+              uid,
+              playerState: ref.read(playerProvider),
+            );
+      }
     }
     // Release active-device claim when app is fully closed so another
     // device can auto-claim on next launch.
     if (state == AppLifecycleState.detached) {
+      ref.read(presenceProvider.notifier).stop();
       final player = ref.read(playerProvider.notifier);
       player.saveSession().catchError((_) {});
       ref
@@ -264,6 +282,7 @@ class _AppShellState extends ConsumerState<AppShell>
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden) {
       ref.read(playerProvider.notifier).saveSession().catchError((_) {});
+      ref.read(presenceProvider.notifier).stop();
     }
   }
 
@@ -276,6 +295,9 @@ class _AppShellState extends ConsumerState<AppShell>
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<PlayerState>(playerProvider, (_, next) {
+      ref.read(presenceProvider.notifier).updateFromPlayer(next);
+    });
     final playerState = ref.watch(playerProvider);
     final hasSong = playerState.currentSong != null;
 

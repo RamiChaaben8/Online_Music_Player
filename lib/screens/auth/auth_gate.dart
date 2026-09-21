@@ -16,6 +16,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/library_provider.dart';
 import '../../providers/player_provider.dart';
 import '../../providers/sync_provider.dart';
+import '../../providers/presence_provider.dart';
 import '../../providers/friends_provider.dart';
 import '../../widgets/migration_dialog.dart';
 import '../profile_setup_screen.dart';
@@ -57,6 +58,7 @@ class AuthGate extends ConsumerWidget {
       data: (user) {
         if (user == null) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
+            ref.read(presenceProvider.notifier).stop();
             ref.read(libraryProvider.notifier).resetForLogout();
             ref.read(syncProvider.notifier).reset();
             ref.read(friendsProvider.notifier).reset();

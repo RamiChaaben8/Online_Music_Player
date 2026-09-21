@@ -67,7 +67,7 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen>
             const Tab(text: 'Friends'),
             Tab(
                 text:
-                    'Requests${state.incomingRequests.isEmpty ? '' : ' (${state.incomingRequests.length})'}'),
+                    'Requests${state.incomingRequests.isEmpty && state.outgoingRequests.isEmpty ? '' : ' (${state.incomingRequests.length + state.outgoingRequests.length})'}'),
             const Tab(text: 'Add Friend'),
           ],
         ),
@@ -101,18 +101,27 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen>
   }
 
   Widget _requestsList(FriendsState state) {
-    if (state.incomingRequests.isEmpty) {
+    final requests = [
+      ...state.incomingRequests,
+      ...state.outgoingRequests.where(
+          (outgoing) => !state.incomingRequests.any((item) => item.id == outgoing.id)),
+    ];
+    if (requests.isEmpty) {
       return const _EmptyState(
         icon: Icons.mark_email_unread_outlined,
         message: 'No pending friend requests.',
       );
     }
     return ListView(
-      children: state.incomingRequests
-          .map((request) => _requestTile(request))
+      children: requests
+          .map((request) => request.requestedBy == _currentUid
+              ? _outgoingRequestTile(request)
+              : _requestTile(request))
           .toList(),
     );
   }
+
+  String? get _currentUid => ref.read(friendsProvider.notifier).uid;
 
   Widget _addFriend() {
     return Padding(
@@ -156,34 +165,93 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen>
 
   Widget _friendTile(Friendship friendship) {
     final profile = friendship.profile;
-    return ListTile(
-      leading: _avatar(profile),
-      title: Text(profile?.displayName.isNotEmpty == true
-          ? profile!.displayName
-          : '@${profile?.username ?? 'unknown'}'),
-      subtitle: Text('@${profile?.username ?? 'unknown'}'),
-      onTap: profile == null
-          ? null
-          : () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => FriendProfileScreen(profile: profile),
+    if (profile == null || friendship.otherUid == null) {
+      return ListTile(
+        leading: _avatar(profile),
+        title: Text('@${profile?.username ?? 'unknown'}'),
+      );
+    }
+    return StreamBuilder<PresenceInfo?>(
+      stream: FirestoreService().presenceStream(friendship.otherUid!),
+      builder: (context, snapshot) {
+        final presence = snapshot.data;
+        final activity = presence?.activity;
+        final title = profile.displayName.isNotEmpty
+            ? profile.displayName
+            : '@${profile.username}';
+        final subtitle = presence?.isOnline == true
+            ? activity != null
+                ? '${activity['title'] ?? 'Listening'} • ${activity['artist'] ?? ''}'
+                : 'Online'
+            : 'Offline${_lastSeen(presence?.lastActiveAt)}';
+        return ListTile(
+          leading: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              _avatar(profile),
+              Positioned(
+                right: -1,
+                bottom: -1,
+                child: Container(
+                  width: 13,
+                  height: 13,
+                  decoration: BoxDecoration(
+                    color: presence?.isOnline == true
+                        ? const Color(0xFF1DB954)
+                        : const Color(0xFF777777),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                        color: Theme.of(context).scaffoldBackgroundColor,
+                        width: 2),
+                  ),
                 ),
               ),
-      trailing: PopupMenuButton<String>(
-        onSelected: (value) {
-          if (value == 'unfriend') {
-            ref.read(friendsProvider.notifier).unfriend(friendship);
-          } else if (value == 'block' && friendship.otherUid != null) {
-            ref.read(friendsProvider.notifier).block(friendship.otherUid!);
-          }
-        },
-        itemBuilder: (_) => const [
-          PopupMenuItem(value: 'unfriend', child: Text('Unfriend')),
-          PopupMenuItem(value: 'block', child: Text('Block')),
-        ],
-      ),
+            ],
+          ),
+          title: Text(title),
+          subtitle: Row(
+            children: [
+              if (activity?['isPlaying'] == true) ...[
+                const Icon(Icons.equalizer,
+                    size: 16, color: Color(0xFF1DB954)),
+                const SizedBox(width: 4),
+              ],
+              Expanded(
+                child: Text(subtitle, overflow: TextOverflow.ellipsis),
+              ),
+            ],
+          ),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => FriendProfileScreen(profile: profile),
+            ),
+          ),
+          trailing: PopupMenuButton<String>(
+            onSelected: (value) {
+              if (value == 'unfriend') {
+                ref.read(friendsProvider.notifier).unfriend(friendship);
+              } else if (value == 'block') {
+                ref.read(friendsProvider.notifier).block(friendship.otherUid!);
+              }
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'unfriend', child: Text('Unfriend')),
+              PopupMenuItem(value: 'block', child: Text('Block')),
+            ],
+          ),
+        );
+      },
     );
+  }
+
+  String _lastSeen(DateTime? lastActiveAt) {
+    if (lastActiveAt == null) return '';
+    final elapsed = DateTime.now().difference(lastActiveAt);
+    if (elapsed.inMinutes < 1) return ' • last seen just now';
+    if (elapsed.inHours < 1) return ' • last seen ${elapsed.inMinutes}m ago';
+    if (elapsed.inDays < 1) return ' • last seen ${elapsed.inHours}h ago';
+    return ' • last seen ${elapsed.inDays}d ago';
   }
 
   Widget _requestTile(Friendship request) {
@@ -218,9 +286,35 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen>
           : profile.displayName),
       subtitle: Text('@${profile.username}'),
       trailing: FilledButton(
-        onPressed: () =>
-            ref.read(friendsProvider.notifier).sendRequest(profile.uid),
+        onPressed: () async {
+          final success =
+              await ref.read(friendsProvider.notifier).sendRequest(profile.uid);
+          if (!mounted) return;
+          if (success) {
+            _tabs.animateTo(1);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Friend request sent to @${profile.username}.'),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+        },
         child: const Text('Add'),
+      ),
+    );
+  }
+
+  Widget _outgoingRequestTile(Friendship request) {
+    final profile = request.profile;
+    return ListTile(
+      leading: _avatar(profile),
+      title: Text('@${profile?.username ?? 'unknown'}'),
+      subtitle: const Text('Request sent'),
+      trailing: TextButton(
+        onPressed: () =>
+            ref.read(friendsProvider.notifier).decline(request),
+        child: const Text('Cancel'),
       ),
     );
   }
