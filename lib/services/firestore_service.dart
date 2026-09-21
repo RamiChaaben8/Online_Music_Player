@@ -22,6 +22,7 @@ import '../models/playlist.dart';
 
 class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final Map<String, PublicProfile> _profileCache = {};
   static final RegExp usernamePattern = RegExp(r'^[a-z0-9_]{3,20}$');
 
   // ── Root helpers ──────────────────────────────────────────────────────────
@@ -44,21 +45,28 @@ class FirestoreService {
   }
 
   Future<PublicProfile?> getPublicProfile(String uid) async {
+    final cached = _profileCache[uid];
+    if (cached != null) return cached;
     final doc = await _db.collection('publicProfiles').doc(uid).get();
     if (!doc.exists || doc.data() == null) return null;
     final profile = PublicProfile.fromMap(uid, doc.data()!);
+    _profileCache[uid] = profile;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('friend_profile_$uid', jsonEncode(profile.toMap()));
     return profile;
   }
 
   Future<PublicProfile?> getCachedPublicProfile(String uid) async {
+    final cached = _profileCache[uid];
+    if (cached != null) return cached;
     final prefs = await SharedPreferences.getInstance();
     final encoded = prefs.getString('friend_profile_$uid');
     if (encoded == null) return null;
     try {
-      return PublicProfile.fromMap(
+      final profile = PublicProfile.fromMap(
           uid, jsonDecode(encoded) as Map<String, dynamic>);
+      _profileCache[uid] = profile;
+      return profile;
     } catch (_) {
       return null;
     }
@@ -169,16 +177,14 @@ class FirestoreService {
         .where('members', arrayContains: uid)
         .snapshots()
         .asyncMap((snapshot) async {
-      final result = <Friendship>[];
-      for (final doc in snapshot.docs) {
+      final result = await Future.wait(snapshot.docs.map((doc) async {
         final friendship = Friendship.fromMap(doc.id, doc.data());
         final otherUid =
             friendship.members.firstWhere((member) => member != uid);
         final profile = await getCachedPublicProfile(otherUid) ??
             await getPublicProfile(otherUid);
-        result.add(friendship.copyWith(otherUid: otherUid, profile: profile));
-      }
-
+        return friendship.copyWith(otherUid: otherUid, profile: profile);
+      }));
       return result;
     });
   }
@@ -190,17 +196,18 @@ class FirestoreService {
         .where('members', arrayContains: uid)
         .get();
     final result = <Friendship>[];
-    for (final doc in snapshot.docs) {
+    final hydrated = await Future.wait(snapshot.docs.map((doc) async {
       final friendship = Friendship.fromMap(doc.id, doc.data());
       if (incomingOnly &&
           (friendship.status != 'pending' || friendship.requestedBy == uid)) {
-        continue;
+        return null;
       }
       final otherUid = friendship.members.firstWhere((member) => member != uid);
       final profile = await getCachedPublicProfile(otherUid) ??
           await getPublicProfile(otherUid);
-      result.add(friendship.copyWith(otherUid: otherUid, profile: profile));
-    }
+      return friendship.copyWith(otherUid: otherUid, profile: profile);
+    }));
+    result.addAll(hydrated.whereType<Friendship>());
     return result;
   }
 
@@ -210,19 +217,18 @@ class FirestoreService {
         .where('members', arrayContains: uid)
         .snapshots()
         .asyncMap((snapshot) async {
-      final result = <Friendship>[];
-      for (final doc in snapshot.docs) {
+      final result = await Future.wait(snapshot.docs.map((doc) async {
         final friendship = Friendship.fromMap(doc.id, doc.data());
         if (friendship.status != 'pending' || friendship.requestedBy == uid) {
-          continue;
+          return null;
         }
         final otherUid =
             friendship.members.firstWhere((member) => member != uid);
         final profile = await getCachedPublicProfile(otherUid) ??
             await getPublicProfile(otherUid);
-        result.add(friendship.copyWith(otherUid: otherUid, profile: profile));
-      }
-      return result;
+        return friendship.copyWith(otherUid: otherUid, profile: profile);
+      }));
+      return result.whereType<Friendship>().toList();
     });
   }
 

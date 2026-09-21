@@ -1,7 +1,10 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'dart:async';
+import 'dart:io';
 
+import '../providers/auth_provider.dart';
 import '../providers/friends_provider.dart';
 import '../services/firestore_service.dart';
 import 'friend_profile_screen.dart';
@@ -19,17 +22,32 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen>
   final _searchController = TextEditingController();
   List<PublicProfile> _results = [];
   bool _searching = false;
+  String? _sendingRequestUid;
+  Timer? _desktopRefreshTimer;
 
   @override
   void initState() {
     super.initState();
     _tabs = TabController(length: 3, vsync: this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final uid = ref.read(authServiceProvider).currentUser?.uid;
+      if (uid != null && ref.read(friendsProvider.notifier).uid != uid) {
+        ref.read(friendsProvider.notifier).initForUser(uid);
+      }
+    });
+    if (Platform.isWindows) {
+      _desktopRefreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+        if (mounted) ref.read(friendsProvider.notifier).refresh();
+      });
+    }
   }
 
   @override
   void dispose() {
     _tabs.dispose();
     _searchController.dispose();
+    _desktopRefreshTimer?.cancel();
     super.dispose();
   }
 
@@ -286,21 +304,44 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen>
           : profile.displayName),
       subtitle: Text('@${profile.username}'),
       trailing: FilledButton(
-        onPressed: () async {
-          final success =
-              await ref.read(friendsProvider.notifier).sendRequest(profile.uid);
-          if (!mounted) return;
-          if (success) {
-            _tabs.animateTo(1);
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Friend request sent to @${profile.username}.'),
-                behavior: SnackBarBehavior.floating,
-              ),
-            );
-          }
-        },
-        child: const Text('Add'),
+        onPressed: _sendingRequestUid == profile.uid
+            ? null
+            : () async {
+                setState(() => _sendingRequestUid = profile.uid);
+                final success = await ref
+                    .read(friendsProvider.notifier)
+                    .sendRequest(profile.uid);
+                if (!mounted) return;
+                setState(() => _sendingRequestUid = null);
+                if (success) {
+                  _tabs.animateTo(1);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content:
+                          Text('Friend request sent to @${profile.username}.'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                } else {
+                  final error = ref.read(friendsProvider).error;
+                  if (error != null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(error),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                    ref.read(friendsProvider.notifier).clearError();
+                  }
+                }
+              },
+        child: _sendingRequestUid == profile.uid
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Text('Add'),
       ),
     );
   }

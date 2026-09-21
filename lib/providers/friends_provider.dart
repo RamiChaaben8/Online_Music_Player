@@ -46,7 +46,6 @@ class FriendsState {
 class FriendsNotifier extends StateNotifier<FriendsState> {
   final FirestoreService _service;
   StreamSubscription<List<Friendship>>? _friendshipsSubscription;
-  StreamSubscription<List<Friendship>>? _requestsSubscription;
   String? _uid;
 
   FriendsNotifier(this._service) : super(const FriendsState());
@@ -63,14 +62,15 @@ class FriendsNotifier extends StateNotifier<FriendsState> {
       return;
     }
     _friendshipsSubscription = _service.friendshipsStream(uid).listen(
-          (items) => state = state.copyWith(friendships: items, loading: false),
+          (items) => state = state.copyWith(
+              friendships: items,
+              incomingRequests: items
+                  .where((item) =>
+                      item.status == 'pending' && item.requestedBy != uid)
+                  .toList(),
+              loading: false),
           onError: (Object error, StackTrace _) =>
               state = state.copyWith(loading: false, error: error.toString()),
-        );
-    _requestsSubscription = _service.incomingFriendRequestsStream(uid).listen(
-          (items) => state = state.copyWith(incomingRequests: items),
-          onError: (Object error, StackTrace _) =>
-              state = state.copyWith(error: error.toString()),
         );
   }
 
@@ -107,16 +107,27 @@ class FriendsNotifier extends StateNotifier<FriendsState> {
 
   Future<bool> sendRequest(String toUid) async {
     final uid = _uid;
-    if (uid == null) return false;
-    return _run(() => _service.sendFriendRequest(uid, toUid));
+    if (uid == null) {
+      state = state.copyWith(
+        error: 'Friends is still loading. Close and reopen the Friends tab.',
+      );
+      return false;
+    }
+    final success = await _run(() => _service.sendFriendRequest(uid, toUid));
+    if (success && !Platform.isWindows) {
+      unawaited(refresh());
+    }
+    return success;
   }
 
   Future<void> accept(Friendship friendship) async {
     await _run(() => _service.acceptFriendRequest(friendship.id));
+    if (!Platform.isWindows) unawaited(refresh());
   }
 
   Future<void> decline(Friendship friendship) async {
     await _run(() => _service.declineFriendRequest(friendship.id));
+    if (!Platform.isWindows) unawaited(refresh());
   }
 
   Future<void> unfriend(Friendship friendship) async {
@@ -169,9 +180,7 @@ class FriendsNotifier extends StateNotifier<FriendsState> {
 
   void reset() {
     _friendshipsSubscription?.cancel();
-    _requestsSubscription?.cancel();
     _friendshipsSubscription = null;
-    _requestsSubscription = null;
     _uid = null;
     state = const FriendsState();
   }
