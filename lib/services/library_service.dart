@@ -62,8 +62,10 @@ class LibraryService {
 
   List<Playlist> getPlaylists() => _playlistsBox.values.toList();
 
-  Future<void> createPlaylist(String name, {String? description}) async {
-    final playlist = Playlist(name: name, description: description);
+  Future<void> createPlaylist(String name,
+      {String? description, String visibility = 'private'}) async {
+    final playlist = Playlist(
+        name: name, description: description, visibility: visibility);
     await _playlistsBox.add(playlist);
   }
 

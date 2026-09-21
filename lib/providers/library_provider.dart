@@ -86,6 +86,7 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
       state = state.copyWith(likedSongs: liked);
       _syncLikesToHive(liked);
     });
+    _fs.ensurePlaylistVisibilityDefaults(uid).catchError((_) {});
   }
 
   void resetForLogout() {
@@ -137,19 +138,23 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
 
   // ── Playlists ──────────────────────────────────────────────────────────────
 
-  Future<void> createPlaylist(String name, {String? description}) async {
+  Future<void> createPlaylist(String name,
+      {String? description, String visibility = 'private'}) async {
     if (_uid != null) {
       try {
-        await _fs.createPlaylist(_uid!, name, description: description);
+        await _fs.createPlaylist(_uid!, name,
+            description: description, visibility: visibility);
         // Live listener will update state
       } catch (_) {
         await _hive
-            .createPlaylist(name, description: description)
+            .createPlaylist(name,
+                description: description, visibility: visibility)
             .catchError((_) {});
         state = state.copyWith(playlists: _hive.getPlaylists());
       }
     } else {
-      await _hive.createPlaylist(name, description: description);
+      await _hive.createPlaylist(name,
+          description: description, visibility: visibility);
       state = state.copyWith(playlists: _hive.getPlaylists());
     }
   }
@@ -182,7 +187,8 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
               name: name,
               songs: p.songs,
               createdAt: p.createdAt,
-              description: p.description);
+              description: p.description,
+              visibility: p.visibility);
         }
         return p;
       }).toList(),
@@ -210,8 +216,10 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
               name: name,
               songs: p.songs,
               createdAt: p.createdAt,
-              description: p.description);
+              description: p.description,
+              visibility: p.visibility);
         }
+
         return p;
       }).toList(),
     );
@@ -219,6 +227,39 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     await _hive.renamePlaylist(hiveKey, name).catchError((_) {});
     if (_uid != null && fsId != null) {
       await _fs.renamePlaylist(_uid!, fsId, name).catchError((_) {});
+    }
+  }
+
+  Future<void> setPlaylistVisibility(
+      Playlist playlist, String visibility) async {
+    if (!{'private', 'friends', 'public'}.contains(visibility)) return;
+    state = state.copyWith(
+      playlists: state.playlists.map((p) {
+        if (_matchesPlaylist(p, playlist)) {
+          return Playlist(
+            name: p.name,
+            songs: p.songs,
+            createdAt: p.createdAt,
+            description: p.description,
+            visibility: visibility,
+          );
+        }
+        return p;
+      }).toList(),
+    );
+
+    final fsId = playlist.firestoreId;
+    if (_uid != null && fsId != null) {
+      await _fs.setPlaylistVisibility(_uid!, fsId, visibility);
+    }
+    final hiveKey = playlist.key as int?;
+    if (hiveKey != null) {
+      final local = _hive.getPlaylists().firstWhere(
+            (p) => p.key == hiveKey,
+            orElse: () => playlist,
+          );
+      local.visibility = visibility;
+      await local.save();
     }
   }
 
@@ -272,7 +313,8 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
                 name: p.name,
                 songs: [...p.songs, song],
                 createdAt: p.createdAt,
-                description: p.description);
+                description: p.description,
+                visibility: p.visibility);
           }
         }
         return p;
@@ -300,7 +342,8 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
                 name: p.name,
                 songs: [...p.songs, song],
                 createdAt: p.createdAt,
-                description: p.description);
+                description: p.description,
+                visibility: p.visibility);
           }
         }
         return p;
@@ -326,7 +369,8 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
               name: p.name,
               songs: p.songs.where((s) => s.id != songId).toList(),
               createdAt: p.createdAt,
-              description: p.description);
+              description: p.description,
+              visibility: p.visibility);
         }
         return p;
       }).toList(),
@@ -352,7 +396,8 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
               name: p.name,
               songs: p.songs.where((s) => s.id != songId).toList(),
               createdAt: p.createdAt,
-              description: p.description);
+              description: p.description,
+              visibility: p.visibility);
         }
         return p;
       }).toList(),

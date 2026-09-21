@@ -15,15 +15,17 @@ import '../../providers/youtube_provider.dart';
 import '../theme/desktop_theme.dart';
 
 class DesktopTitleBar extends ConsumerStatefulWidget {
-  final int currentView;           // 0=home, 1=search, 2=playlist
+  final int currentView; // 0=home, 1=search, 2=playlist, 3=friends
   final VoidCallback? onSearchTap; // kept for compatibility (unused internally)
   final void Function(String query)? onSearch;
   final VoidCallback? onHome;
   final VoidCallback? onBack;
   final VoidCallback? onForward;
   final VoidCallback? onProfileTap;
+  final VoidCallback? onFriendsTap;
   final bool canGoBack;
   final bool canGoForward;
+
   /// Called when the user submits a query or taps a recent search —
   /// the shell uses this to switch to DesktopSearchView (view 1).
   final void Function(String query)? onNavigateToSearch;
@@ -37,6 +39,7 @@ class DesktopTitleBar extends ConsumerStatefulWidget {
     this.onBack,
     this.onForward,
     this.onProfileTap,
+    this.onFriendsTap,
     this.canGoBack = false,
     this.canGoForward = false,
     this.onNavigateToSearch,
@@ -265,7 +268,12 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
           _iconBtn(Icons.notifications_none_outlined,
               color: theme.textSecondary),
           const SizedBox(width: 4),
-          _iconBtn(Icons.people_outline, color: theme.textSecondary),
+          _iconBtn(
+            Icons.people_outline,
+            color: widget.currentView == 3 ? theme.accent : theme.textSecondary,
+            onPressed: widget.onFriendsTap,
+            tooltip: 'Friends',
+          ),
           const SizedBox(width: 8),
           Tooltip(
             message: 'Account',
@@ -277,8 +285,8 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
                 child: CircleAvatar(
                   radius: 16,
                   backgroundColor: theme.cardColor,
-                  child: Icon(Icons.person,
-                      color: theme.textSecondary, size: 18),
+                  child:
+                      Icon(Icons.person, color: theme.textSecondary, size: 18),
                 ),
               ),
             ),
@@ -314,8 +322,7 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
               height: 40,
               decoration: BoxDecoration(
                 color: theme.cardColor,
-                borderRadius:
-                    BorderRadius.circular(_searchExpanded ? 8 : 999),
+                borderRadius: BorderRadius.circular(_searchExpanded ? 8 : 999),
                 border: _searchExpanded
                     ? Border.all(color: theme.accent, width: 1.5)
                     : null,
@@ -329,13 +336,12 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
                     child: TextField(
                       controller: _searchController,
                       focusNode: _searchFocus,
-                      style:
-                          TextStyle(color: theme.textPrimary, fontSize: 14),
+                      style: TextStyle(color: theme.textPrimary, fontSize: 14),
                       decoration: InputDecoration(
                         border: InputBorder.none,
                         hintText: 'What do you want to play?',
-                        hintStyle: TextStyle(
-                            color: theme.textSecondary, fontSize: 14),
+                        hintStyle:
+                            TextStyle(color: theme.textSecondary, fontSize: 14),
                         isDense: true,
                         contentPadding: EdgeInsets.zero,
                       ),
@@ -349,8 +355,8 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
                           color: theme.textSecondary, size: 17),
                       splashRadius: 16,
                       padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                          minWidth: 30, minHeight: 30),
+                      constraints:
+                          const BoxConstraints(minWidth: 30, minHeight: 30),
                       onPressed: _clearSearch,
                     ),
                   const SizedBox(width: 6),
@@ -381,8 +387,7 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
 
     // Cap suggestions to _kMaxSuggestions
     final suggestions = searchState.results.take(_kMaxSuggestions).toList();
-    final hasResults =
-        searchState.query.isNotEmpty && suggestions.isNotEmpty;
+    final hasResults = searchState.query.isNotEmpty && suggestions.isNotEmpty;
 
     Widget content;
 
@@ -410,8 +415,8 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
             child: Text(
               'Suggestions',
-              style: TextStyle(
-                  color: theme.accent, fontWeight: FontWeight.w700),
+              style:
+                  TextStyle(color: theme.accent, fontWeight: FontWeight.w700),
             ),
           ),
           ListView.separated(
@@ -486,8 +491,7 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
                       ref.read(searchHistoryProvider.notifier).clearHistory(),
                   child: Text(
                     'Clear',
-                    style: TextStyle(
-                        color: theme.textSecondary, fontSize: 12),
+                    style: TextStyle(color: theme.textSecondary, fontSize: 12),
                   ),
                 ),
               ],
@@ -501,8 +505,8 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
               final query = history[i];
               return ListTile(
                 dense: true,
-                leading: Icon(Icons.history,
-                    color: theme.textSecondary, size: 20),
+                leading:
+                    Icon(Icons.history, color: theme.textSecondary, size: 20),
                 title: Text(
                   query,
                   maxLines: 1,
@@ -615,8 +619,7 @@ class _SuggestionTileState extends State<_SuggestionTile> {
           color: _hovered
               ? theme.textSecondary.withValues(alpha: 0.08)
               : Colors.transparent,
-          padding:
-              const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           child: Row(
             children: [
               // Thumbnail
@@ -669,8 +672,8 @@ class _SuggestionTileState extends State<_SuggestionTile> {
                       song.channelName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          color: theme.textSecondary, fontSize: 11),
+                      style:
+                          TextStyle(color: theme.textSecondary, fontSize: 11),
                     ),
                   ],
                 ),

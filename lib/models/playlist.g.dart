@@ -22,13 +22,14 @@ class PlaylistAdapter extends TypeAdapter<Playlist> {
       songs: (fields[1] as List?)?.cast<Song>(),
       createdAt: fields[2] as DateTime?,
       description: fields[3] as String?,
+      visibility: fields[4] as String? ?? 'private',
     );
   }
 
   @override
   void write(BinaryWriter writer, Playlist obj) {
     writer
-      ..writeByte(4)
+      ..writeByte(5)
       ..writeByte(0)
       ..write(obj.name)
       ..writeByte(1)
@@ -36,7 +37,9 @@ class PlaylistAdapter extends TypeAdapter<Playlist> {
       ..writeByte(2)
       ..write(obj.createdAt)
       ..writeByte(3)
-      ..write(obj.description);
+      ..write(obj.description)
+      ..writeByte(4)
+      ..write(obj.visibility);
   }
 
   @override

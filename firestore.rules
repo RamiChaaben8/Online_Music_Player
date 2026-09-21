@@ -2,6 +2,96 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function pairId(a, b) {
+      return a < b ? a + '_' + b : b + '_' + a;
+    }
+
+    function acceptedFriend(uid) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/friendships/$(pairId(request.auth.uid, uid)))
+        && get(/databases/$(database)/documents/friendships/$(pairId(request.auth.uid, uid))).data.status == 'accepted';
+    }
+
+    function validUsername(value) {
+      return value is string
+        && value == value.lower()
+        && value.matches('^[a-z0-9_]{3,20}$');
+    }
+
+    function requestTarget(data) {
+      return data.members[0] == request.auth.uid
+        ? data.members[1]
+        : data.members[0];
+    }
+
+    match /publicProfiles/{uid} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.auth.uid == uid
+        && validUsername(request.resource.data.username)
+        && request.resource.data.usernameLower == request.resource.data.username
+        && request.resource.data.displayName is string
+        && request.resource.data.photoURL is string
+        && request.resource.data.privacy.showOnlineStatus is bool
+        && request.resource.data.privacy.showActivity is bool
+        && request.resource.data.privacy.allowFriendRequests is bool
+        && !exists(/databases/$(database)/documents/publicProfiles/$(uid));
+      allow update: if signedIn()
+        && request.auth.uid == uid
+        && validUsername(request.resource.data.username)
+        && request.resource.data.usernameLower == request.resource.data.username
+        && request.resource.data.privacy.showOnlineStatus is bool
+        && request.resource.data.privacy.showActivity is bool
+        && request.resource.data.privacy.allowFriendRequests is bool;
+      allow delete: if signedIn() && request.auth.uid == uid;
+    }
+
+    match /usernames/{usernameLower} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && validUsername(usernameLower)
+        && request.resource.data.uid == request.auth.uid
+        && !exists(/databases/$(database)/documents/usernames/$(usernameLower));
+      allow update, delete: if signedIn()
+        && resource.data.uid == request.auth.uid;
+    }
+
+    match /friendships/{friendshipId} {
+      // A sender may check whether a friendship already exists before
+      // creating a request. Missing documents are safe to read; existing
+      // documents remain visible only to their members.
+      allow read: if signedIn()
+        && (
+          !exists(/databases/$(database)/documents/friendships/$(friendshipId))
+          || request.auth.uid in resource.data.members
+        );
+      allow create: if signedIn()
+        && request.auth.uid in request.resource.data.members
+        && request.resource.data.members.size() == 2
+        && request.resource.data.requestedBy == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.members[0] != request.resource.data.members[1]
+        && !exists(/databases/$(database)/documents/users/$(request.resource.data.members[0])/blocked/$(request.auth.uid))
+        && !exists(/databases/$(database)/documents/users/$(request.resource.data.members[1])/blocked/$(request.auth.uid))
+        && exists(/databases/$(database)/documents/publicProfiles/$(requestTarget(request.resource.data)))
+        && get(/databases/$(database)/documents/publicProfiles/$(requestTarget(request.resource.data))).data.privacy.allowFriendRequests == true;
+      allow update: if signedIn()
+        && request.auth.uid in resource.data.members
+        && request.resource.data.members == resource.data.members
+        && resource.data.status == 'pending'
+        && request.resource.data.status == 'accepted'
+        && request.auth.uid != resource.data.requestedBy;
+      allow delete: if signedIn() && request.auth.uid in resource.data.members;
+    }
+
+    match /users/{uid}/blocked/{blockedUid} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+
     // ── User root + all subcollections ────────────────────────────────────
     // A user can only read and write their own data.
     match /users/{uid}/{document=**} {
@@ -11,7 +101,10 @@ service cloud.firestore {
     // ── Tighter per-collection validation ────────────────────────────────
 
     match /users/{uid}/playlists/{playlistId} {
-      allow read: if request.auth != null && request.auth.uid == uid;
+      allow read: if signedIn()
+        && (request.auth.uid == uid
+          || resource.data.visibility == 'public'
+          || (resource.data.visibility == 'friends' && acceptedFriend(uid)));
 
       allow create: if request.auth != null
                     && request.auth.uid == uid
@@ -19,7 +112,8 @@ service cloud.firestore {
                     && request.resource.data.name.size() > 0
                     && request.resource.data.name.size() <= 100
                     && request.resource.data.tracks is list
-                    && request.resource.data.tracks.size() <= 500;
+                    && request.resource.data.tracks.size() <= 500
+                    && request.resource.data.visibility in ['private', 'friends', 'public'];
 
       allow update: if request.auth != null
                     && request.auth.uid == uid
@@ -27,7 +121,8 @@ service cloud.firestore {
                     && request.resource.data.name.size() > 0
                     && request.resource.data.name.size() <= 100
                     && request.resource.data.tracks is list
-                    && request.resource.data.tracks.size() <= 500;
+                    && request.resource.data.tracks.size() <= 500
+                    && request.resource.data.visibility in ['private', 'friends', 'public'];
 
       allow delete: if request.auth != null && request.auth.uid == uid;
     }

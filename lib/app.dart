@@ -9,6 +9,7 @@ import 'dart:io';
 
 import 'screens/search_screen.dart';
 import 'screens/library_screen.dart';
+import 'screens/friends_screen.dart';
 import 'screens/home_screen.dart';
 import 'widgets/mini_player.dart';
 import 'widgets/remote_playback_banner.dart';
@@ -270,6 +271,7 @@ class _AppShellState extends ConsumerState<AppShell>
     HomeScreen(),
     SearchScreen(),
     LibraryScreen(),
+    FriendsScreen(),
   ];
 
   @override
@@ -321,6 +323,11 @@ class _AppShellState extends ConsumerState<AppShell>
                 icon: Icon(Icons.library_music_outlined),
                 selectedIcon: Icon(Icons.library_music),
                 label: 'Library',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.people_outline),
+                selectedIcon: Icon(Icons.people),
+                label: 'Friends',
               ),
             ],
           ),

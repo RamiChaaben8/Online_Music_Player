@@ -13,10 +13,24 @@ import '../screens/playlist_screen.dart';
 import '../providers/auth_provider.dart';
 import '../providers/player_provider.dart';
 import 'auth/delete_account_screen.dart';
+import 'privacy_settings_screen.dart';
 import '../widgets/import_playlist_dialog.dart';
 
 /// Which songs to show in playlist/library screens.
 enum SongFilter { all, local, online }
+
+const _playlistVisibilityValues = ['private', 'friends', 'public'];
+
+String _playlistVisibilityLabel(String value) {
+  switch (value) {
+    case 'friends':
+      return 'Friends';
+    case 'public':
+      return 'Public';
+    default:
+      return 'Private';
+  }
+}
 
 // Shared filter state so PlaylistScreen can read it too.
 final songFilterProvider = StateProvider<SongFilter>((_) => SongFilter.all);
@@ -74,6 +88,16 @@ class LibraryScreen extends ConsumerWidget {
                   MaterialPageRoute(
                       builder: (_) => const DeleteAccountScreen()),
                 );
+              } else if (v == 'privacy') {
+                final user = ref.read(authServiceProvider).currentUser;
+                if (user != null) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => PrivacySettingsScreen(user: user),
+                    ),
+                  );
+                }
               }
             },
             itemBuilder: (_) => [
@@ -84,6 +108,17 @@ class LibraryScreen extends ConsumerWidget {
                     Icon(Icons.logout, size: 18, color: Colors.white70),
                     SizedBox(width: 10),
                     Text('Sign Out'),
+                  ],
+                ),
+              ),
+              const PopupMenuDivider(),
+              const PopupMenuItem(
+                value: 'privacy',
+                child: Row(
+                  children: [
+                    Icon(Icons.lock_outline, size: 18, color: Colors.white70),
+                    SizedBox(width: 10),
+                    Text('Privacy'),
                   ],
                 ),
               ),
@@ -287,37 +322,61 @@ class LibraryScreen extends ConsumerWidget {
 
   void _showCreatePlaylistDialog(BuildContext context, WidgetRef ref) {
     final controller = TextEditingController();
+    var visibility = 'private';
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1A1A),
-        title:
-            const Text('New Playlist', style: TextStyle(color: Colors.white)),
-        content: TextField(
-          controller: controller,
-          style: const TextStyle(color: Colors.white),
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'Playlist name'),
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          backgroundColor: const Color(0xFF1A1A1A),
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          title:
+              const Text('New Playlist', style: TextStyle(color: Colors.white)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: controller,
+                style: const TextStyle(color: Colors.white),
+                autofocus: true,
+                decoration: const InputDecoration(hintText: 'Playlist name'),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                value: visibility,
+                decoration: const InputDecoration(labelText: 'Privacy'),
+                items: _playlistVisibilityValues
+                    .map((value) => DropdownMenuItem(
+                          value: value,
+                          child: Text(_playlistVisibilityLabel(value)),
+                        ))
+                    .toList(),
+                onChanged: (value) =>
+                    setState(() => visibility = value ?? 'private'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel',
+                  style: TextStyle(color: Color(0xFFB3B3B3))),
+            ),
+            TextButton(
+              onPressed: () {
+                if (controller.text.trim().isNotEmpty) {
+                  ref.read(libraryProvider.notifier).createPlaylist(
+                        controller.text.trim(),
+                        visibility: visibility,
+                      );
+                  Navigator.pop(dialogContext);
+                }
+              },
+              child: const Text('Create',
+                  style: TextStyle(color: Color(0xFF1DB954))),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel',
-                style: TextStyle(color: Color(0xFFB3B3B3))),
-          ),
-          TextButton(
-            onPressed: () {
-              if (controller.text.trim().isNotEmpty) {
-                ref
-                    .read(libraryProvider.notifier)
-                    .createPlaylist(controller.text.trim());
-                Navigator.pop(context);
-              }
-            },
-            child: const Text('Create',
-                style: TextStyle(color: Color(0xFF1DB954))),
-          ),
-        ],
       ),
     );
   }
@@ -467,6 +526,8 @@ class _PlaylistTile extends ConsumerWidget {
         onSelected: (action) {
           if (action == 'rename') {
             _showRenameDialog(context, ref, playlist);
+          } else if (action == 'visibility') {
+            _showVisibilityMenu(context, ref, playlist);
           } else if (action == 'delete') {
             _showDeleteDialog(context, ref, playlist);
           }
@@ -475,6 +536,11 @@ class _PlaylistTile extends ConsumerWidget {
           const PopupMenuItem(
               value: 'rename',
               child: Text('Rename', style: TextStyle(color: Colors.white))),
+          PopupMenuItem(
+            value: 'visibility',
+            child: Text('Visibility: ${_visibilityLabel(playlist.visibility)}',
+                style: const TextStyle(color: Colors.white)),
+          ),
           const PopupMenuItem(
               value: 'delete',
               child: Text('Delete', style: TextStyle(color: Colors.red))),
@@ -493,36 +559,59 @@ class _PlaylistTile extends ConsumerWidget {
   void _showRenameDialog(
       BuildContext context, WidgetRef ref, Playlist playlist) {
     final controller = TextEditingController(text: playlist.name);
+    var visibility = playlist.visibility;
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1A1A),
-        title: const Text('Rename Playlist',
-            style: TextStyle(color: Colors.white)),
-        content: TextField(
-          controller: controller,
-          style: const TextStyle(color: Colors.white),
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'New name'),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel',
-                  style: TextStyle(color: Color(0xFFB3B3B3)))),
-          TextButton(
-            onPressed: () {
-              if (controller.text.trim().isNotEmpty) {
-                ref
-                    .read(libraryProvider.notifier)
-                    .renamePlaylistObj(playlist, controller.text.trim());
-                Navigator.pop(context);
-              }
-            },
-            child:
-                const Text('Save', style: TextStyle(color: Color(0xFF1DB954))),
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          backgroundColor: const Color(0xFF1A1A1A),
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          title: const Text('Edit Playlist',
+              style: TextStyle(color: Colors.white)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: controller,
+                style: const TextStyle(color: Colors.white),
+                autofocus: true,
+                decoration: const InputDecoration(hintText: 'Playlist name'),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                value: visibility,
+                decoration: const InputDecoration(labelText: 'Privacy'),
+                items: _playlistVisibilityValues
+                    .map((value) => DropdownMenuItem(
+                          value: value,
+                          child: Text(_visibilityLabel(value)),
+                        ))
+                    .toList(),
+                onChanged: (value) =>
+                    setState(() => visibility = value ?? 'private'),
+              ),
+            ],
           ),
-        ],
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Cancel',
+                    style: TextStyle(color: Color(0xFFB3B3B3)))),
+            TextButton(
+              onPressed: () {
+                if (controller.text.trim().isNotEmpty) {
+                  final library = ref.read(libraryProvider.notifier);
+                  library.renamePlaylistObj(playlist, controller.text.trim());
+                  library.setPlaylistVisibility(playlist, visibility);
+                  Navigator.pop(dialogContext);
+                }
+              },
+              child: const Text('Save',
+                  style: TextStyle(color: Color(0xFF1DB954))),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -554,5 +643,58 @@ class _PlaylistTile extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  void _showVisibilityMenu(
+      BuildContext context, WidgetRef ref, Playlist playlist) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A1A),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final value in ['private', 'friends', 'public'])
+              RadioListTile<String>(
+                value: value,
+                groupValue: playlist.visibility,
+                title: Text(_visibilityLabel(value)),
+                subtitle: Text(_visibilityDescription(value)),
+                onChanged: (next) {
+                  if (next != null) {
+                    ref
+                        .read(libraryProvider.notifier)
+                        .setPlaylistVisibility(playlist, next);
+                    Navigator.pop(context);
+                  }
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _visibilityLabel(String value) {
+    switch (value) {
+      case 'friends':
+        return 'Friends';
+      case 'public':
+        return 'Public';
+      default:
+        return 'Private';
+    }
+
+  }
+
+  String _visibilityDescription(String value) {
+    switch (value) {
+      case 'friends':
+        return 'Only accepted friends can view it.';
+      case 'public':
+        return 'Any signed-in user can view it.';
+      default:
+        return 'Only you can view it.';
+    }
   }
 }

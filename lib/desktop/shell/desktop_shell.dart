@@ -26,6 +26,8 @@ import '../desktop_search_view.dart';
 import 'desktop_title_bar.dart';
 import '../../widgets/remote_playback_banner.dart';
 import '../../widgets/offline_indicator.dart';
+import '../../screens/privacy_settings_screen.dart';
+import '../../screens/friends_screen.dart';
 
 class DesktopShell extends ConsumerStatefulWidget {
   const DesktopShell({super.key});
@@ -145,17 +147,16 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
           children: [
             ListTile(
               leading: const Icon(Icons.person_outline, color: kAccent),
-              title: const Text('Profile',
-                  style: TextStyle(color: kTextPrimary)),
+              title:
+                  const Text('Profile', style: TextStyle(color: kTextPrimary)),
               subtitle: Text(user?.email ?? 'Signed-in account',
                   style: const TextStyle(color: kTextSecondary)),
-              onTap: () =>
-                  Navigator.pop(dialogContext, _AccountAction.profile),
+              onTap: () => Navigator.pop(dialogContext, _AccountAction.profile),
             ),
             ListTile(
               leading: const Icon(Icons.settings_outlined, color: kTextPrimary),
-              title: const Text('Settings',
-                  style: TextStyle(color: kTextPrimary)),
+              title:
+                  const Text('Settings', style: TextStyle(color: kTextPrimary)),
               onTap: () =>
                   Navigator.pop(dialogContext, _AccountAction.settings),
             ),
@@ -163,8 +164,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
               leading: const Icon(Icons.logout, color: Colors.redAccent),
               title: const Text('Sign out',
                   style: TextStyle(color: Colors.redAccent)),
-              onTap: () =>
-                  Navigator.pop(dialogContext, _AccountAction.signOut),
+              onTap: () => Navigator.pop(dialogContext, _AccountAction.signOut),
             ),
           ],
         ),
@@ -179,7 +179,13 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
       _showInfoDialog(
           'Profile', user?.email ?? 'No profile details available.');
     } else {
-      _showInfoDialog('Settings', 'Settings are coming soon.');
+      if (user != null) {
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => PrivacySettingsScreen(user: user),
+          ),
+        );
+      }
     }
   }
 
@@ -231,6 +237,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
                 // so we only need to navigate here.
                 onNavigateToSearch: (q) => _navigateTo(1),
                 onProfileTap: _showAccountMenu,
+                onFriendsTap: () => _navigateTo(3),
               ),
 
               // ── Main content row ──────────────────────────────────
@@ -247,7 +254,6 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
                         } else {
                           _navigateTo(0);
                         }
-
                       },
                     ),
                     const SizedBox(width: 8),
@@ -330,10 +336,11 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
         }
 
         return const DesktopHomeView(key: ValueKey('home'));
+      case 3:
+        return const FriendsScreen(key: ValueKey('friends'));
       default:
         return const DesktopHomeView(key: ValueKey('home'));
     }
-
   }
 }
 

@@ -270,13 +270,19 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
 
   Future<void> _showCreatePlaylistDialog(BuildContext context) async {
     final controller = TextEditingController();
+    var visibility = 'private';
     final name = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: kPanelLight,
+        insetPadding:
+            const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
         title:
             const Text('New Playlist', style: TextStyle(color: kTextPrimary)),
-        content: TextField(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
           controller: controller,
           autofocus: true,
           style: const TextStyle(color: kTextPrimary),
@@ -290,7 +296,19 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
               borderSide: BorderSide.none,
             ),
           ),
-          onSubmitted: (value) => Navigator.pop(ctx, value.trim()),
+              onSubmitted: (value) => Navigator.pop(ctx, value.trim()),
+            ),
+            DropdownButtonFormField<String>(
+              value: visibility,
+              decoration: const InputDecoration(labelText: 'Privacy'),
+              items: const [
+                DropdownMenuItem(value: 'private', child: Text('Private')),
+                DropdownMenuItem(value: 'friends', child: Text('Friends')),
+                DropdownMenuItem(value: 'public', child: Text('Public')),
+              ],
+              onChanged: (value) => visibility = value ?? 'private',
+            ),
+          ],
         ),
         actions: [
           TextButton(
@@ -308,7 +326,8 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
     );
     controller.dispose();
     if (name != null && name.isNotEmpty) {
-      await ref.read(libraryProvider.notifier).createPlaylist(name);
+      await ref.read(libraryProvider.notifier).createPlaylist(name,
+          visibility: visibility);
     }
   }
 }
@@ -488,6 +507,15 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
                       ],
                     ),
                   ),
+                  IconButton(
+                    tooltip: 'Playlist options',
+                    icon: const Icon(Icons.more_horiz,
+                        color: kTextSecondary, size: 22),
+                    onPressed: () {
+                      final box = context.findRenderObject() as RenderBox;
+                      _showMenu(context, box.localToGlobal(Offset.zero));
+                    },
+                  ),
 
                 ],
               ),
@@ -527,7 +555,12 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
         _menuItem(
           _PlaylistAction.rename,
           Icons.edit_outlined,
-          'Rename',
+          'Edit playlist',
+        ),
+        _menuItem(
+          _PlaylistAction.visibility,
+          Icons.lock_outline,
+          'Change privacy',
         ),
         _menuItem(
           _PlaylistAction.delete,
@@ -545,6 +578,8 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
           _addAllToQueue();
         case _PlaylistAction.rename:
           _showRenameDialog();
+        case _PlaylistAction.visibility:
+          _showVisibilityMenu();
         case _PlaylistAction.delete:
           _confirmDelete();
       }
@@ -628,6 +663,35 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
           .read(libraryProvider.notifier)
           .renamePlaylistObj(widget.playlist, name);
     }
+
+  }
+
+  Future<void> _showVisibilityMenu() async {
+    final value = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: kPanelLight,
+        title: const Text('Playlist privacy'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final option in ['private', 'friends', 'public'])
+              RadioListTile<String>(
+                value: option,
+                groupValue: widget.playlist.visibility,
+                title: Text(option[0].toUpperCase() + option.substring(1)),
+                onChanged: (selected) =>
+                    Navigator.pop(dialogContext, selected),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (value != null && mounted) {
+      await ref
+          .read(libraryProvider.notifier)
+          .setPlaylistVisibility(widget.playlist, value);
+    }
   }
 
   Future<void> _confirmDelete() async {
@@ -663,7 +727,7 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
   }
 }
 
-enum _PlaylistAction { open, addToQueue, rename, delete }
+enum _PlaylistAction { open, addToQueue, rename, visibility, delete }
 
 // ─── Liked Songs tile (read-only, opens like a playlist) ─────────────────────
 

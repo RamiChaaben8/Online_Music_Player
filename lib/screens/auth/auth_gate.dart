@@ -16,11 +16,14 @@ import '../../providers/auth_provider.dart';
 import '../../providers/library_provider.dart';
 import '../../providers/player_provider.dart';
 import '../../providers/sync_provider.dart';
+import '../../providers/friends_provider.dart';
 import '../../widgets/migration_dialog.dart';
+import '../profile_setup_screen.dart';
 import 'login_screen.dart';
 
 class AuthGate extends ConsumerWidget {
   final Widget child;
+  static final Set<String> _initializingUsers = <String>{};
 
   const AuthGate({super.key, required this.child});
 
@@ -30,7 +33,6 @@ class AuthGate extends ConsumerWidget {
 
     return authAsync.when(
       loading: () => const _SplashScreen(),
-
       error: (e, _) => Scaffold(
         backgroundColor: const Color(0xFF0A0A0A),
         body: Center(
@@ -52,12 +54,12 @@ class AuthGate extends ConsumerWidget {
           ),
         ),
       ),
-
       data: (user) {
         if (user == null) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             ref.read(libraryProvider.notifier).resetForLogout();
             ref.read(syncProvider.notifier).reset();
+            ref.read(friendsProvider.notifier).reset();
           });
           // Return LoginScreen directly — AuthGate IS the navigator decision.
           // No Navigator.push needed; when auth state changes Flutter rebuilds
@@ -68,29 +70,55 @@ class AuthGate extends ConsumerWidget {
         WidgetsBinding.instance.addPostFrameCallback((_) async {
           // Prevent re-initialising on every rebuild (e.g. keyboard popups, resizes)
           final syncState = ref.read(syncProvider);
-          if (syncState.initialised && syncState.uid == user.uid) return;
+          if ((syncState.initialised && syncState.uid == user.uid) ||
+              !_initializingUsers.add(user.uid)) {
+            return;
+          }
 
-          ref.read(libraryProvider.notifier).initForUser(user.uid);
-          await ref.read(syncProvider.notifier).init(user.uid);
+          try {
+            ref.read(libraryProvider.notifier).initForUser(user.uid);
+            await ref.read(syncProvider.notifier).init(user.uid);
 
-          // If no device is currently active, this device auto-claims.
-          // If another device is already active, this device stays passive.
-          final syncService = ref.read(syncProvider.notifier).service;
-          if (!syncService.isActive) {
-            final active = await ref.read(firestoreServiceProvider).getActiveDevice(user.uid);
-            if (active == null) {
-              // No active device — claim this one.
-              await syncService.claimAsActiveDevice();
+            // If no device is currently active, this device auto-claims.
+            // If another device is already active, this device stays passive.
+            final syncService = ref.read(syncProvider.notifier).service;
+            if (!syncService.isActive) {
+              final active = await ref
+                  .read(firestoreServiceProvider)
+                  .getActiveDevice(user.uid);
+              if (active == null) {
+                await syncService.claimAsActiveDevice();
+              }
             }
-            // else: another device is active, stay passive.
-          }
 
-          // Restore last playback session — only runs on the active device.
-          if (context.mounted) {
-            await ref.read(playerProvider.notifier).restoreLastSession();
-          }
-          if (context.mounted) {
-            await MigrationDialog.showIfNeeded(context, ref, user.uid);
+            if (context.mounted) {
+              await ref.read(playerProvider.notifier).restoreLastSession();
+              await MigrationDialog.showIfNeeded(context, ref, user.uid);
+            }
+            if (context.mounted &&
+                !(await ref
+                    .read(firestoreServiceProvider)
+                    .hasPublicProfile(user.uid))) {
+              await showDialog<bool>(
+                context: context,
+                barrierDismissible: false,
+                builder: (_) => ProfileSetupScreen(user: user),
+              );
+            }
+            if (context.mounted) {
+              ref.read(friendsProvider.notifier).initForUser(user.uid);
+            }
+          } catch (error) {
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Could not finish account setup: $error'),
+                  backgroundColor: Colors.red.shade800,
+                ),
+              );
+            }
+          } finally {
+            _initializingUsers.remove(user.uid);
           }
         });
 

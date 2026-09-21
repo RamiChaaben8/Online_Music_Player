@@ -21,14 +21,19 @@ class Playlist extends HiveObject {
   @HiveField(3)
   String? description;
 
+  @HiveField(4)
+  String visibility;
+
   Playlist({
     required this.name,
     List<Song>? songs,
     DateTime? createdAt,
     this.description,
+    this.visibility = 'private',
   })  : songs = songs ?? [],
         createdAt = createdAt ?? DateTime.now();
 
   /// Convenience: thumbnail of the first song in the playlist.
-  String? get coverThumbnail => songs.isNotEmpty ? songs.first.thumbnailUrl : null;
+  String? get coverThumbnail =>
+      songs.isNotEmpty ? songs.first.thumbnailUrl : null;
 }
