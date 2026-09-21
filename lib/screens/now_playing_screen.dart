@@ -1,13 +1,20 @@
 // ============================================================
-// screens/now_playing_screen.dart
+// screens/now_playing_screen.dart  — Spotify-style mobile player
 //
-// Full-screen "Now Playing" view with:
-//  - Large album art with dynamic background colour
-//  - Seek bar with current/total time
-//  - Play/Pause, skip next/previous
-//  - Shuffle & repeat toggles
-//  - Like button
-//  - Queue button (navigates to QueueScreen)
+// Layout (scrollable):
+//   ┌─────────────────────────────────────────────┐
+//   │  Full-screen video background (looping)     │  ← page 1
+//   │  ── overlaid at bottom:                     │
+//   │     current lyric line                      │
+//   │     song info + like btn + seekbar          │
+//   │     controls (shuffle/prev/play/next/repeat)│
+//   │     device + queue + share row              │
+//   └─────────────────────────────────────────────┘
+//   ┌─────────────────────────────────────────────┐
+//   │  Lyrics panel (dark card, scrollable)       │  ← page 2
+//   │  language selector btn                      │
+//   │  all lyrics lines                           │
+//   └─────────────────────────────────────────────┘
 // ============================================================
 
 import 'package:flutter/material.dart';
@@ -15,8 +22,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:just_audio/just_audio.dart' hide PlayerState;
 
+import '../models/song.dart';
+import '../models/playlist.dart';
 import '../providers/player_provider.dart';
 import '../providers/library_provider.dart';
+import '../providers/lyrics_provider.dart';
 import '../widgets/seek_bar.dart';
 import '../screens/queue_screen.dart';
 import '../providers/download_provider.dart';
@@ -24,6 +34,7 @@ import '../widgets/add_to_playlist_sheet.dart';
 import '../widgets/video_preview_widget.dart';
 import '../widgets/device_picker.dart';
 import '../widgets/listen_party_controls.dart';
+import '../services/youtube_service.dart';
 
 class NowPlayingScreen extends ConsumerStatefulWidget {
   const NowPlayingScreen({super.key});
@@ -33,367 +44,709 @@ class NowPlayingScreen extends ConsumerStatefulWidget {
 }
 
 class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
-  bool _showVideo = false;
+  final ScrollController _scroll = ScrollController();
+  String? _lastVideoId;
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final playerState = ref.watch(playerProvider);
     final song = playerState.currentSong;
-    final library = ref.watch(libraryProvider);
+    final lyrics = ref.watch(lyricsProvider);
 
     if (song == null) {
       return const Scaffold(body: Center(child: Text('Nothing playing')));
     }
 
-    final isLiked = library.isLiked(song.id);
+    // Trigger lyrics fetch when song changes
+    if (!song.isLocal && song.id != _lastVideoId) {
+      _lastVideoId = song.id;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ref.read(lyricsProvider.notifier).fetchFor(song.id);
+      });
+    }
+
+    final screenH = MediaQuery.of(context).size.height;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0A0A),
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        leading: IconButton(
-          icon: const Icon(Icons.keyboard_arrow_down, size: 32),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        title: Column(
-          children: const [
-            Text(
-              'NOW PLAYING',
-              style: TextStyle(
-                fontSize: 11,
-                letterSpacing: 2,
-                color: Color(0xFFB3B3B3),
-                fontWeight: FontWeight.w600,
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          // ── Full-screen video (or album art) background ─────────────
+          Positioned.fill(
+            child: song.isLocal || song.thumbnailUrl.isEmpty
+                ? const _AlbumPlaceholder()
+                : VideoPreviewWidget(
+                    videoId: song.id,
+                    fit: BoxFit.cover,
+                  ),
+          ),
+
+          // ── Dark gradient overlay (bottom-heavy) ────────────────────
+          Positioned.fill(
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  stops: [0.0, 0.35, 0.65, 1.0],
+                  colors: [
+                    Color(0x55000000),
+                    Color(0x00000000),
+                    Color(0xAA000000),
+                    Color(0xFF000000),
+                  ],
+                ),
               ),
             ),
-          ],
-        ),
-        centerTitle: true,
-        actions: [
-          const DevicePickerButton(size: 22),
-          const ListenPartyControls(showLabel: true),
-          // Video preview toggle (only for YouTube tracks)
-          if (!song.isLocal)
-            IconButton(
-              icon: Icon(
-                _showVideo ? Icons.image_outlined : Icons.videocam_outlined,
-                color: _showVideo ? const Color(0xFF1DB954) : Colors.white,
+          ),
+
+          // ── Scrollable content ──────────────────────────────────────
+          SafeArea(
+            top: false,
+            child: SingleChildScrollView(
+              controller: _scroll,
+              physics: const BouncingScrollPhysics(),
+              child: Column(
+                children: [
+                  // ── Page 1: controls over video ─────────────────────
+                  SizedBox(
+                    height: screenH,
+                    child: _PlayerPage(
+                      playerState: playerState,
+                      lyrics: lyrics,
+                      song: song,
+                    ),
+                  ),
+
+                  // ── Page 2: lyrics panel ─────────────────────────────
+                  _LyricsPage(lyrics: lyrics, position: playerState.position),
+                ],
               ),
-              tooltip: _showVideo ? 'Show album art' : 'Watch video',
-              onPressed: () => setState(() => _showVideo = !_showVideo),
             ),
-          IconButton(
-            icon: const Icon(Icons.queue_music_outlined),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const QueueScreen()),
+          ),
+
+          // ── Top bar (always on top) ─────────────────────────────────
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: SafeArea(
+              bottom: false,
+              child: _TopBar(
+                song: song,
+                sourcePlaylist: playerState.sourcePlaylist,
+              ),
             ),
           ),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 28),
-        child: Column(
-          children: [
-            const SizedBox(height: 24),
+    );
+  }
+}
 
-            // ── Album art / Video preview ──────────────────────────────────────
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 300),
-              child: _showVideo && !song.isLocal
-                  ? SizedBox(
-                      key: const ValueKey('video'),
-                      width: double.infinity,
-                      height: 320,
-                      child: VideoPreviewWidget(videoId: song.id),
-                    )
-                  : Hero(
-                      key: const ValueKey('art'),
-                      tag: 'album_art_${song.id}',
-                      child: Container(
-                        width: double.infinity,
-                        height: 320,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(12),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.6),
-                              blurRadius: 30,
-                              offset: const Offset(0, 12),
-                            ),
-                          ],
+// ─── Top bar ──────────────────────────────────────────────────────────────────
+
+class _TopBar extends StatelessWidget {
+  final Song song;
+  final Playlist? sourcePlaylist;
+
+  const _TopBar({
+    required this.song,
+    required this.sourcePlaylist,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.keyboard_arrow_down,
+                size: 32, color: Colors.white),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+          Expanded(
+            child: Column(
+              children: [
+                Text(
+                  sourcePlaylist == null
+                      ? 'Playing from Queue'
+                      : 'Playing from Playlist',
+                  style: const TextStyle(
+                    color: Color(0xFFB3B3B3),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                if (sourcePlaylist != null)
+                  Text(
+                    sourcePlaylist!.name,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.more_vert, color: Colors.white, size: 24),
+            onPressed: () => showModalBottomSheet(
+              context: context,
+              backgroundColor: const Color(0xFF1A1A1A),
+              builder: (_) => _SongActionsSheet(
+                song: song,
+                sourcePlaylist: sourcePlaylist,
+                pageContext: context,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SongActionsSheet extends ConsumerWidget {
+  final Song song;
+  final Playlist? sourcePlaylist;
+  final BuildContext pageContext;
+
+  const _SongActionsSheet({
+    required this.song,
+    required this.sourcePlaylist,
+    required this.pageContext,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.playlist_add, color: Colors.white),
+            title: const Text('Add to playlist'),
+            onTap: () {
+              Navigator.pop(context);
+              showModalBottomSheet(
+                context: pageContext,
+                backgroundColor: const Color(0xFF1A1A1A),
+                builder: (_) => AddToPlaylistSheet(song: song),
+              );
+            },
+          ),
+          if (sourcePlaylist != null)
+            ListTile(
+              leading: const Icon(Icons.playlist_remove, color: Colors.white),
+              title: Text('Remove from ${sourcePlaylist!.name}'),
+              onTap: () async {
+                Navigator.pop(context);
+                await ref
+                    .read(libraryProvider.notifier)
+                    .removeSongFromPlaylistObj(sourcePlaylist!, song.id);
+              },
+            ),
+          ListTile(
+            leading: const Icon(Icons.queue_music, color: Colors.white),
+            title: const Text('Add to queue'),
+            onTap: () {
+              ref.read(playerProvider.notifier).addToQueue(song);
+              Navigator.pop(context);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.queue_play_next, color: Colors.white),
+            title: const Text('Go to queue'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.of(pageContext).push(
+                MaterialPageRoute(builder: (_) => const QueueScreen()),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Page 1: player controls on top of video ──────────────────────────────────
+
+class _PlayerPage extends ConsumerWidget {
+  final PlayerState playerState;
+  final LyricsState lyrics;
+  final Song song;
+
+  const _PlayerPage({
+    required this.playerState,
+    required this.lyrics,
+    required this.song,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final library = ref.watch(libraryProvider);
+    final isLiked = library.isLiked(song.id);
+
+    // Find current lyric line
+    String? currentLine;
+    if (lyrics.hasLyrics) {
+      final pos = playerState.position;
+      LyricLine? active;
+      for (final line in lyrics.lines) {
+        if (pos >= line.start) active = line;
+      }
+      currentLine = active?.text;
+    }
+
+    return Column(
+      children: [
+        // Spacer to push controls to bottom half
+        const Expanded(flex: 3, child: SizedBox.shrink()),
+
+        // ── Current lyric line ─────────────────────────────────────
+        if (currentLine != null && currentLine.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+            child: Text(
+              currentLine,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                height: 1.3,
+                shadows: [
+                  Shadow(
+                    color: Colors.black,
+                    blurRadius: 8,
+                  ),
+                ],
+              ),
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+
+        // ── Song info + like ───────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 8, 0),
+          child: Row(
+            children: [
+              // Album art thumbnail
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: CachedNetworkImage(
+                  imageUrl: song.thumbnailUrl,
+                  width: 56,
+                  height: 56,
+                  fit: BoxFit.cover,
+                  placeholder: (_, __) => Container(
+                      color: const Color(0xFF282828), width: 56, height: 56),
+                  errorWidget: (_, __, ___) => Container(
+                      color: const Color(0xFF282828),
+                      width: 56,
+                      height: 56,
+                      child: const Icon(Icons.music_note,
+                          color: Color(0xFF3A3A3A))),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      song.title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      song.channelName,
+                      style: const TextStyle(
+                          color: Color(0xFFB3B3B3), fontSize: 13),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              // Like button
+              IconButton(
+                icon: Icon(
+                  isLiked ? Icons.check_circle : Icons.check_circle_outline,
+                  color: isLiked ? const Color(0xFF1DB954) : Colors.white,
+                  size: 28,
+                ),
+                onPressed: () async {
+                  try {
+                    await ref.read(libraryProvider.notifier).toggleLike(song);
+                  } catch (_) {}
+                },
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
+        // ── Seek bar ───────────────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: SeekBar(
+            position: playerState.position,
+            duration: playerState.duration,
+            onSeek: (pos) => ref.read(playerProvider.notifier).seek(pos),
+          ),
+        ),
+
+        const SizedBox(height: 4),
+
+        // ── Main controls ──────────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              IconButton(
+                icon: Icon(
+                  Icons.shuffle,
+                  color: playerState.shuffle
+                      ? const Color(0xFF1DB954)
+                      : const Color(0xFFB3B3B3),
+                  size: 22,
+                ),
+                onPressed: () =>
+                    ref.read(playerProvider.notifier).toggleShuffle(),
+              ),
+              IconButton(
+                icon: const Icon(Icons.skip_previous,
+                    color: Colors.white, size: 36),
+                onPressed: () =>
+                    ref.read(playerProvider.notifier).skipToPrevious(),
+              ),
+              _PlayPauseButton(
+                isPlaying: playerState.isPlaying,
+                isLoading: playerState.isLoading,
+                onPressed: () =>
+                    ref.read(playerProvider.notifier).togglePlayPause(),
+              ),
+              IconButton(
+                icon:
+                    const Icon(Icons.skip_next, color: Colors.white, size: 36),
+                onPressed: () => ref.read(playerProvider.notifier).skipToNext(),
+              ),
+              IconButton(
+                icon: Icon(
+                  playerState.loopMode == LoopMode.one
+                      ? Icons.repeat_one
+                      : Icons.repeat,
+                  color: playerState.loopMode != LoopMode.off
+                      ? const Color(0xFF1DB954)
+                      : const Color(0xFFB3B3B3),
+                  size: 22,
+                ),
+                onPressed: () =>
+                    ref.read(playerProvider.notifier).toggleLoopMode(),
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 4),
+
+        // ── Device / share / queue row ─────────────────────────────
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: Row(
+            children: [
+              const DevicePickerButton(size: 20),
+              const ListenPartyControls(showLabel: false),
+              const Spacer(),
+              if (!song.isLocal) _DownloadButton(song: song),
+              IconButton(
+                icon: const Icon(Icons.queue_music_outlined,
+                    color: Color(0xFFB3B3B3), size: 22),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const QueueScreen()),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // Error display
+        if (playerState.error != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.red.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.error_outline, color: Colors.red, size: 16),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(playerState.error!,
+                        style:
+                            const TextStyle(color: Colors.red, fontSize: 12)),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.red, size: 16),
+                    onPressed: () =>
+                        ref.read(playerProvider.notifier).clearError(),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _DownloadButton extends ConsumerWidget {
+  final Song song;
+
+  const _DownloadButton({required this.song});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final downloads = ref.watch(downloadProvider);
+    final isDownloading = downloads.isDownloading(song.id);
+    final isDownloaded = downloads.isDownloaded(song.id);
+    final progress = downloads.progressFor(song.id);
+
+    if (isDownloading) {
+      return SizedBox(
+        width: 40,
+        height: 40,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            SizedBox(
+              width: 26,
+              height: 26,
+              child: CircularProgressIndicator(
+                value: progress > 0 ? progress : null,
+                strokeWidth: 2.5,
+                color: const Color(0xFF1DB954),
+                backgroundColor: Colors.white12,
+              ),
+            ),
+            Text(
+              progress > 0 ? '${(progress * 100).round()}%' : '…',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 7,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return IconButton(
+      icon: Icon(
+        isDownloaded ? Icons.download_done : Icons.download_outlined,
+        color: isDownloaded ? const Color(0xFF1DB954) : const Color(0xFFB3B3B3),
+        size: 22,
+      ),
+      onPressed: isDownloaded
+          ? null
+          : () => ref.read(downloadProvider.notifier).downloadSong(song),
+    );
+  }
+}
+
+// ─── Page 2: full lyrics panel ────────────────────────────────────────────────
+
+class _LyricsPage extends ConsumerWidget {
+  final LyricsState lyrics;
+  final Duration position;
+  const _LyricsPage({required this.lyrics, required this.position});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Container(
+      color: Colors.black,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Lyrics card ────────────────────────────────────────────
+          Container(
+            margin: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            decoration: BoxDecoration(
+              color: const Color(0xFF8B1A1A), // Spotify's dark red lyrics card
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 12, 0),
+                  child: Row(
+                    children: [
+                      const Text(
+                        'Lyrics preview',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
                         ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: song.isLocal || song.thumbnailUrl.isEmpty
-                              ? const _AlbumPlaceholder()
-                              : CachedNetworkImage(
-                                  imageUrl: song.thumbnailUrl,
-                                  fit: BoxFit.cover,
-                                  placeholder: (_, __) =>
-                                      Container(color: const Color(0xFF1A1A1A)),
-                                  errorWidget: (_, __, ___) =>
-                                      const _AlbumPlaceholder(),
-                                ),
+                      ),
+                      const Spacer(),
+                      // Language selector — only shown when multiple tracks
+                      if (lyrics.availableTracks.length > 1)
+                        _TrackSelectorButton(lyrics: lyrics),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+
+                // Lyrics lines
+                if (lyrics.isLoading)
+                  const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        color: Color(0xFF1DB954),
+                        strokeWidth: 2,
+                      ),
+                    ),
+                  )
+                else if (!lyrics.hasLyrics)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+                    child: Text(
+                      lyrics.error ?? 'No lyrics available for this song.',
+                      style: const TextStyle(
+                          color: Color(0xFFCCCCCC), fontSize: 14),
+                    ),
+                  )
+                else
+                  _LyricsBody(
+                    lyrics: lyrics,
+                    position: position,
+                  ),
+
+                // Show lyrics button
+                if (lyrics.hasLyrics)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                    child: GestureDetector(
+                      onTap: () => _showFullLyrics(context, lyrics),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 20, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Text(
+                          'Show lyrics',
+                          style: TextStyle(
+                            color: Colors.black,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
                         ),
                       ),
                     ),
-            ),
-
-            const SizedBox(height: 32),
-
-            // ── Song info + like ───────────────────────────────────────────
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        song.title,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        song.channelName,
-                        style: const TextStyle(
-                          color: Color(0xFFB3B3B3),
-                          fontSize: 14,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
                   ),
-                ),
-                IconButton(
-                  icon: Icon(
-                    isLiked ? Icons.favorite : Icons.favorite_border,
-                    color: isLiked ? const Color(0xFF1DB954) : Colors.white,
-                    size: 28,
-                  ),
-                  onPressed: () async {
-                    try {
-                      await ref.read(libraryProvider.notifier).toggleLike(song);
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).clearSnackBars();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(!isLiked ? 'Added to Liked Songs' : 'Removed from Liked Songs'),
-                            duration: const Duration(seconds: 1),
-                            backgroundColor: const Color(0xFF1DB954),
-                          ),
-                        );
-                      }
-                    } catch (e) {
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Failed to like song: $e'), backgroundColor: Colors.red),
-                        );
-                      }
-                    }
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(Icons.playlist_add, color: Colors.white, size: 28),
-                  onPressed: () {
-                    showModalBottomSheet(
-                      context: context,
-                      builder: (c) => AddToPlaylistSheet(song: song),
-                    );
-                  },
-                ),
-                Consumer(
-                  builder: (context, ref, child) {
-                    final dlState = ref.watch(downloadProvider);
-                    final isDownloading = dlState.isDownloading(song.id);
-                    final isDownloaded = song.isLocal || dlState.isDownloaded(song.id);
-                    final progress = dlState.progressFor(song.id);
-
-                    // Show error snackbar if a download just failed
-                    ref.listen(downloadProvider, (prev, next) {
-                      if (next.error != null && next.error != prev?.error) {
-                        ScaffoldMessenger.of(context).clearSnackBars();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(next.error!),
-                            backgroundColor: Colors.red,
-                            duration: const Duration(seconds: 4),
-                            action: SnackBarAction(
-                              label: 'Dismiss',
-                              textColor: Colors.white,
-                              onPressed: () =>
-                                  ref.read(downloadProvider.notifier).clearError(),
-                            ),
-                          ),
-                        );
-                      }
-                    });
-
-                    if (isDownloading) {
-                      // Circular progress with % label in the centre
-                      return SizedBox(
-                        width: 48,
-                        height: 48,
-                        child: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            SizedBox(
-                              width: 32,
-                              height: 32,
-                              child: CircularProgressIndicator(
-                                value: progress > 0 ? progress : null,
-                                strokeWidth: 2.5,
-                                color: const Color(0xFF1DB954),
-                                backgroundColor: Colors.white12,
-                              ),
-                            ),
-                            Text(
-                              progress > 0
-                                  ? '${(progress * 100).round()}%'
-                                  : '…',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 8,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    }
-
-                    if (isDownloaded) {
-                      return IconButton(
-                        icon: const Icon(Icons.download_done,
-                            color: Color(0xFF1DB954), size: 28),
-                        onPressed: null,
-                        tooltip: 'Already downloaded',
-                      );
-                    }
-
-                    return IconButton(
-                      icon: const Icon(Icons.download_outlined,
-                          color: Colors.white, size: 28),
-                      onPressed: () {
-                        ref.read(downloadProvider.notifier).downloadSong(song);
-                        ScaffoldMessenger.of(context).clearSnackBars();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Download started…'),
-                            backgroundColor: Color(0xFF1DB954),
-                            duration: Duration(seconds: 2),
-                          ),
-                        );
-                      },
-                      tooltip: 'Download',
-                    );
-                  },
-                ),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
 
-            const SizedBox(height: 16),
-
-            // ── Seek bar ───────────────────────────────────────────────────
-            SeekBar(
-              position: playerState.position,
-              duration: playerState.duration,
-              onSeek: (pos) => ref.read(playerProvider.notifier).seek(pos),
+  void _showFullLyrics(BuildContext context, LyricsState lyrics) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF8B1A1A),
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.9,
+        maxChildSize: 0.95,
+        minChildSize: 0.4,
+        builder: (ctx, scroll) => Column(
+          children: [
+            Container(
+              width: 36,
+              height: 4,
+              margin: const EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.white30,
+                borderRadius: BorderRadius.circular(2),
+              ),
             ),
-
-            const SizedBox(height: 8),
-
-            // ── Controls ───────────────────────────────────────────────────
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                // Shuffle
-                IconButton(
-                  icon: Icon(
-                    Icons.shuffle,
-                    color: playerState.shuffle
-                        ? const Color(0xFF1DB954)
-                        : const Color(0xFFB3B3B3),
-                  ),
-                  onPressed: () => ref.read(playerProvider.notifier).toggleShuffle(),
-                ),
-
-                // Previous
-                IconButton(
-                  icon: const Icon(Icons.skip_previous, size: 36),
-                  onPressed: () => ref.read(playerProvider.notifier).skipToPrevious(),
-                ),
-
-                // Play / Pause
-                _PlayPauseButton(
-                  isPlaying: playerState.isPlaying,
-                  isLoading: playerState.isLoading,
-                  onPressed: () => ref.read(playerProvider.notifier).togglePlayPause(),
-                ),
-
-                // Next
-                IconButton(
-                  icon: const Icon(Icons.skip_next, size: 36),
-                  onPressed: () => ref.read(playerProvider.notifier).skipToNext(),
-                ),
-
-                // Repeat
-                IconButton(
-                  icon: Icon(
-                    playerState.loopMode == LoopMode.one
-                        ? Icons.repeat_one
-                        : Icons.repeat,
-                    color: playerState.loopMode != LoopMode.off
-                        ? const Color(0xFF1DB954)
-                        : const Color(0xFFB3B3B3),
-                  ),
-                  onPressed: () => ref.read(playerProvider.notifier).toggleLoopMode(),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 12),
-
-            // ── Next Up card ───────────────────────────────────────────
-            _NextUpCard(playerState: playerState),
-
-            // Error display
-            if (playerState.error != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.red.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.red.withOpacity(0.3)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.error_outline, color: Colors.red, size: 18),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          playerState.error!,
-                          style: const TextStyle(color: Colors.red, fontSize: 13),
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close, color: Colors.red, size: 18),
-                        onPressed: () => ref.read(playerProvider.notifier).clearError(),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                      ),
-                    ],
-                  ),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: Text(
+                'Lyrics',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
+            ),
+            Expanded(
+              child: ListView.builder(
+                controller: scroll,
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                itemCount: lyrics.lines.length,
+                itemBuilder: (_, i) {
+                  final line = lyrics.lines[i];
+                  final isActive = position >= line.start &&
+                      (i == lyrics.lines.length - 1 ||
+                          position < lyrics.lines[i + 1].start);
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: Text(
+                      line.text,
+                      style: TextStyle(
+                        color: isActive ? Colors.white : Colors.white54,
+                        fontSize: isActive ? 18 : 16,
+                        fontWeight:
+                            isActive ? FontWeight.bold : FontWeight.normal,
+                        height: 1.4,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
           ],
         ),
       ),
@@ -401,7 +754,144 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
   }
 }
 
-// ─── Play/Pause button ─────────────────────────────────────────────────────
+// ─── Lyrics body (preview in card) ───────────────────────────────────────────
+
+class _LyricsBody extends StatelessWidget {
+  final LyricsState lyrics;
+  final Duration position;
+  const _LyricsBody({required this.lyrics, required this.position});
+
+  @override
+  Widget build(BuildContext context) {
+    // Show up to 6 lines around the current position
+    final lines = lyrics.lines;
+    int activeIdx = 0;
+    for (int i = 0; i < lines.length; i++) {
+      if (position >= lines[i].start) activeIdx = i;
+    }
+
+    final start = (activeIdx - 1).clamp(0, lines.length);
+    final end = (activeIdx + 5).clamp(0, lines.length);
+    final preview = lines.sublist(start, end);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: preview.asMap().entries.map((e) {
+          final globalIdx = start + e.key;
+          final isActive = globalIdx == activeIdx;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Text(
+              e.value.text,
+              style: TextStyle(
+                color: isActive ? Colors.white : Colors.white60,
+                fontSize: isActive ? 17 : 15,
+                fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                height: 1.4,
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+}
+
+// ─── Track selector button ────────────────────────────────────────────────────
+
+class _TrackSelectorButton extends ConsumerWidget {
+  final LyricsState lyrics;
+  const _TrackSelectorButton({required this.lyrics});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final selectedLabel = lyrics.selectedTrackLabel ??
+        (lyrics.availableTracks.isNotEmpty
+            ? lyrics.availableTracks.first.label
+            : 'Auto');
+    final shortLabel = selectedLabel
+        .replaceAll(' (auto-generated)', '')
+        .replaceAll(' (auto)', '');
+
+    return GestureDetector(
+      onTapDown: (d) => _showMenu(context, ref, d.globalPosition),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: Colors.white12,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: Colors.white24),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.subtitles_outlined,
+                color: Colors.white70, size: 13),
+            const SizedBox(width: 4),
+            Text(
+              shortLabel,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(width: 3),
+            const Icon(Icons.arrow_drop_down, color: Colors.white, size: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showMenu(BuildContext context, WidgetRef ref, Offset position) {
+    final items = lyrics.availableTracks.map((track) {
+      final isSelected = track.code == lyrics.selectedTrackCode;
+      return PopupMenuItem<String>(
+        value: track.code,
+        height: 40,
+        child: Row(
+          children: [
+            SizedBox(
+              width: 20,
+              child: isSelected
+                  ? const Icon(Icons.check, color: Color(0xFF1DB954), size: 14)
+                  : null,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              track.label
+                  .replaceAll(' (auto-generated)', '')
+                  .replaceAll(' (auto)', ''),
+              style: const TextStyle(color: Colors.white, fontSize: 14),
+            ),
+          ],
+        ),
+      );
+    }).toList();
+
+    showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+        position.dx - 160,
+        position.dy,
+        position.dx,
+        position.dy + 40,
+      ),
+      color: const Color(0xFF1E1E1E),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      items: items,
+    ).then((code) {
+      if (code != null) {
+        ref.read(lyricsProvider.notifier).selectTrack(code);
+      }
+    });
+  }
+}
+
+// ─── Play/Pause button ─────────────────────────────────────────────────────────
 
 class _PlayPauseButton extends StatelessWidget {
   final bool isPlaying;
@@ -422,7 +912,7 @@ class _PlayPauseButton extends StatelessWidget {
         width: 64,
         height: 64,
         decoration: const BoxDecoration(
-          color: Color(0xFF1DB954),
+          color: Colors.white,
           shape: BoxShape.circle,
         ),
         child: isLoading
@@ -443,7 +933,7 @@ class _PlayPauseButton extends StatelessWidget {
   }
 }
 
-// ─── Album art placeholder ─────────────────────────────────────────────────
+// ─── Album art placeholder ─────────────────────────────────────────────────────
 
 class _AlbumPlaceholder extends StatelessWidget {
   const _AlbumPlaceholder();
@@ -451,111 +941,9 @@ class _AlbumPlaceholder extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: const Color(0xFF282828),
+      color: const Color(0xFF0A0A0A),
       child: const Center(
         child: Icon(Icons.music_note, size: 80, color: Color(0xFF3A3A3A)),
-      ),
-    );
-  }
-}
-
-
-// ─── Next Up card ──────────────────────────────────────────────────────────
-
-class _NextUpCard extends StatelessWidget {
-  final PlayerState playerState;
-  const _NextUpCard({required this.playerState});
-
-  @override
-  Widget build(BuildContext context) {
-    final queue = playerState.queue;
-    final idx = playerState.currentIndex;
-    if (queue.length <= 1 || idx < 0) return const SizedBox.shrink();
-
-    final next = queue[(idx + 1) % queue.length];
-
-    return Container(
-      margin: const EdgeInsets.only(top: 4),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFF2A2A2A)),
-      ),
-      child: Row(
-        children: [
-          // Small thumbnail
-          ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: next.thumbnailUrl.isNotEmpty
-                ? CachedNetworkImage(
-                    imageUrl: next.thumbnailUrl,
-                    width: 44,
-                    height: 44,
-                    fit: BoxFit.cover,
-                    placeholder: (_, __) => Container(
-                      width: 44,
-                      height: 44,
-                      color: const Color(0xFF282828),
-                    ),
-                    errorWidget: (_, __, ___) => Container(
-                      width: 44,
-                      height: 44,
-                      color: const Color(0xFF282828),
-                      child: const Icon(Icons.music_note,
-                          color: Color(0xFF3A3A3A), size: 20),
-                    ),
-                  )
-                : Container(
-                    width: 44,
-                    height: 44,
-                    color: const Color(0xFF282828),
-                    child: const Icon(Icons.music_note,
-                        color: Color(0xFF3A3A3A), size: 20),
-                  ),
-          ),
-
-          const SizedBox(width: 12),
-
-          // Next song info
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'NEXT UP',
-                  style: TextStyle(
-                    color: Color(0xFF1DB954),
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1.2,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  next.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                Text(
-                  next.channelName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                      color: Color(0xFFB3B3B3), fontSize: 11),
-                ),
-              ],
-            ),
-          ),
-
-          const Icon(Icons.queue_music_outlined,
-              color: Color(0xFF555555), size: 20),
-        ],
       ),
     );
   }

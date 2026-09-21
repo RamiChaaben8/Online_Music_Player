@@ -1,13 +1,15 @@
 // ============================================================
-// screens/search_screen.dart
+// screens/search_screen.dart  — Spotify-style mobile search
 //
-// YouTube-style search:
-//  1. User types a query in the search bar
-//  2. Presses Enter / taps the search icon to fire the search
-//  3. Results shown as large video cards (16:9 thumbnail, duration badge,
-//     title, channel name, view count)
-//  4. Tapping a card starts playback and opens Now Playing
+// Layout:
+//   • Profile avatar + "Search" title header
+//   • Large white rounded search box — triggers YouTube search on
+//     submit (or debounced after 600ms idle typing)
+//   • When idle: "Browse categories" grid (Music, Podcasts, etc.)
+//   • When results exist: YouTube video result cards
 // ============================================================
+
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -20,6 +22,7 @@ import '../providers/library_provider.dart';
 import '../widgets/error_banner.dart';
 import '../screens/now_playing_screen.dart';
 import '../providers/search_history_provider.dart';
+import '../widgets/profile_avatar.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
@@ -31,22 +34,42 @@ class SearchScreen extends ConsumerStatefulWidget {
 class _SearchScreenState extends ConsumerState<SearchScreen> {
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
+  Timer? _debounce;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_onTextChanged);
+  }
 
   @override
   void dispose() {
+    _debounce?.cancel();
+    _controller.removeListener(_onTextChanged);
     _controller.dispose();
     _focusNode.dispose();
     super.dispose();
   }
 
-  /// Fires search — called on Enter key or search icon tap.
+  void _onTextChanged() {
+    setState(() {});
+    _debounce?.cancel();
+    final q = _controller.text.trim();
+    if (q.isEmpty) {
+      ref.read(searchProvider.notifier).clear();
+      return;
+    }
+    // Debounce: fire after 600ms idle
+    _debounce = Timer(const Duration(milliseconds: 600), () {
+      _doSearch(q);
+    });
+  }
+
   void _doSearch([String? overrideQuery]) {
     final query = overrideQuery ?? _controller.text.trim();
     if (query.isEmpty) return;
-    if (overrideQuery != null) {
-      _controller.text = overrideQuery;
-    }
-    _focusNode.unfocus(); // dismiss keyboard
+    if (overrideQuery != null) _controller.text = overrideQuery;
+    _focusNode.unfocus();
     ref.read(searchHistoryProvider.notifier).addQuery(query);
     ref.read(searchProvider.notifier).search(query);
   }
@@ -61,129 +84,151 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   Widget build(BuildContext context) {
     final searchState = ref.watch(searchProvider);
     final playerState = ref.watch(playerProvider);
+    final hasQuery =
+        _controller.text.trim().isNotEmpty || searchState.results.isNotEmpty;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0A0A0A),
       body: SafeArea(
-        child: Column(
-          children: [
-            // ── Search bar ────────────────────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _controller,
-                      focusNode: _focusNode,
-                      style: const TextStyle(color: Colors.white, fontSize: 16),
-                      textInputAction: TextInputAction.search,
-                      onSubmitted: (_) => _doSearch(),
-                      decoration: InputDecoration(
-                        hintText: 'Search for a song, artist, video…',
-                        hintStyle: const TextStyle(color: Color(0xFF6A6A6A)),
-                        prefixIcon: const Icon(Icons.search, color: Color(0xFFB3B3B3)),
-                        suffixIcon: _controller.text.isNotEmpty
-                            ? IconButton(
-                                icon: const Icon(Icons.close, color: Color(0xFFB3B3B3), size: 20),
-                                onPressed: _clearSearch,
-                              )
-                            : null,
-                        filled: true,
-                        fillColor: const Color(0xFF212121),
-                        contentPadding: const EdgeInsets.symmetric(vertical: 14),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: BorderSide.none,
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: const BorderSide(color: Color(0xFF1DB954), width: 1.5),
-                        ),
-                      ),
-                      // Rebuild to show/hide clear button as user types
-                      onChanged: (_) => setState(() {}),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  // Search button
-                  GestureDetector(
-                    onTap: _doSearch,
-                    child: Container(
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1DB954),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Icon(Icons.search, color: Colors.black, size: 24),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            // ── Error banner ──────────────────────────────────────────────
-            if (searchState.error != null)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: ErrorBanner(message: searchState.error!),
-              ),
-
-            // ── Loading bar ───────────────────────────────────────────────
-            if (searchState.isLoading)
-              const LinearProgressIndicator(
-                minHeight: 2,
-                color: Color(0xFF1DB954),
-                backgroundColor: Color(0xFF212121),
-              ),
-
-            // ── Results header ────────────────────────────────────────────
-            if (searchState.results.isNotEmpty && !searchState.isLoading)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+        child: CustomScrollView(
+          slivers: [
+            // ── Header ──────────────────────────────────────────────────
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                 child: Row(
                   children: [
-                    Text(
-                      '${searchState.results.length} results for',
-                      style: const TextStyle(color: Color(0xFF6A6A6A), fontSize: 13),
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
+                    const ProfileAvatar(),
+                    const SizedBox(width: 12),
+                    const Expanded(
                       child: Text(
-                        '"${searchState.query}"',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Color(0xFFB3B3B3),
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
+                        'Search',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
                     ),
                   ],
                 ),
               ),
-
-            // ── Video result cards ────────────────────────────────────────
-            Expanded(
-              child: searchState.results.isEmpty && !searchState.isLoading
-                  ? _SearchHistoryOrEmpty(query: searchState.query, onSearch: _doSearch)
-                  : ListView.builder(
-                      itemCount: searchState.results.length,
-                      padding: const EdgeInsets.only(bottom: 16),
-                      itemBuilder: (ctx, i) {
-                        final song = searchState.results[i];
-                        final isCurrent = playerState.currentSong?.id == song.id;
-                        return _VideoCard(
-                          song: song,
-                          isCurrentlyPlaying: isCurrent && playerState.isPlaying,
-                          isSelected: isCurrent,
-                          onTap: () => _playSong(song, searchState.results),
-                        );
-                      },
-                    ),
             ),
+
+            // ── Search box ───────────────────────────────────────────────
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: TextField(
+                    controller: _controller,
+                    focusNode: _focusNode,
+                    style: const TextStyle(
+                        color: Colors.black,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500),
+                    textInputAction: TextInputAction.search,
+                    onSubmitted: (_) => _doSearch(),
+                    decoration: InputDecoration(
+                      hintText: 'What do you want to listen to?',
+                      hintStyle: const TextStyle(
+                          color: Color(0xFF666666), fontSize: 15),
+                      prefixIcon: const Icon(Icons.search,
+                          color: Colors.black, size: 22),
+                      suffixIcon: _controller.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.close,
+                                  color: Colors.black, size: 20),
+                              onPressed: _clearSearch,
+                            )
+                          : null,
+                      filled: true,
+                      fillColor: Colors.white,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide.none,
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+            // ── Error banner ─────────────────────────────────────────────
+            if (searchState.error != null)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  child: ErrorBanner(message: searchState.error!),
+                ),
+              ),
+
+            // ── Loading bar ──────────────────────────────────────────────
+            if (searchState.isLoading)
+              const SliverToBoxAdapter(
+                child: LinearProgressIndicator(
+                  minHeight: 2,
+                  color: Color(0xFF1DB954),
+                  backgroundColor: Color(0xFF212121),
+                ),
+              ),
+
+            // ── Results header ───────────────────────────────────────────
+            if (searchState.results.isNotEmpty && !searchState.isLoading)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          '${searchState.results.length} results',
+                          style: const TextStyle(
+                              color: Color(0xFFB3B3B3), fontSize: 13),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+            // ── Results / Category grid ──────────────────────────────────
+            if (searchState.results.isNotEmpty)
+              SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (ctx, i) {
+                    final song = searchState.results[i];
+                    final isCurrent = playerState.currentSong?.id == song.id;
+                    return _VideoCard(
+                      song: song,
+                      isCurrentlyPlaying: isCurrent && playerState.isPlaying,
+                      isSelected: isCurrent,
+                      onTap: () => _playSong(song, searchState.results),
+                    );
+                  },
+                  childCount: searchState.results.length,
+                ),
+              )
+            else if (!searchState.isLoading && !hasQuery)
+              SliverToBoxAdapter(
+                child: _BrowseCategories(onSearch: _doSearch),
+              )
+            else if (!searchState.isLoading && hasQuery)
+              SliverToBoxAdapter(
+                child: _SearchHistoryOrEmpty(
+                    query: searchState.query, onSearch: _doSearch),
+              ),
+
+            const SliverToBoxAdapter(child: SizedBox(height: 24)),
           ],
         ),
       ),
@@ -191,14 +236,157 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   void _playSong(Song song, List<Song> queue) {
-    ref.read(playerProvider.notifier).playSong(song, queue: queue);
+    final currentId = ref.read(playerProvider).currentSong?.id;
+    if (currentId != song.id) {
+      ref.read(playerProvider.notifier).playSong(song, queue: queue);
+    }
     Navigator.of(context).push(
       PageRouteBuilder(
         pageBuilder: (_, __, ___) => const NowPlayingScreen(),
         transitionsBuilder: (_, animation, __, child) => SlideTransition(
           position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
-              .animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
+              .animate(CurvedAnimation(
+                  parent: animation, curve: Curves.easeOutCubic)),
           child: child,
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Browse categories grid ───────────────────────────────────────────────────
+
+class _BrowseCategories extends ConsumerWidget {
+  final void Function(String) onSearch;
+  const _BrowseCategories({required this.onSearch});
+
+  static const _categories = [
+    _Category('Music', Color(0xFFE91E8C), Icons.music_note),
+    _Category('Podcasts', Color(0xFF006450), Icons.podcasts),
+    _Category('Live Events', Color(0xFF8D67AB), Icons.event),
+    _Category('Made For You', Color(0xFFB49BC8), null),
+    _Category('New Releases', Color(0xFF27856A), Icons.new_releases),
+    _Category('Hip-Hop', Color(0xFF8D67AB), Icons.headphones),
+    _Category('Pop', Color(0xFFE13300), Icons.star),
+    _Category('K-Pop', Color(0xFF1E3264), Icons.favorite),
+    _Category('Anime', Color(0xFFBA5D07), Icons.animation),
+    _Category('Chill', Color(0xFF1DB954), Icons.spa),
+  ];
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final history = ref.watch(searchHistoryProvider);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Search history
+        if (history.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Recent searches',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold),
+                ),
+                TextButton(
+                  onPressed: () =>
+                      ref.read(searchHistoryProvider.notifier).clearHistory(),
+                  child: const Text('Clear',
+                      style: TextStyle(color: Color(0xFF1DB954))),
+                ),
+              ],
+            ),
+          ),
+          ...history.take(5).map((q) => ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                leading: const Icon(Icons.history, color: Color(0xFFB3B3B3)),
+                title: Text(q, style: const TextStyle(color: Colors.white)),
+                onTap: () => onSearch(q),
+              )),
+        ],
+
+        // Category grid
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 24, 16, 12),
+          child: Text(
+            'Discover something new',
+            style: TextStyle(
+                color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: GridView.builder(
+            physics: const NeverScrollableScrollPhysics(),
+            shrinkWrap: true,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              crossAxisSpacing: 8,
+              mainAxisSpacing: 8,
+              childAspectRatio: 1.7,
+            ),
+            itemCount: _categories.length,
+            itemBuilder: (_, i) => _CategoryCard(
+              category: _categories[i],
+              onTap: () => onSearch(_categories[i].label),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+}
+
+class _Category {
+  final String label;
+  final Color color;
+  final IconData? icon;
+  const _Category(this.label, this.color, this.icon);
+}
+
+class _CategoryCard extends StatelessWidget {
+  final _Category category;
+  final VoidCallback onTap;
+  const _CategoryCard({required this.category, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          color: category.color,
+          child: Stack(
+            children: [
+              Positioned(
+                bottom: 8,
+                left: 10,
+                child: Text(
+                  category.label,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              if (category.icon != null)
+                Positioned(
+                  top: 8,
+                  right: 10,
+                  child: Icon(category.icon,
+                      color: Colors.white.withOpacity(0.4), size: 36),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -228,14 +416,9 @@ class _VideoCardState extends ConsumerState<_VideoCard> {
   @override
   void initState() {
     super.initState();
-    // ListView.builder calls initState only when the card scrolls into view.
-    // Fire a background URL prefetch immediately — by the time the user taps,
-    // the manifest is already resolved and playback starts instantly.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        ref
-            .read(youtubeServiceProvider)
-            .prefetchUrl(widget.song.id);
+        ref.read(youtubeServiceProvider).prefetchUrl(widget.song.id);
       }
     });
   }
@@ -254,17 +437,19 @@ class _VideoCardState extends ConsumerState<_VideoCard> {
           color: isSelected ? const Color(0xFF1A2A1A) : const Color(0xFF141414),
           borderRadius: BorderRadius.circular(12),
           border: isSelected
-              ? Border.all(color: const Color(0xFF1DB954).withAlpha(100), width: 1.5)
+              ? Border.all(
+                  color: const Color(0xFF1DB954).withAlpha(100), width: 1.5)
               : null,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── 16:9 Thumbnail ─────────────────────────────────────────
+            // 16:9 Thumbnail
             Stack(
               children: [
                 ClipRRect(
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(12)),
                   child: AspectRatio(
                     aspectRatio: 16 / 9,
                     child: CachedNetworkImage(
@@ -273,25 +458,26 @@ class _VideoCardState extends ConsumerState<_VideoCard> {
                       placeholder: (_, __) => Container(
                         color: const Color(0xFF212121),
                         child: const Center(
-                          child: Icon(Icons.music_video, color: Color(0xFF3A3A3A), size: 40),
+                          child: Icon(Icons.music_video,
+                              color: Color(0xFF3A3A3A), size: 40),
                         ),
                       ),
                       errorWidget: (_, __, ___) => Container(
                         color: const Color(0xFF212121),
                         child: const Center(
-                          child: Icon(Icons.music_video, color: Color(0xFF3A3A3A), size: 40),
+                          child: Icon(Icons.music_video,
+                              color: Color(0xFF3A3A3A), size: 40),
                         ),
                       ),
                     ),
                   ),
                 ),
-
-                // Duration badge (bottom-right corner)
                 Positioned(
                   bottom: 8,
                   right: 8,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                     decoration: BoxDecoration(
                       color: Colors.black.withAlpha(210),
                       borderRadius: BorderRadius.circular(4),
@@ -302,21 +488,20 @@ class _VideoCardState extends ConsumerState<_VideoCard> {
                         color: Colors.white,
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
-                        letterSpacing: 0.3,
                       ),
                     ),
                   ),
                 ),
-
-                // "Now playing" overlay
                 if (isCurrentlyPlaying)
                   Positioned.fill(
                     child: ClipRRect(
-                      borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                      borderRadius:
+                          const BorderRadius.vertical(top: Radius.circular(12)),
                       child: Container(
                         color: Colors.black.withAlpha(100),
                         child: const Center(
-                          child: Icon(Icons.graphic_eq, color: Color(0xFF1DB954), size: 48),
+                          child: Icon(Icons.graphic_eq,
+                              color: Color(0xFF1DB954), size: 48),
                         ),
                       ),
                     ),
@@ -324,7 +509,7 @@ class _VideoCardState extends ConsumerState<_VideoCard> {
               ],
             ),
 
-            // ── Info row ───────────────────────────────────────────────
+            // Info row
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 10, 4, 10),
               child: Row(
@@ -334,23 +519,24 @@ class _VideoCardState extends ConsumerState<_VideoCard> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Title
                         Text(
                           song.title,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            color: isSelected ? const Color(0xFF1DB954) : Colors.white,
+                            color: isSelected
+                                ? const Color(0xFF1DB954)
+                                : Colors.white,
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
                             height: 1.3,
                           ),
                         ),
                         const SizedBox(height: 4),
-                        // Channel name
                         Row(
                           children: [
-                            const Icon(Icons.person_outline, size: 13, color: Color(0xFF6A6A6A)),
+                            const Icon(Icons.person_outline,
+                                size: 13, color: Color(0xFF6A6A6A)),
                             const SizedBox(width: 4),
                             Expanded(
                               child: Text(
@@ -368,8 +554,6 @@ class _VideoCardState extends ConsumerState<_VideoCard> {
                       ],
                     ),
                   ),
-
-                  // ⋮ Options menu
                   _VideoOptionsMenu(song: song),
                 ],
               ),
@@ -389,7 +573,7 @@ class _VideoCardState extends ConsumerState<_VideoCard> {
   }
 }
 
-// ─── Options menu (⋮ button) ──────────────────────────────────────────────────
+// ─── Options menu ─────────────────────────────────────────────────────────────
 
 class _VideoOptionsMenu extends ConsumerWidget {
   final Song song;
@@ -417,7 +601,11 @@ class _VideoOptionsMenu extends ConsumerWidget {
               await ref.read(libraryProvider.notifier).toggleLike(song);
               if (context.mounted) {
                 final isLiked = ref.read(libraryProvider).isLiked(song.id);
-                _snack(context, isLiked ? 'Removed from Liked Songs' : 'Added to Liked Songs');
+                _snack(
+                    context,
+                    isLiked
+                        ? 'Removed from Liked Songs'
+                        : 'Added to Liked Songs');
               }
             } catch (e) {
               if (context.mounted) {
@@ -456,7 +644,8 @@ class _VideoOptionsMenu extends ConsumerWidget {
         children: [
           Icon(icon, color: iconColor ?? const Color(0xFFB3B3B3), size: 20),
           const SizedBox(width: 12),
-          Text(label, style: const TextStyle(color: Colors.white, fontSize: 14)),
+          Text(label,
+              style: const TextStyle(color: Colors.white, fontSize: 14)),
         ],
       ),
     );
@@ -492,10 +681,11 @@ class _VideoOptionsMenu extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 16),
-          const Text(
-            'Add to playlist',
-            style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold),
-          ),
+          const Text('Add to playlist',
+              style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 17,
+                  fontWeight: FontWeight.bold)),
           const Divider(color: Color(0xFF282828), height: 20),
           if (playlists.isEmpty)
             const Padding(
@@ -515,15 +705,18 @@ class _VideoOptionsMenu extends ConsumerWidget {
                       color: const Color(0xFF1DB954).withAlpha(30),
                       borderRadius: BorderRadius.circular(6),
                     ),
-                    child: const Icon(Icons.queue_music, color: Color(0xFF1DB954), size: 22),
+                    child: const Icon(Icons.queue_music,
+                        color: Color(0xFF1DB954), size: 22),
                   ),
-                  title: Text(pl.name, style: const TextStyle(color: Colors.white)),
-                  subtitle: Text(
-                    '${pl.songs.length} songs',
-                    style: const TextStyle(color: Color(0xFF6A6A6A), fontSize: 12),
-                  ),
+                  title: Text(pl.name,
+                      style: const TextStyle(color: Colors.white)),
+                  subtitle: Text('${pl.songs.length} songs',
+                      style: const TextStyle(
+                          color: Color(0xFF6A6A6A), fontSize: 12)),
                   onTap: () {
-                    ref.read(libraryProvider.notifier).addSongToPlaylistObj(pl, song);
+                    ref
+                        .read(libraryProvider.notifier)
+                        .addSongToPlaylistObj(pl, song);
                     Navigator.pop(context);
                     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                       content: Text('Added to "${pl.name}"'),
@@ -539,7 +732,7 @@ class _VideoOptionsMenu extends ConsumerWidget {
   }
 }
 
-// ─── Empty / prompt state ─────────────────────────────────────────────────────
+// ─── Search history / empty state ────────────────────────────────────────────
 
 class _SearchHistoryOrEmpty extends ConsumerWidget {
   final String query;
@@ -550,100 +743,30 @@ class _SearchHistoryOrEmpty extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     if (query.isNotEmpty) {
-      // Has query but no results
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.search_off, size: 56, color: Color(0xFF3A3A3A)),
-            const SizedBox(height: 16),
-            Text(
-              'No results for\n"$query"',
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: Color(0xFFB3B3B3), fontSize: 16),
-            ),
-            const SizedBox(height: 16),
-            TextButton.icon(
-              onPressed: () => onSearch(query),
-              icon: const Icon(Icons.refresh, color: Color(0xFF1DB954)),
-              label: const Text('Try again', style: TextStyle(color: Color(0xFF1DB954))),
-            ),
-          ],
-        ),
-      );
-    }
-
-    final history = ref.watch(searchHistoryProvider);
-    if (history.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 88,
-              height: 88,
-              decoration: BoxDecoration(
-                color: const Color(0xFF1DB954).withAlpha(20),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.youtube_searched_for,
-                  size: 44, color: Color(0xFF1DB954)),
-            ),
-            const SizedBox(height: 20),
-            const Text(
-              'Search YouTube',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 40),
-              child: Text(
-                'Type a song name, artist, or video title\nthen tap search to find it',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Color(0xFF6A6A6A), fontSize: 14, height: 1.5),
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      return Padding(
+        padding: const EdgeInsets.only(top: 60),
+        child: Center(
+          child: Column(
             children: [
-              const Text(
-                'Recent searches',
-                style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+              const Icon(Icons.search_off, size: 56, color: Color(0xFF3A3A3A)),
+              const SizedBox(height: 16),
+              Text(
+                'No results for\n"$query"',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Color(0xFFB3B3B3), fontSize: 16),
               ),
-              TextButton(
-                onPressed: () => ref.read(searchHistoryProvider.notifier).clearHistory(),
-                child: const Text('Clear', style: TextStyle(color: Color(0xFF1DB954))),
+              const SizedBox(height: 16),
+              TextButton.icon(
+                onPressed: () => onSearch(query),
+                icon: const Icon(Icons.refresh, color: Color(0xFF1DB954)),
+                label: const Text('Try again',
+                    style: TextStyle(color: Color(0xFF1DB954))),
               ),
             ],
           ),
         ),
-        Expanded(
-          child: ListView.builder(
-            itemCount: history.length,
-            itemBuilder: (ctx, i) {
-              return ListTile(
-                leading: const Icon(Icons.history, color: Color(0xFFB3B3B3)),
-                title: Text(history[i], style: const TextStyle(color: Colors.white)),
-                onTap: () => onSearch(history[i]),
-              );
-            },
-          ),
-        ),
-      ],
-    );
+      );
+    }
+    return const SizedBox.shrink();
   }
 }

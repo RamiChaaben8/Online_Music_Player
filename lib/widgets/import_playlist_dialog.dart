@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -15,6 +16,7 @@ Future<void> showImportPlaylistDialog(
   entry = OverlayEntry(
     builder: (_) => _ImportPlaylistPanel(
       ref: ref,
+      initialSize: _mobileSize(context),
       onClose: () {
         if (entry.mounted) entry.remove();
         if (!done.isCompleted) done.complete();
@@ -25,13 +27,21 @@ Future<void> showImportPlaylistDialog(
   await done.future;
 }
 
+Size _mobileSize(BuildContext context) {
+  final width = MediaQuery.sizeOf(context).width;
+  if (width >= 600) return const Size(484, 304);
+  return Size(math.max(280, width - 24), 360);
+}
+
 class _ImportPlaylistPanel extends StatefulWidget {
   final WidgetRef ref;
   final VoidCallback onClose;
+  final Size initialSize;
 
   const _ImportPlaylistPanel({
     required this.ref,
     required this.onClose,
+    required this.initialSize,
   });
 
   @override
@@ -47,7 +57,7 @@ class _ImportPlaylistPanelState extends State<_ImportPlaylistPanel> {
   String _progressSource = '';
   String? _error;
   Offset _position = const Offset(48, 48);
-  Size _size = const Size(484, 304);
+  late Size _size = widget.initialSize;
 
   @override
   void dispose() {
@@ -64,7 +74,8 @@ class _ImportPlaylistPanelState extends State<_ImportPlaylistPanel> {
   void _resize(DragUpdateDetails details) {
     setState(() {
       _size = Size(
-        (_size.width + details.delta.dx).clamp(360, 760),
+        (_size.width + details.delta.dx)
+            .clamp(widget.initialSize.width < 484 ? 280 : 360, 760),
         (_size.height + details.delta.dy).clamp(240, 620),
       );
     });

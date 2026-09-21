@@ -32,6 +32,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../models/song.dart';
+import '../models/playlist.dart';
 import '../services/audio_handler.dart';
 import '../services/audio_player_service.dart';
 import '../services/youtube_service.dart';
@@ -53,6 +54,7 @@ class PlayerState {
   final Duration duration;
   final List<Song> queue;
   final int currentIndex;
+  final Playlist? sourcePlaylist;
   final bool shuffle;
   final LoopMode loopMode;
 
@@ -74,6 +76,7 @@ class PlayerState {
     this.duration = Duration.zero,
     this.queue = const [],
     this.currentIndex = -1,
+    this.sourcePlaylist,
     this.shuffle = false,
     this.loopMode = LoopMode.off,
     this.remoteCommand,
@@ -90,6 +93,7 @@ class PlayerState {
     Duration? duration,
     List<Song>? queue,
     int? currentIndex,
+    Playlist? sourcePlaylist,
     bool? shuffle,
     LoopMode? loopMode,
     RemoteCommandDoc? remoteCommand,
@@ -99,6 +103,7 @@ class PlayerState {
     bool clearError = false,
     bool clearRemote = false,
     bool clearActiveDevice = false,
+    bool clearSourcePlaylist = false,
   }) {
     return PlayerState(
       currentSong: clearSong ? null : (currentSong ?? this.currentSong),
@@ -109,6 +114,8 @@ class PlayerState {
       duration: duration ?? this.duration,
       queue: queue ?? this.queue,
       currentIndex: currentIndex ?? this.currentIndex,
+      sourcePlaylist:
+          clearSourcePlaylist ? null : (sourcePlaylist ?? this.sourcePlaylist),
       shuffle: shuffle ?? this.shuffle,
       loopMode: loopMode ?? this.loopMode,
       remoteCommand: clearRemote ? null : (remoteCommand ?? this.remoteCommand),
@@ -555,6 +562,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   void playSong(
     Song song, {
     List<Song>? queue,
+    Playlist? sourcePlaylist,
     bool suppressRemoteCommand = false,
   }) {
     // If this device is passive, claim it first.
@@ -565,6 +573,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
         _doPlaySong(
           song,
           queue: queue,
+          sourcePlaylist: sourcePlaylist,
           suppressRemoteCommand: suppressRemoteCommand,
         );
       });
@@ -573,6 +582,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     _doPlaySong(
       song,
       queue: queue,
+      sourcePlaylist: sourcePlaylist,
       suppressRemoteCommand: suppressRemoteCommand,
     );
   }
@@ -580,6 +590,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   void _doPlaySong(
     Song song, {
     List<Song>? queue,
+    Playlist? sourcePlaylist,
     bool suppressRemoteCommand = false,
   }) {
     state = state.copyWith(
@@ -588,6 +599,8 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       isPlaying: false,
       clearError: true,
       clearRemote: true,
+      sourcePlaylist: sourcePlaylist,
+      clearSourcePlaylist: sourcePlaylist == null,
     );
 
     _service.playSong(song, queue: queue).then((_) {

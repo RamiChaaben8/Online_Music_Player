@@ -34,6 +34,9 @@ class VideoPreviewWidget extends StatefulWidget {
 }
 
 class _VideoPreviewWidgetState extends State<VideoPreviewWidget> {
+  static final Map<String, Duration> _previewStarts = {};
+  static final Map<String, Duration> _previewPositions = {};
+
   final YoutubeService _yt = YoutubeService();
   static const _previewDuration = Duration(seconds: 10);
   final Random _random = Random();
@@ -71,7 +74,10 @@ class _VideoPreviewWidgetState extends State<VideoPreviewWidget> {
       final url = await _yt.getVideoStreamUrl(videoId);
       if (!mounted || loadSerial != _loadSerial) return;
 
-      final controller = VideoPlayerController.networkUrl(Uri.parse(url));
+      final controller = VideoPlayerController.networkUrl(
+        Uri.parse(url),
+        videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
+      );
       await controller.initialize();
       if (!mounted || loadSerial != _loadSerial) {
         controller.dispose();
@@ -80,9 +86,19 @@ class _VideoPreviewWidgetState extends State<VideoPreviewWidget> {
 
       // Mute video player — just_audio owns the audio
       await controller.setVolume(0);
-      _previewStart = _randomPreviewStart(controller.value.duration);
+      _previewStart = _previewStarts.putIfAbsent(
+        videoId,
+        () => _randomPreviewStart(controller.value.duration),
+      );
       controller.addListener(_loopPreviewSegment);
-      await controller.seekTo(_previewStart);
+      final savedPosition = _previewPositions[videoId];
+      final segmentEnd = _previewStart + _previewDuration;
+      final resumePosition = savedPosition != null &&
+              savedPosition >= _previewStart &&
+              savedPosition < segmentEnd
+          ? savedPosition
+          : _previewStart;
+      await controller.seekTo(resumePosition);
       await controller.play();
 
       setState(() {
@@ -118,6 +134,7 @@ class _VideoPreviewWidgetState extends State<VideoPreviewWidget> {
       return;
     }
 
+    _previewPositions[widget.videoId] = controller.value.position;
     final segmentEnd = _previewStart + _previewDuration;
     if (controller.value.position >= segmentEnd) {
       _seekingToLoopStart = true;
@@ -128,8 +145,12 @@ class _VideoPreviewWidgetState extends State<VideoPreviewWidget> {
   }
 
   void _disposeController() {
-    _controller?.removeListener(_loopPreviewSegment);
-    _controller?.dispose();
+    final controller = _controller;
+    if (controller != null && controller.value.isInitialized) {
+      _previewPositions[widget.videoId] = controller.value.position;
+    }
+    controller?.removeListener(_loopPreviewSegment);
+    controller?.dispose();
     _controller = null;
   }
 

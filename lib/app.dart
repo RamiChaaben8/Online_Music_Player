@@ -15,11 +15,12 @@ import 'screens/home_screen.dart';
 import 'widgets/mini_player.dart';
 import 'widgets/remote_playback_banner.dart';
 import 'widgets/offline_indicator.dart';
-import 'widgets/listen_party_controls.dart';
 import 'providers/player_provider.dart';
 import 'providers/local_music_provider.dart';
 import 'providers/sync_provider.dart';
 import 'providers/presence_provider.dart';
+import 'providers/library_provider.dart';
+import 'providers/listen_party_provider.dart';
 import 'platform/permissions.dart';
 import 'desktop/shell/desktop_shell.dart';
 import 'desktop/theme/desktop_theme.dart';
@@ -330,10 +331,6 @@ class _AppShellState extends ConsumerState<AppShell>
     });
   }
 
-  /// Request the appropriate storage/audio permission for the platform.
-  /// On Android 11+ we also try to get MANAGE_EXTERNAL_STORAGE so the
-  /// scanner can see the whole phone — the user is sent to the OS settings
-  /// page for this one since it can't be requested inline.
   Future<void> _requestStoragePermission() async {
     if (!Platform.isAndroid) return;
     await requestStoragePermission();
@@ -360,8 +357,6 @@ class _AppShellState extends ConsumerState<AppShell>
             );
       }
     }
-    // Release active-device claim when app is fully closed so another
-    // device can auto-claim on next launch.
     if (state == AppLifecycleState.detached) {
       ref.read(presenceProvider.notifier).stop();
       final player = ref.read(playerProvider.notifier);
@@ -391,6 +386,177 @@ class _AppShellState extends ConsumerState<AppShell>
     FriendsScreen(),
   ];
 
+  // ── Create bottom sheet ──────────────────────────────────────────────────
+  void _showCreateSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF282828),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => _CreateBottomSheet(
+        onCreatePlaylist: () {
+          Navigator.pop(context);
+          // Switch to Library tab first, then show dialog
+          setState(() => _currentIndex = 2);
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _showCreatePlaylistDialog(context);
+          });
+        },
+        onCreateParty: () {
+          Navigator.pop(context);
+          _showCreatePartySheet();
+        },
+      ),
+    );
+  }
+
+  void _showCreatePlaylistDialog(BuildContext context) {
+    final controller = TextEditingController();
+    var visibility = 'private';
+    showDialog(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (ctx, setState) => AlertDialog(
+          backgroundColor: const Color(0xFF1A1A1A),
+          title:
+              const Text('New Playlist', style: TextStyle(color: Colors.white)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: controller,
+                style: const TextStyle(color: Colors.white),
+                autofocus: true,
+                decoration: const InputDecoration(hintText: 'Playlist name'),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                value: visibility,
+                decoration: const InputDecoration(labelText: 'Privacy'),
+                dropdownColor: const Color(0xFF282828),
+                style: const TextStyle(color: Colors.white),
+                items: ['private', 'friends', 'public']
+                    .map((v) => DropdownMenuItem(
+                          value: v,
+                          child: Text(v[0].toUpperCase() + v.substring(1)),
+                        ))
+                    .toList(),
+                onChanged: (v) => setState(() => visibility = v ?? 'private'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel',
+                  style: TextStyle(color: Color(0xFFB3B3B3))),
+            ),
+            TextButton(
+              onPressed: () {
+                if (controller.text.trim().isNotEmpty) {
+                  ref.read(libraryProvider.notifier).createPlaylist(
+                        controller.text.trim(),
+                        visibility: visibility,
+                      );
+                  Navigator.pop(dialogContext);
+                }
+              },
+              child: const Text('Create',
+                  style: TextStyle(color: Color(0xFF1DB954))),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showCreatePartySheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF282828),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF555555),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'Create a Party',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Listen together with friends in real time',
+                style: TextStyle(color: Color(0xFFB3B3B3), fontSize: 14),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF1DB954),
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(30)),
+                  ),
+                  icon: const Icon(Icons.people),
+                  label: const Text('Start Party',
+                      style:
+                          TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                  onPressed: () async {
+                    Navigator.pop(context);
+                    try {
+                      await ref.read(listenPartyProvider.notifier).create(
+                            openToFriends: true,
+                          );
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                                'Party started! Share the code with friends.'),
+                            backgroundColor: Color(0xFF1DB954),
+                          ),
+                        );
+                      }
+                    } catch (e) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Failed to create party: $e'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                    }
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     ref.listen<PlayerState>(playerProvider, (_, next) {
@@ -402,7 +568,10 @@ class _AppShellState extends ConsumerState<AppShell>
     return Scaffold(
       body: Stack(
         children: [
-          _screens[_currentIndex],
+          IndexedStack(
+            index: _currentIndex,
+            children: _screens,
+          ),
           const Positioned(
             top: 0,
             left: 0,
@@ -425,41 +594,212 @@ class _AppShellState extends ConsumerState<AppShell>
         children: [
           // Mini-player sits above the nav bar when a song is playing
           if (hasSong) const MiniPlayer(),
-          Row(
-            children: [
-              Expanded(
-                child: NavigationBar(
-                  selectedIndex: _currentIndex,
-                  onDestinationSelected: (i) =>
-                      setState(() => _currentIndex = i),
-                  destinations: [
-                    NavigationDestination(
-                      icon: Icon(Icons.home_outlined),
-                      selectedIcon: Icon(Icons.home),
-                      label: 'Home',
-                    ),
-                    NavigationDestination(
-                      icon: Icon(Icons.search_outlined),
-                      selectedIcon: Icon(Icons.search),
-                      label: 'Search',
-                    ),
-                    NavigationDestination(
-                      icon: Icon(Icons.library_music_outlined),
-                      selectedIcon: Icon(Icons.library_music),
-                      label: 'Library',
-                    ),
-                    NavigationDestination(
-                      icon: Icon(Icons.people_outline),
-                      selectedIcon: Icon(Icons.people),
-                      label: 'Friends',
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 52, child: PartyInviteButton()),
-            ],
+          _SpotifyBottomNav(
+            currentIndex: _currentIndex,
+            onTap: (i) {
+              if (i == 4) {
+                // Create — open bottom sheet
+                _showCreateSheet();
+              } else {
+                setState(() => _currentIndex = i);
+              }
+            },
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ─── Spotify-style bottom nav ─────────────────────────────────────────────────
+
+class _SpotifyBottomNav extends StatelessWidget {
+  final int currentIndex;
+  final void Function(int) onTap;
+
+  const _SpotifyBottomNav({
+    required this.currentIndex,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final items = [
+      _NavItem(
+          icon: Icons.home_outlined, activeIcon: Icons.home, label: 'Home'),
+      _NavItem(
+          icon: Icons.search_outlined,
+          activeIcon: Icons.search,
+          label: 'Search'),
+      _NavItem(
+          icon: Icons.library_music_outlined,
+          activeIcon: Icons.library_music,
+          label: 'Your Library'),
+      _NavItem(
+          icon: Icons.people_outline,
+          activeIcon: Icons.people,
+          label: 'Friends'),
+      _NavItem(
+          icon: Icons.add,
+          activeIcon: Icons.add,
+          label: 'Create',
+          isCreate: true),
+    ];
+
+    return Container(
+      color: const Color(0xFF0D0D0D),
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          height: 60,
+          child: Row(
+            children: List.generate(items.length, (i) {
+              final item = items[i];
+              final isSelected = i == currentIndex && !item.isCreate;
+              return Expanded(
+                child: GestureDetector(
+                  onTap: () => onTap(i),
+                  behavior: HitTestBehavior.opaque,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        isSelected ? item.activeIcon : item.icon,
+                        color: item.isCreate
+                            ? Colors.white
+                            : isSelected
+                                ? Colors.white
+                                : const Color(0xFFB3B3B3),
+                        size: item.isCreate ? 26 : 24,
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        item.label,
+                        style: TextStyle(
+                          color: item.isCreate
+                              ? Colors.white
+                              : isSelected
+                                  ? Colors.white
+                                  : const Color(0xFFB3B3B3),
+                          fontSize: 10,
+                          fontWeight:
+                              isSelected ? FontWeight.w600 : FontWeight.w400,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NavItem {
+  final IconData icon;
+  final IconData activeIcon;
+  final String label;
+  final bool isCreate;
+
+  const _NavItem({
+    required this.icon,
+    required this.activeIcon,
+    required this.label,
+    this.isCreate = false,
+  });
+}
+
+// ─── Create bottom sheet ──────────────────────────────────────────────────────
+
+class _CreateBottomSheet extends StatelessWidget {
+  final VoidCallback onCreatePlaylist;
+  final VoidCallback onCreateParty;
+
+  const _CreateBottomSheet({
+    required this.onCreatePlaylist,
+    required this.onCreateParty,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(0, 8, 0, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Drag handle
+            Container(
+              width: 36,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 20),
+              decoration: BoxDecoration(
+                color: const Color(0xFF555555),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+
+            // Playlist option
+            ListTile(
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+              leading: Container(
+                width: 52,
+                height: 52,
+                decoration: const BoxDecoration(
+                  color: Color(0xFF3A3A3A),
+                  shape: BoxShape.circle,
+                ),
+                child:
+                    const Icon(Icons.music_note, color: Colors.white, size: 26),
+              ),
+              title: const Text(
+                'Playlist',
+                style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16),
+              ),
+              subtitle: const Text(
+                'Create a playlist with songs or episodes',
+                style: TextStyle(color: Color(0xFFB3B3B3), fontSize: 13),
+              ),
+              onTap: onCreatePlaylist,
+            ),
+
+            // Party option
+            ListTile(
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+              leading: Container(
+                width: 52,
+                height: 52,
+                decoration: const BoxDecoration(
+                  color: Color(0xFF3A3A3A),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.people, color: Colors.white, size: 26),
+              ),
+              title: const Text(
+                'Party',
+                style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16),
+              ),
+              subtitle: const Text(
+                'Listen together with friends in real time',
+                style: TextStyle(color: Color(0xFFB3B3B3), fontSize: 13),
+              ),
+              onTap: onCreateParty,
+            ),
+          ],
+        ),
       ),
     );
   }

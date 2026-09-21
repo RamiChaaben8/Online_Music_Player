@@ -90,13 +90,16 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen>
           ],
         ),
       ),
-      body: TabBarView(
-        controller: _tabs,
-        children: [
-          _friendsList(state),
-          _requestsList(state),
-          _addFriend(),
-        ],
+      body: SafeArea(
+        top: false,
+        child: TabBarView(
+          controller: _tabs,
+          children: [
+            _friendsList(state),
+            _requestsList(state),
+            _addFriend(),
+          ],
+        ),
       ),
     );
   }
@@ -121,8 +124,8 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen>
   Widget _requestsList(FriendsState state) {
     final requests = [
       ...state.incomingRequests,
-      ...state.outgoingRequests.where(
-          (outgoing) => !state.incomingRequests.any((item) => item.id == outgoing.id)),
+      ...state.outgoingRequests.where((outgoing) =>
+          !state.incomingRequests.any((item) => item.id == outgoing.id)),
     ];
     if (requests.isEmpty) {
       return const _EmptyState(
@@ -230,8 +233,7 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen>
           subtitle: Row(
             children: [
               if (activity?['isPlaying'] == true) ...[
-                const Icon(Icons.equalizer,
-                    size: 16, color: Color(0xFF1DB954)),
+                const Icon(Icons.equalizer, size: 16, color: Color(0xFF1DB954)),
                 const SizedBox(width: 4),
               ],
               Expanded(
@@ -353,8 +355,7 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen>
       title: Text('@${profile?.username ?? 'unknown'}'),
       subtitle: const Text('Request sent'),
       trailing: TextButton(
-        onPressed: () =>
-            ref.read(friendsProvider.notifier).decline(request),
+        onPressed: () => ref.read(friendsProvider.notifier).decline(request),
         child: const Text('Cancel'),
       ),
     );

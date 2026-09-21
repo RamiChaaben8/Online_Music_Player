@@ -20,6 +20,8 @@ import '../models/song.dart';
 import '../providers/home_provider.dart';
 import '../providers/library_provider.dart';
 import '../providers/player_provider.dart';
+import 'now_playing_screen.dart';
+import '../widgets/profile_avatar.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -32,79 +34,97 @@ class HomeScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: const Color(0xFF0A0A0A),
-      body: RefreshIndicator(
-        color: const Color(0xFF1DB954),
-        backgroundColor: const Color(0xFF1A1A1A),
-        onRefresh: () => ref.read(homeProvider.notifier).refresh(),
-        child: CustomScrollView(
-          physics: const BouncingScrollPhysics(
-            parent: AlwaysScrollableScrollPhysics(),
-          ),
-          slivers: [
-            // ── Greeting header ──────────────────────────────────────────
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 56, 20, 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        _greeting(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+      body: SafeArea(
+        child: RefreshIndicator(
+          color: const Color(0xFF1DB954),
+          backgroundColor: const Color(0xFF1A1A1A),
+          onRefresh: () => ref.read(homeProvider.notifier).refresh(),
+          child: CustomScrollView(
+            physics: const BouncingScrollPhysics(
+              parent: AlwaysScrollableScrollPhysics(),
             ),
-
-            // ── Quick-play grid (recently played) ────────────────────────
-            if (recent.isNotEmpty)
+            slivers: [
+              // ── Greeting header ──────────────────────────────────────────
               SliverToBoxAdapter(
-                child: _QuickPlayGrid(
-                  songs: recent.take(6).toList(),
-                  onTap: (song) => ref
-                      .read(playerProvider.notifier)
-                      .playSong(song, queue: recent),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 20, 8),
+                  child: Row(
+                    children: [
+                      const ProfileAvatar(),
+                      Expanded(
+                        child: const SizedBox.shrink(),
+                      ),
+                    ],
+                  ),
                 ),
               ),
 
-            // ── Dynamic feed sections ────────────────────────────────────
-            if (homeState.initialLoading)
-              SliverToBoxAdapter(child: _buildFullSkeleton())
-            else
-              SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, i) {
-                    final section = homeState.sections[i];
-                    return _SectionRow(
-                      section: section,
-                      onSongTap: (song) => ref
-                          .read(playerProvider.notifier)
-                          .playSong(song, queue: section.songs),
-                    );
-                  },
-                  childCount: homeState.sections.length,
+              // ── Quick-play grid (recently played) ────────────────────────
+              if (recent.isNotEmpty)
+                SliverToBoxAdapter(
+                  child: _QuickPlayGrid(
+                    songs: recent.take(6).toList(),
+                    onTap: (song) {
+                      if (ref.read(playerProvider).currentSong?.id == song.id) {
+                        _openPlayer(context);
+                      } else {
+                        ref
+                            .read(playerProvider.notifier)
+                            .playSong(song, queue: recent);
+                        _openPlayer(context);
+                      }
+                    },
+                  ),
                 ),
-              ),
 
-            // Bottom padding for mini-player + nav bar
-            const SliverToBoxAdapter(child: SizedBox(height: 24)),
-          ],
+              // ── Dynamic feed sections ────────────────────────────────────
+              if (homeState.initialLoading)
+                SliverToBoxAdapter(child: _buildFullSkeleton())
+              else
+                SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, i) {
+                      final section = homeState.sections[i];
+                      return _SectionRow(
+                        section: section,
+                        onSongTap: (song) {
+                          if (ref.read(playerProvider).currentSong?.id ==
+                              song.id) {
+                            _openPlayer(context);
+                          } else {
+                            ref
+                                .read(playerProvider.notifier)
+                                .playSong(song, queue: section.songs);
+                            _openPlayer(context);
+                          }
+                        },
+                      );
+                    },
+                    childCount: homeState.sections.length,
+                  ),
+                ),
+
+              // Bottom padding for mini-player + nav bar
+              const SliverToBoxAdapter(child: SizedBox(height: 24)),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  String _greeting() {
-    final h = DateTime.now().hour;
-    if (h < 12) return 'Good morning ☀️';
-    if (h < 17) return 'Good afternoon 🎵';
-    return 'Good evening 🌙';
+  void _openPlayer(BuildContext context) {
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        pageBuilder: (_, __, ___) => const NowPlayingScreen(),
+        transitionsBuilder: (_, animation, __, child) => SlideTransition(
+          position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
+              .animate(CurvedAnimation(
+                  parent: animation, curve: Curves.easeOutCubic)),
+          child: child,
+        ),
+      ),
+    );
   }
 
   Widget _buildFullSkeleton() {
@@ -119,7 +139,6 @@ class HomeScreen extends ConsumerWidget {
       ),
     );
   }
-
 }
 
 // ─── Quick-play 2-column grid ─────────────────────────────────────────────────
@@ -186,15 +205,15 @@ class _QuickPlayChip extends StatelessWidget {
           children: [
             // Thumbnail
             ClipRRect(
-              borderRadius: const BorderRadius.horizontal(
-                  left: Radius.circular(6)),
+              borderRadius:
+                  const BorderRadius.horizontal(left: Radius.circular(6)),
               child: CachedNetworkImage(
                 imageUrl: song.thumbnailUrl,
                 width: 48,
                 height: 48,
                 fit: BoxFit.cover,
-                placeholder: (_, __) =>
-                    Container(width: 48, height: 48, color: const Color(0xFF282828)),
+                placeholder: (_, __) => Container(
+                    width: 48, height: 48, color: const Color(0xFF282828)),
                 errorWidget: (_, __, ___) => Container(
                   width: 48,
                   height: 48,
@@ -368,8 +387,7 @@ class _SongCard extends StatelessWidget {
               song.channelName,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                  color: Color(0xFFB3B3B3), fontSize: 11),
+              style: const TextStyle(color: Color(0xFFB3B3B3), fontSize: 11),
             ),
           ],
         ),
@@ -407,11 +425,9 @@ class _SectionSkeleton extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 6),
-                Container(
-                    width: 100, height: 10, color: Colors.white),
+                Container(width: 100, height: 10, color: Colors.white),
                 const SizedBox(height: 4),
-                Container(
-                    width: 70, height: 8, color: Colors.white),
+                Container(width: 70, height: 8, color: Colors.white),
               ],
             ),
           ),

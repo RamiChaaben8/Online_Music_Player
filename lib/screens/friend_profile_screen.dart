@@ -23,8 +23,7 @@ class _FriendProfileScreenState extends ConsumerState<FriendProfileScreen> {
   @override
   void initState() {
     super.initState();
-    _playlists =
-        FirestoreService().getFriendPlaylists(widget.profile.uid);
+    _playlists = FirestoreService().getFriendPlaylists(widget.profile.uid);
   }
 
   Future<void> _saveCopy(Playlist playlist) async {
@@ -43,38 +42,41 @@ class _FriendProfileScreenState extends ConsumerState<FriendProfileScreen> {
     final profile = widget.profile;
     return Scaffold(
       appBar: AppBar(title: const Text('Friend profile')),
-      body: FutureBuilder<List<Playlist>>(
-        future: _playlists,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(
-              child: Text(
-                'Could not load playlists. Check your connection and try again.',
-                textAlign: TextAlign.center,
-              ),
+      body: SafeArea(
+        top: false,
+        child: FutureBuilder<List<Playlist>>(
+          future: _playlists,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) {
+              return Center(
+                child: Text(
+                  'Could not load playlists. Check your connection and try again.',
+                  textAlign: TextAlign.center,
+                ),
+              );
+            }
+            final playlists = snapshot.data ?? const <Playlist>[];
+            return ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                _ProfileHeader(profile: profile),
+                const SizedBox(height: 24),
+                Text(
+                  '${profile.displayName.isEmpty ? '@${profile.username}' : profile.displayName}\'s playlists',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 12),
+                if (playlists.isEmpty)
+                  const Text('No public or friends-only playlists yet.')
+                else
+                  ...playlists.map(_playlistTile),
+              ],
             );
-          }
-          final playlists = snapshot.data ?? const <Playlist>[];
-          return ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              _ProfileHeader(profile: profile),
-              const SizedBox(height: 24),
-              Text(
-                '${profile.displayName.isEmpty ? '@${profile.username}' : profile.displayName}\'s playlists',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 12),
-              if (playlists.isEmpty)
-                const Text('No public or friends-only playlists yet.')
-              else
-                ...playlists.map(_playlistTile),
-            ],
-          );
-        },
+          },
+        ),
       ),
     );
   }
@@ -107,6 +109,7 @@ class _FriendProfileScreenState extends ConsumerState<FriendProfileScreen> {
             builder: (_) => PlaylistScreen(
               title: playlist.name,
               songs: playlist.songs,
+              playlist: playlist,
             ),
           ),
         ),

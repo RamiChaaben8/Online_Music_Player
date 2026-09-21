@@ -4,6 +4,7 @@
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:audio_service/audio_service.dart';
 import 'package:hive/hive.dart';
@@ -52,6 +53,8 @@ class AudioPlayerService {
   List<Song> _queue = [];
   int _currentIndex = -1;
   bool _shuffle = false;
+  final Set<int> _shufflePlayed = {};
+  final Random _random = Random();
   LoopMode _loopMode = LoopMode.off;
   double _volume = 1.0;
 
@@ -113,6 +116,9 @@ class AudioPlayerService {
         _queue.insert(0, song);
         _currentIndex = 0;
       }
+      _shufflePlayed
+        ..clear()
+        ..add(_currentIndex);
     } else {
       if (!_queue.any((s) => s.id == song.id)) {
         _queue = [song];
@@ -174,9 +180,24 @@ class AudioPlayerService {
 
   Future<void> skipToNext() async {
     if (_queue.isEmpty) return;
-    final next = _shuffle
-        ? (DateTime.now().millisecondsSinceEpoch % _queue.length)
-        : (_currentIndex + 1) % _queue.length;
+    int next;
+    if (_shuffle && _queue.length > 1) {
+      var candidates = List<int>.generate(_queue.length, (index) => index)
+          .where((index) => !_shufflePlayed.contains(index))
+          .toList();
+      if (candidates.isEmpty) {
+        _shufflePlayed
+          ..clear()
+          ..add(_currentIndex);
+        candidates = List<int>.generate(_queue.length, (index) => index)
+            .where((index) => index != _currentIndex)
+            .toList();
+      }
+      next = candidates[_random.nextInt(candidates.length)];
+      _shufflePlayed.add(next);
+    } else {
+      next = (_currentIndex + 1) % _queue.length;
+    }
     _currentIndex = next;
     await _loadAndPlay(_currentIndex);
   }
@@ -191,7 +212,12 @@ class AudioPlayerService {
     await _loadAndPlay(_currentIndex);
   }
 
-  void toggleShuffle() => _shuffle = !_shuffle;
+  void toggleShuffle() {
+    _shuffle = !_shuffle;
+    _shufflePlayed
+      ..clear()
+      ..add(_currentIndex);
+  }
 
   void toggleLoopMode() {
     switch (_loopMode) {

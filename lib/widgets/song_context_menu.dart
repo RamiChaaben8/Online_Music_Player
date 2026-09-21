@@ -16,6 +16,7 @@ import '../models/song.dart';
 import '../models/playlist.dart';
 import '../providers/library_provider.dart';
 import '../providers/player_provider.dart';
+import '../screens/queue_screen.dart';
 import '../desktop/theme/desktop_theme.dart';
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -83,19 +84,25 @@ Future<void> showSongContextMenu({
           child: _row(Icons.remove_circle_outline, 'Remove from this playlist',
               theme: theme),
         ),
-      PopupMenuItem(
-        value: _Action.toggleLike,
-        child: _row(
-          isLiked ? Icons.favorite : Icons.favorite_border,
-          isLiked ? 'Remove from Liked Songs' : 'Save to your Liked Songs',
-          color: isLiked ? theme?.button ?? const Color(0xFF1DB954) : null,
-          theme: theme,
+      if (currentPlaylist == null)
+        PopupMenuItem(
+          value: _Action.toggleLike,
+          child: _row(
+            isLiked ? Icons.favorite : Icons.favorite_border,
+            isLiked ? 'Remove from Liked Songs' : 'Save to your Liked Songs',
+            color: isLiked ? theme?.button ?? const Color(0xFF1DB954) : null,
+            theme: theme,
+          ),
         ),
-      ),
       PopupMenuItem(
         value: _Action.addToQueue,
         child: _row(Icons.queue_music, 'Add to queue', theme: theme),
       ),
+      if (currentPlaylist != null)
+        PopupMenuItem(
+          value: _Action.goToQueue,
+          child: _row(Icons.queue_play_next, 'Go to queue', theme: theme),
+        ),
     ],
   );
 
@@ -123,6 +130,12 @@ Future<void> showSongContextMenu({
     case _Action.addToQueue:
       ref.read(playerProvider.notifier).addToQueue(song);
       if (context.mounted) _snack(context, 'Added to queue');
+    case _Action.goToQueue:
+      if (context.mounted) {
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const QueueScreen()),
+        );
+      }
   }
 }
 
@@ -176,7 +189,13 @@ class SongMenuButton extends ConsumerWidget {
 
 // ─── Internals ────────────────────────────────────────────────────────────────
 
-enum _Action { addToPlaylist, removeFromPlaylist, toggleLike, addToQueue }
+enum _Action {
+  addToPlaylist,
+  removeFromPlaylist,
+  toggleLike,
+  addToQueue,
+  goToQueue,
+}
 
 Widget _row(IconData icon, String label, {Color? color, AppThemeData? theme}) {
   final c = color ?? theme?.text ?? Colors.white;

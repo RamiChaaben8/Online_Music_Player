@@ -32,9 +32,7 @@ class QueueScreen extends ConsumerWidget {
     final hasCurrent = currentIndex >= 0 && currentIndex < queue.length;
     final currentSong = hasCurrent ? queue[currentIndex] : null;
     // Songs that come after the current index
-    final upNext = hasCurrent
-        ? queue.sublist(currentIndex + 1)
-        : [];
+    final upNext = hasCurrent ? queue.sublist(currentIndex + 1) : [];
 
     return Scaffold(
       backgroundColor: const Color(0xFF0A0A0A),
@@ -65,7 +63,8 @@ class QueueScreen extends ConsumerWidget {
                     children: [
                       Icon(Icons.clear_all, color: Colors.white70, size: 18),
                       SizedBox(width: 12),
-                      Text('Clear queue', style: TextStyle(color: Colors.white)),
+                      Text('Clear queue',
+                          style: TextStyle(color: Colors.white)),
                     ],
                   ),
                 ),
@@ -73,14 +72,17 @@ class QueueScreen extends ConsumerWidget {
             ),
         ],
       ),
-      body: queue.isEmpty
-          ? _EmptyQueue()
-          : _QueueList(
-              queue: queue,
-              currentIndex: currentIndex,
-              currentSong: currentSong,
-              upNext: upNext,
-            ),
+      body: SafeArea(
+        top: false,
+        child: queue.isEmpty
+            ? _EmptyQueue()
+            : _QueueList(
+                queue: queue,
+                currentIndex: currentIndex,
+                currentSong: currentSong,
+                upNext: upNext,
+              ),
+      ),
     );
   }
 }
@@ -199,8 +201,8 @@ class _QueueList extends ConsumerWidget {
               child: Center(
                 child: Text(
                   'Nothing queued after this song',
-                  style: const TextStyle(
-                      color: Color(0xFF555555), fontSize: 13),
+                  style:
+                      const TextStyle(color: Color(0xFF555555), fontSize: 13),
                 ),
               ),
             ),
@@ -274,8 +276,7 @@ class _NowPlayingTile extends StatelessWidget {
         border: Border.all(color: const Color(0xFF1DB954).withOpacity(0.25)),
       ),
       child: ListTile(
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         leading: _Thumbnail(url: song.thumbnailUrl, playing: true),
         title: Text(
           song.title,
@@ -293,8 +294,8 @@ class _NowPlayingTile extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(color: Color(0xFFB3B3B3), fontSize: 12),
         ),
-        trailing: const Icon(Icons.graphic_eq,
-            color: Color(0xFF1DB954), size: 22),
+        trailing:
+            const Icon(Icons.graphic_eq, color: Color(0xFF1DB954), size: 22),
       ),
     );
   }
@@ -347,8 +348,7 @@ class _UpNextTile extends ConsumerWidget {
       onLongPress: () => _showContextMenu(context, ref),
       child: ListTile(
         key: ValueKey('tile_${song.id}_$index'),
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         leading: _Thumbnail(url: song.thumbnailUrl, playing: false),
         title: Text(
           song.title,
@@ -367,21 +367,19 @@ class _UpNextTile extends ConsumerWidget {
           children: [
             // Remove button
             IconButton(
-              icon: const Icon(Icons.close,
-                  color: Color(0xFF555555), size: 18),
+              icon: const Icon(Icons.close, color: Color(0xFF555555), size: 18),
               onPressed: () =>
                   ref.read(playerProvider.notifier).removeFromQueue(index),
               padding: EdgeInsets.zero,
-              constraints:
-                  const BoxConstraints(minWidth: 32, minHeight: 32),
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
             ),
             // Drag handle
             ReorderableDragStartListener(
               index: slotIndex,
               child: const Padding(
                 padding: EdgeInsets.only(left: 4),
-                child: Icon(Icons.drag_handle,
-                    color: Color(0xFF3A3A3A), size: 22),
+                child:
+                    Icon(Icons.drag_handle, color: Color(0xFF3A3A3A), size: 22),
               ),
             ),
           ],
@@ -466,8 +464,8 @@ class _QueueContextMenu extends ConsumerWidget {
           ListTile(
             leading: const Icon(Icons.queue_play_next,
                 color: Colors.white70, size: 22),
-            title: const Text('Play next',
-                style: TextStyle(color: Colors.white)),
+            title:
+                const Text('Play next', style: TextStyle(color: Colors.white)),
             onTap: () {
               Navigator.pop(context);
               // Remove from current position first, then insert after current
@@ -485,8 +483,8 @@ class _QueueContextMenu extends ConsumerWidget {
 
           // Add to end of queue
           ListTile(
-            leading: const Icon(Icons.add_to_queue,
-                color: Colors.white70, size: 22),
+            leading:
+                const Icon(Icons.add_to_queue, color: Colors.white70, size: 22),
             title: const Text('Add to queue',
                 style: TextStyle(color: Colors.white)),
             subtitle: const Text('Move to end',
@@ -501,8 +499,8 @@ class _QueueContextMenu extends ConsumerWidget {
 
           // Remove
           ListTile(
-            leading:
-                const Icon(Icons.remove_circle_outline, color: Colors.redAccent, size: 22),
+            leading: const Icon(Icons.remove_circle_outline,
+                color: Colors.redAccent, size: 22),
             title: const Text('Remove from queue',
                 style: TextStyle(color: Colors.redAccent)),
             onTap: () {
@@ -527,7 +525,8 @@ class _SwipeBackground extends StatelessWidget {
       alignment: Alignment.centerRight,
       padding: const EdgeInsets.only(right: 24),
       color: Colors.red.withOpacity(0.15),
-      child: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 26),
+      child:
+          const Icon(Icons.delete_outline, color: Colors.redAccent, size: 26),
     );
   }
 }
@@ -585,8 +584,7 @@ class _Thumbnail extends StatelessWidget {
       width: sz,
       height: sz,
       color: const Color(0xFF282828),
-      child: const Icon(Icons.music_note,
-          color: Color(0xFF3A3A3A), size: 22),
+      child: const Icon(Icons.music_note, color: Color(0xFF3A3A3A), size: 22),
     );
   }
 }
