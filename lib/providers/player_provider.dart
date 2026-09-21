@@ -446,8 +446,20 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   }
 
   /// Called after login. Only runs if this device is the active device.
+  Future<void> restoreCachedSession(String uid) async {
+    final doc = await _sync.service.getCachedLastStateForUser(uid);
+    if (doc != null) {
+      _applyRestoredState(doc, loadAudio: false);
+    }
+  }
+
   Future<void> restoreLastSession() async {
     try {
+      final cached = await _sync.service.getCachedLastState();
+      if (cached != null) {
+        _applyRestoredState(cached, loadAudio: false);
+      }
+
       final doc = await _sync.service.getLastState();
       if (doc == null) return;
       if (!mounted) return;
@@ -515,6 +527,23 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     } finally {
       _applyingRemote = false;
     }
+  }
+
+  void _applyRestoredState(
+    RemoteCommandDoc doc, {
+    required bool loadAudio,
+  }) {
+    if (!mounted) return;
+    state = state.copyWith(
+      currentSong: doc.currentSong,
+      queue: doc.queue,
+      currentIndex: doc.queueIndex,
+      position: Duration(milliseconds: doc.positionMs),
+      duration: doc.currentSong?.duration ?? Duration.zero,
+      isLoading: loadAudio,
+      isPlaying: doc.isPlaying,
+      clearError: true,
+    );
   }
 
   // ── Dismiss banner ────────────────────────────────────────────────────────
@@ -665,10 +694,13 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
         _handler.updateCurrentSong();
         _pushMarquee();
         if (_service.currentSong != null) {
-          _library.addToRecentlyPlayed(_service.currentSong!).catchError((_) {});
+          _library
+              .addToRecentlyPlayed(_service.currentSong!)
+              .catchError((_) {});
         }
       } catch (error) {
-        state = state.copyWith(isLoading: false, error: 'Could not skip: $error');
+        state =
+            state.copyWith(isLoading: false, error: 'Could not skip: $error');
       }
     } else {
       // Passive: show loading spinner; real song update comes via playSong observe.
@@ -691,7 +723,8 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
         _handler.updateCurrentSong();
         _pushMarquee();
       } catch (error) {
-        state = state.copyWith(isLoading: false, error: 'Could not skip: $error');
+        state =
+            state.copyWith(isLoading: false, error: 'Could not skip: $error');
       }
     } else {
       state = state.copyWith(isLoading: true, clearError: true);

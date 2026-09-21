@@ -34,6 +34,7 @@ import 'firestore_service.dart';
 import 'device_id_service.dart';
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:hive/hive.dart';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -225,6 +226,14 @@ class SyncService {
     required bool isPlaying,
   }) async {
     if (_uid == null || _deviceId == null) return;
+    await _saveLocalPlaybackState(
+      uid: _uid!,
+      currentSong: currentSong,
+      queue: queue,
+      queueIndex: queueIndex,
+      positionMs: positionMs,
+      isPlaying: isPlaying,
+    );
     await _fs.writeRemoteCommand(
       uid: _uid!,
       deviceId: _deviceId!,
@@ -266,6 +275,51 @@ class SyncService {
     if (raw == null) return null;
     return RemoteCommandDoc.fromMap(raw);
   }
+
+  Future<RemoteCommandDoc?> getCachedLastState() async {
+    if (_uid == null) return null;
+    return getCachedLastStateForUser(_uid!);
+  }
+
+  Future<RemoteCommandDoc?> getCachedLastStateForUser(String uid) async {
+    final value = Hive.box('settings').get(_playbackCacheKey(uid));
+    if (value is! Map) return null;
+
+    try {
+      return RemoteCommandDoc(
+        command: RemoteCommand.none,
+        deviceId: _deviceId ?? '',
+        deviceName: _deviceName ?? 'This device',
+        currentSong: value['currentSong'] as Song?,
+        queue:
+            (value['queue'] as List?)?.whereType<Song>().toList() ?? const [],
+        queueIndex: (value['queueIndex'] as num?)?.toInt() ?? 0,
+        positionMs: (value['positionMs'] as num?)?.toInt() ?? 0,
+        isPlaying: value['isPlaying'] as bool? ?? false,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _saveLocalPlaybackState({
+    required String uid,
+    required Song? currentSong,
+    required List<Song> queue,
+    required int queueIndex,
+    required int positionMs,
+    required bool isPlaying,
+  }) async {
+    await Hive.box('settings').put(_playbackCacheKey(uid), {
+      'currentSong': currentSong,
+      'queue': List<Song>.from(queue),
+      'queueIndex': queueIndex,
+      'positionMs': positionMs,
+      'isPlaying': isPlaying,
+    });
+  }
+
+  String _playbackCacheKey(String uid) => 'playback_state_$uid';
 
   // ── Device list stream ────────────────────────────────────────────────────
 

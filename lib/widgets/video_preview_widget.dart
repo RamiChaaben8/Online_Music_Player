@@ -13,11 +13,13 @@
 
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
+import 'dart:math';
 
 import '../services/youtube_service.dart';
 
 class VideoPreviewWidget extends StatefulWidget {
   final String videoId;
+
   /// How to fit the video within its container. Defaults to [BoxFit.contain].
   final BoxFit fit;
 
@@ -33,10 +35,15 @@ class VideoPreviewWidget extends StatefulWidget {
 
 class _VideoPreviewWidgetState extends State<VideoPreviewWidget> {
   final YoutubeService _yt = YoutubeService();
+  static const _previewDuration = Duration(seconds: 10);
+  final Random _random = Random();
   VideoPlayerController? _controller;
 
   bool _loading = true;
   String? _error;
+  Duration _previewStart = Duration.zero;
+  bool _seekingToLoopStart = false;
+  int _loadSerial = 0;
 
   @override
   void initState() {
@@ -48,6 +55,7 @@ class _VideoPreviewWidgetState extends State<VideoPreviewWidget> {
   void didUpdateWidget(VideoPreviewWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.videoId != widget.videoId) {
+      _loadSerial++;
       _disposeController();
       setState(() {
         _loading = true;
@@ -58,20 +66,23 @@ class _VideoPreviewWidgetState extends State<VideoPreviewWidget> {
   }
 
   Future<void> _initVideo(String videoId) async {
+    final loadSerial = ++_loadSerial;
     try {
       final url = await _yt.getVideoStreamUrl(videoId);
-      if (!mounted) return;
+      if (!mounted || loadSerial != _loadSerial) return;
 
       final controller = VideoPlayerController.networkUrl(Uri.parse(url));
       await controller.initialize();
-      if (!mounted) {
+      if (!mounted || loadSerial != _loadSerial) {
         controller.dispose();
         return;
       }
 
       // Mute video player — just_audio owns the audio
       await controller.setVolume(0);
-      await controller.setLooping(true);
+      _previewStart = _randomPreviewStart(controller.value.duration);
+      controller.addListener(_loopPreviewSegment);
+      await controller.seekTo(_previewStart);
       await controller.play();
 
       setState(() {
@@ -79,7 +90,7 @@ class _VideoPreviewWidgetState extends State<VideoPreviewWidget> {
         _loading = false;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || loadSerial != _loadSerial) return;
       setState(() {
         _loading = false;
         _error = e is YoutubeServiceException ? e.message : 'Video unavailable';
@@ -87,7 +98,37 @@ class _VideoPreviewWidgetState extends State<VideoPreviewWidget> {
     }
   }
 
+  Duration _randomPreviewStart(Duration duration) {
+    final maxStart = duration - _previewDuration;
+    if (maxStart <= Duration.zero) return Duration.zero;
+
+    // Choose from the middle half of the video rather than the intro/outro.
+    final middleStart = maxStart * 0.25;
+    final middleEnd = maxStart * 0.75;
+    final seconds = middleStart.inSeconds +
+        _random.nextInt(max(1, (middleEnd - middleStart).inSeconds + 1));
+    return Duration(seconds: seconds);
+  }
+
+  void _loopPreviewSegment() {
+    final controller = _controller;
+    if (controller == null ||
+        !controller.value.isInitialized ||
+        _seekingToLoopStart) {
+      return;
+    }
+
+    final segmentEnd = _previewStart + _previewDuration;
+    if (controller.value.position >= segmentEnd) {
+      _seekingToLoopStart = true;
+      controller.seekTo(_previewStart).whenComplete(() {
+        _seekingToLoopStart = false;
+      });
+    }
+  }
+
   void _disposeController() {
+    _controller?.removeListener(_loopPreviewSegment);
     _controller?.dispose();
     _controller = null;
   }
@@ -141,8 +182,7 @@ class _VideoPreviewWidgetState extends State<VideoPreviewWidget> {
               const SizedBox(height: 6),
               Text(
                 _error!,
-                style:
-                    const TextStyle(color: Color(0xFF666666), fontSize: 11),
+                style: const TextStyle(color: Color(0xFF666666), fontSize: 11),
                 textAlign: TextAlign.center,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,

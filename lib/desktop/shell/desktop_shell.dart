@@ -321,16 +321,25 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
                     // LyricsPanel is a separate fullscreen overlay (below).
                     if (wideEnough) ...[
                       SizedBox(width: 8),
-                      if (panelMode == PanelMode.queue)
-                        QueuePanel(
-                          key: const ValueKey('queue'),
-                          onClose: () => ref
-                              .read(panelModeProvider.notifier)
-                              .state = PanelMode.none,
-                        )
-                      else
-                        const DesktopNowPlayingPanel(
-                            key: ValueKey('nowplaying')),
+                      Stack(
+                        children: [
+                          Offstage(
+                            offstage: panelMode != PanelMode.queue,
+                            child: QueuePanel(
+                              key: const ValueKey('queue'),
+                              onClose: () => ref
+                                  .read(panelModeProvider.notifier)
+                                  .state = PanelMode.none,
+                            ),
+                          ),
+                          Offstage(
+                            offstage: panelMode == PanelMode.queue,
+                            child: const DesktopNowPlayingPanel(
+                              key: ValueKey('nowplaying'),
+                            ),
+                          ),
+                        ],
+                      ),
                     ],
                   ],
                 ),

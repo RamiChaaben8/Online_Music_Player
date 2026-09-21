@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:hive/hive.dart';
 
 class AppThemeData {
   final String name;
@@ -266,11 +267,33 @@ class AppThemeData {
 class AppThemeNotifier extends ValueNotifier<AppThemeData> {
   AppThemeNotifier._() : super(AppThemeData.green);
   static final instance = AppThemeNotifier._();
+  static const _storageKey = 'desktop_theme';
 
   void toggle() => value =
       value == AppThemeData.green ? AppThemeData.red : AppThemeData.green;
 
-  void setTheme(AppThemeData theme) => value = theme;
+  void setTheme(AppThemeData theme) {
+    value = theme;
+    _saveTheme(theme);
+  }
+
+  static Future<void> restoreSavedTheme() async {
+    final box = Hive.box('settings');
+    final name = box.get(_storageKey);
+    if (name is! String) return;
+
+    final saved = AppThemeData.all.cast<AppThemeData?>().firstWhere(
+          (theme) => theme?.name == name,
+          orElse: () => null,
+        );
+    if (saved != null) {
+      instance.value = saved;
+    }
+  }
+
+  static Future<void> _saveTheme(AppThemeData theme) async {
+    await Hive.box('settings').put(_storageKey, theme.name);
+  }
 }
 
 class AppThemeScope extends InheritedWidget {

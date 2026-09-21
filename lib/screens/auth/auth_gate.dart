@@ -79,6 +79,9 @@ class AuthGate extends ConsumerWidget {
 
           try {
             ref.read(libraryProvider.notifier).initForUser(user.uid);
+            await ref
+                .read(playerProvider.notifier)
+                .restoreCachedSession(user.uid);
             await ref.read(syncProvider.notifier).init(user.uid);
 
             // If no device is currently active, this device auto-claims.

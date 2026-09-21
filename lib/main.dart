@@ -22,26 +22,12 @@ import 'services/library_service.dart';
 import 'services/audio_player_service.dart';
 import 'services/audio_handler.dart';
 import 'providers/player_provider.dart';
+import 'desktop/theme/app_theme.dart';
 
 /// Global handler — initialised once in main(), shared via provider.
 late final TuneifyAudioHandler audioHandler;
 
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-
-  // Initialise Firebase first — required before any Firebase service is used.
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
-
-  // Enable Firestore offline persistence.
-  // On mobile this is the default; on Web/Desktop we enable it explicitly.
-  // This lets the app read/write while offline and sync when back online.
-  FirebaseFirestore.instance.settings = const Settings(
-    persistenceEnabled: true,
-    cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
-  );
-
+Future<void> _initializeHive() async {
   await Hive.initFlutter();
   Hive.registerAdapter(SongAdapter());
   Hive.registerAdapter(PlaylistAdapter());
@@ -53,6 +39,30 @@ Future<void> main() async {
     Hive.openBox('settings'),
     Hive.openBox('stream_url_cache'),
   ]);
+}
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  final firebaseInit = Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+  final hiveInit = _initializeHive();
+
+  await firebaseInit;
+
+  // Enable Firestore offline persistence.
+  // On mobile this is the default; on Web/Desktop we enable it explicitly.
+  // This lets the app read/write while offline and sync when back online.
+  FirebaseFirestore.instance.settings = const Settings(
+    persistenceEnabled: true,
+    cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+  );
+
+  await hiveInit;
+  if (Platform.isWindows) {
+    await AppThemeNotifier.restoreSavedTheme();
+  }
 
   // Initialise the media_kit backend for Windows/Linux.
   // On Android, just_audio uses its own native backend — this call is a no-op.
@@ -87,13 +97,13 @@ Future<void> main() async {
   // On Android/iOS/macOS AudioService.init keeps working normally for
   // lock-screen controls, notifications and the foreground service.
   if (Platform.isWindows || Platform.isLinux) {
-    final yt     = YoutubeService();
+    final yt = YoutubeService();
     final player = AudioPlayerService(yt);
     audioHandler = TuneifyAudioHandler(player);
   } else {
     audioHandler = await AudioService.init(
       builder: () {
-        final yt     = YoutubeService();
+        final yt = YoutubeService();
         final player = AudioPlayerService(yt);
         return TuneifyAudioHandler(player);
       },
@@ -137,7 +147,7 @@ void _warmCache() {
     final yt = YoutubeService();
 
     final recent = lib.getRecentlyPlayed().take(6).toList();
-    final liked  = lib.getLikedSongs().take(4).toList();
+    final liked = lib.getLikedSongs().take(4).toList();
 
     final Map<String, Song> byId = {};
     for (final s in [...recent, ...liked]) {
