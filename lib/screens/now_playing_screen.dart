@@ -722,29 +722,35 @@ class _LyricsPage extends ConsumerWidget {
               ),
             ),
             Expanded(
-              child: ListView.builder(
-                controller: scroll,
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                itemCount: lyrics.lines.length,
-                itemBuilder: (_, i) {
-                  final line = lyrics.lines[i];
-                  final isActive = position >= line.start &&
-                      (i == lyrics.lines.length - 1 ||
-                          position < lyrics.lines[i + 1].start);
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 16),
-                    child: Text(
-                      line.text,
-                      style: TextStyle(
-                        color: isActive ? Colors.white : Colors.white54,
-                        fontSize: isActive ? 18 : 16,
-                        fontWeight:
-                            isActive ? FontWeight.bold : FontWeight.normal,
-                        height: 1.4,
+              child: Directionality(
+                textDirection:
+                    lyrics.isArabic ? TextDirection.rtl : TextDirection.ltr,
+                child: ListView.builder(
+                  controller: scroll,
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                  itemCount: lyrics.lines.length,
+                  itemBuilder: (_, i) {
+                    final line = lyrics.lines[i];
+                    final isActive = position >= line.start &&
+                        (i == lyrics.lines.length - 1 ||
+                            position < lyrics.lines[i + 1].start);
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: Text(
+                        line.text,
+                        textAlign:
+                            lyrics.isArabic ? TextAlign.right : TextAlign.left,
+                        style: TextStyle(
+                          color: isActive ? Colors.white : Colors.white54,
+                          fontSize: isActive ? 18 : 16,
+                          fontWeight:
+                              isActive ? FontWeight.bold : FontWeight.normal,
+                          height: 1.4,
+                        ),
                       ),
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
               ),
             ),
           ],
@@ -774,26 +780,30 @@ class _LyricsBody extends StatelessWidget {
     final end = (activeIdx + 5).clamp(0, lines.length);
     final preview = lines.sublist(start, end);
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: preview.asMap().entries.map((e) {
-          final globalIdx = start + e.key;
-          final isActive = globalIdx == activeIdx;
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: Text(
-              e.value.text,
-              style: TextStyle(
-                color: isActive ? Colors.white : Colors.white60,
-                fontSize: isActive ? 17 : 15,
-                fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-                height: 1.4,
+    return Directionality(
+      textDirection: lyrics.isArabic ? TextDirection.rtl : TextDirection.ltr,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: preview.asMap().entries.map((e) {
+            final globalIdx = start + e.key;
+            final isActive = globalIdx == activeIdx;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Text(
+                e.value.text,
+                textAlign: lyrics.isArabic ? TextAlign.right : TextAlign.left,
+                style: TextStyle(
+                  color: isActive ? Colors.white : Colors.white60,
+                  fontSize: isActive ? 17 : 15,
+                  fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                  height: 1.4,
+                ),
               ),
-            ),
-          );
-        }).toList(),
+            );
+          }).toList(),
+        ),
       ),
     );
   }

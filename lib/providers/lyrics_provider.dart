@@ -31,6 +31,9 @@ class LyricsState {
 
   bool get hasLyrics => lines.isNotEmpty;
 
+  bool get isArabic =>
+      selectedTrackCode?.toLowerCase().split('-').first == 'ar';
+
   /// The label of the currently selected track, or null.
   String? get selectedTrackLabel => availableTracks
       .where((t) => t.code == selectedTrackCode)
@@ -69,7 +72,9 @@ class LyricsNotifier extends StateNotifier<LyricsState> {
 
   /// Fetch lyrics for a new video (auto-picks best track, loads available tracks).
   Future<void> fetchFor(String videoId) async {
-    if (state.videoId == videoId && !state.isLoading && (state.hasLyrics || state.error != null)) return;
+    if (state.videoId == videoId &&
+        !state.isLoading &&
+        (state.hasLyrics || state.error != null)) return;
 
     state = LyricsState(videoId: videoId, isLoading: true);
 
@@ -82,7 +87,7 @@ class LyricsNotifier extends StateNotifier<LyricsState> {
 
       if (!mounted) return;
 
-      final lines  = results[0] as List<LyricLine>;
+      final lines = results[0] as List<LyricLine>;
       final tracks = results[1] as List<CaptionTrackInfo>;
 
       // Find which track was auto-selected (prefer English)

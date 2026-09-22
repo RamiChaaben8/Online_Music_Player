@@ -199,15 +199,21 @@ class _LyricsPanelState extends ConsumerState<LyricsPanel> {
 
                     // Scrollable lyrics box
                     Expanded(
-                      child: CustomScrollView(
-                        controller: _scroll,
-                        physics: const BouncingScrollPhysics(
-                          parent: AlwaysScrollableScrollPhysics(),
+                      child: Directionality(
+                        textDirection: lyrics.isArabic
+                            ? TextDirection.rtl
+                            : TextDirection.ltr,
+                        child: CustomScrollView(
+                          controller: _scroll,
+                          physics: const BouncingScrollPhysics(
+                            parent: AlwaysScrollableScrollPhysics(),
+                          ),
+                          slivers: [
+                            _buildLyricsSliver(lyrics, ps.position),
+                            const SliverToBoxAdapter(
+                                child: SizedBox(height: 60)),
+                          ],
                         ),
-                        slivers: [
-                          _buildLyricsSliver(lyrics, ps.position),
-                          const SliverToBoxAdapter(child: SizedBox(height: 60)),
-                        ],
                       ),
                     ),
                   ],
@@ -432,28 +438,34 @@ class _LyricLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isRtl = Directionality.of(context) == TextDirection.rtl;
+
     // ── Karaoke word-by-word when active and timing available ───────
     if (isActive && line.hasWordTiming) {
       return Padding(
         padding: EdgeInsets.only(bottom: 16),
-        child: Wrap(
-          spacing: 0,
-          runSpacing: 2,
-          children: line.words.map((word) {
-            final lit = position >= word.start;
-            return AnimatedDefaultTextStyle(
-              duration: const Duration(milliseconds: 120),
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w800,
-                height: 1.3,
-                color: lit
-                    ? context.appTheme.button
-                    : context.appTheme.text.withValues(alpha: 0.45),
-              ),
-              child: Text('${word.text} '),
-            );
-          }).toList(),
+        child: Align(
+          alignment: isRtl ? Alignment.centerRight : Alignment.centerLeft,
+          child: Wrap(
+            textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
+            spacing: 0,
+            runSpacing: 2,
+            children: line.words.map((word) {
+              final lit = position >= word.start;
+              return AnimatedDefaultTextStyle(
+                duration: const Duration(milliseconds: 120),
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  height: 1.3,
+                  color: lit
+                      ? context.appTheme.button
+                      : context.appTheme.text.withValues(alpha: 0.45),
+                ),
+                child: Text('${word.text} '),
+              );
+            }).toList(),
+          ),
         ),
       );
     }
@@ -473,7 +485,13 @@ class _LyricLine extends StatelessWidget {
           fontWeight: isActive ? FontWeight.w800 : FontWeight.w500,
           height: 1.3,
         ),
-        child: Text(line.text),
+        child: Align(
+          alignment: isRtl ? Alignment.centerRight : Alignment.centerLeft,
+          child: Text(
+            line.text,
+            textAlign: isRtl ? TextAlign.right : TextAlign.left,
+          ),
+        ),
       ),
     );
   }

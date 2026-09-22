@@ -405,28 +405,34 @@ class _DesktopNowPlayingPanelState
 
     // NeverScrollableScrollPhysics because wheel events are handled by
     // the Listener above — _scrollLyricsBy() drives _lyricsScroll directly.
-    return ListView.builder(
-      controller: _lyricsScroll,
-      physics: const NeverScrollableScrollPhysics(),
-      padding: EdgeInsets.fromLTRB(14, 0, 14, 16),
-      itemCount: lyrics.lines.length + 1, // +1 for footer
-      itemBuilder: (context, i) {
-        if (i == lyrics.lines.length) {
-          return Padding(
-            padding: EdgeInsets.only(top: 8),
-            child: Text(
-              'Lyrics provided by YouTube',
-              style: TextStyle(color: context.appTheme.shadow, fontSize: 11),
-            ),
+    final isRtl = lyrics.isArabic;
+    return Directionality(
+      textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
+      child: ListView.builder(
+        controller: _lyricsScroll,
+        physics: const NeverScrollableScrollPhysics(),
+        padding: EdgeInsets.fromLTRB(14, 0, 14, 16),
+        itemCount: lyrics.lines.length + 1, // +1 for footer
+        itemBuilder: (context, i) {
+          if (i == lyrics.lines.length) {
+            return Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Text(
+                'Lyrics provided by YouTube',
+                textAlign: isRtl ? TextAlign.right : TextAlign.left,
+                style: TextStyle(color: context.appTheme.shadow, fontSize: 11),
+              ),
+            );
+          }
+          return _LyricLine(
+            key: i < _lineKeys.length ? _lineKeys[i] : GlobalKey(),
+            line: lyrics.lines[i],
+            isActive: i == _activeIndex,
+            position: position,
+            isRtl: isRtl,
           );
-        }
-        return _LyricLine(
-          key: i < _lineKeys.length ? _lineKeys[i] : GlobalKey(),
-          line: lyrics.lines[i],
-          isActive: i == _activeIndex,
-          position: position,
-        );
-      },
+        },
+      ),
     );
   }
 }
@@ -977,12 +983,14 @@ class _LyricLine extends StatelessWidget {
   final LyricLine line;
   final bool isActive;
   final Duration position; // current playback position for word highlighting
+  final bool isRtl;
 
   const _LyricLine({
     super.key,
     required this.line,
     required this.isActive,
     required this.position,
+    required this.isRtl,
   });
 
   static const _fallbackFonts = [
@@ -1004,25 +1012,32 @@ class _LyricLine extends StatelessWidget {
     if (isActive && line.hasWordTiming) {
       return Padding(
         padding: EdgeInsets.only(bottom: 18),
-        child: Wrap(
-          spacing: 0,
-          runSpacing: 2,
-          children: line.words.map((word) {
-            final lit = position >= word.start;
-            return AnimatedDefaultTextStyle(
-              duration: const Duration(milliseconds: 120),
-              style: TextStyle(
-                fontFamilyFallback: _fallbackFonts,
-                fontSize: fontSize,
-                fontWeight: fontWeight,
-                height: 1.35,
-                color: lit
-                    ? context.appTheme.button
-                    : context.appTheme.text.withValues(alpha: 0.55),
-              ),
-              child: Text('${word.text} '),
-            );
-          }).toList(),
+        child: Align(
+          alignment: isRtl ? Alignment.centerRight : Alignment.centerLeft,
+          child: Wrap(
+            textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
+            spacing: 0,
+            runSpacing: 2,
+            children: line.words.map((word) {
+              final lit = position >= word.start;
+              return AnimatedDefaultTextStyle(
+                duration: const Duration(milliseconds: 120),
+                style: TextStyle(
+                  fontFamilyFallback: _fallbackFonts,
+                  fontSize: fontSize,
+                  fontWeight: fontWeight,
+                  height: 1.35,
+                  color: lit
+                      ? context.appTheme.button
+                      : context.appTheme.text.withValues(alpha: 0.55),
+                ),
+                child: Text(
+                  '${word.text} ',
+                  textAlign: isRtl ? TextAlign.right : TextAlign.left,
+                ),
+              );
+            }).toList(),
+          ),
         ),
       );
     }
@@ -1039,7 +1054,14 @@ class _LyricLine extends StatelessWidget {
           height: 1.35,
           color: baseColor,
         ),
-        child: Text(line.text, softWrap: true),
+        child: Align(
+          alignment: isRtl ? Alignment.centerRight : Alignment.centerLeft,
+          child: Text(
+            line.text,
+            softWrap: true,
+            textAlign: isRtl ? TextAlign.right : TextAlign.left,
+          ),
+        ),
       ),
     );
   }
