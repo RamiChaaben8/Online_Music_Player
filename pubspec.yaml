@@ -1,5 +1,5 @@
-name: testf
-description: "A Spotify-like music streaming app that plays audio from YouTube."
+name: utify
+description: "Utify music streaming app."
 publish_to: 'none'
 
 version: 1.0.0+1
@@ -25,6 +25,9 @@ dependencies:
   # Windows/Linux audio backend for just_audio (Android uses just_audio natively)
   just_audio_media_kit: ^2.1.0
   media_kit_libs_windows_audio: any
+
+  # MP3 conversion on Android (not used on Windows — see lib/platform/ffmpeg_converter.dart)
+  ffmpeg_kit_flutter_new_audio: ^2.5.2
 
   # Local storage with Hive
   hive: ^2.2.3

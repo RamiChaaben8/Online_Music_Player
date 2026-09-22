@@ -8,12 +8,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/playlist.dart';
 import '../../providers/local_music_provider.dart';
+import '../../providers/download_provider.dart';
 import '../../providers/panel_provider.dart';
 import '../../providers/player_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/sync_provider.dart';
 import '../../providers/presence_provider.dart';
 import '../../providers/youtube_provider.dart';
+import '../../providers/friends_provider.dart';
 import '../../services/firestore_service.dart';
 import '../home/desktop_home_view.dart';
 import '../now_playing/desktop_now_playing_panel.dart';
@@ -93,6 +95,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
       ref.read(localMusicProvider.notifier).scan();
       final uid = ref.read(authServiceProvider).currentUser?.uid;
       if (uid != null) {
+        ref.read(friendsProvider.notifier).initForUser(uid);
         ref.read(presenceProvider.notifier).start(
               uid,
               playerState: ref.read(playerProvider),
@@ -111,6 +114,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       ref.read(localMusicProvider.notifier).scan();
+      ref.read(downloadProvider.notifier).refresh();
       final uid = ref.read(authServiceProvider).currentUser?.uid;
       if (uid != null) {
         ref.read(presenceProvider.notifier).start(
@@ -124,7 +128,6 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
     if (state == AppLifecycleState.hidden ||
         state == AppLifecycleState.paused) {
       ref.read(playerProvider.notifier).saveSession().catchError((_) {});
-      ref.read(presenceProvider.notifier).stop();
     }
     // Release active-device claim when app is fully closed so another
     // device can auto-claim on next launch.

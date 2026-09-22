@@ -17,6 +17,7 @@ import 'widgets/remote_playback_banner.dart';
 import 'widgets/offline_indicator.dart';
 import 'providers/player_provider.dart';
 import 'providers/local_music_provider.dart';
+import 'providers/download_provider.dart';
 import 'providers/sync_provider.dart';
 import 'providers/presence_provider.dart';
 import 'providers/library_provider.dart';
@@ -34,7 +35,7 @@ class TuneifyApp extends StatelessWidget {
     if (Platform.isWindows) {
       return AppThemeBuilder(
         builder: (context, theme) => MaterialApp(
-          title: 'Tuneify',
+          title: 'Utify',
           debugShowCheckedModeBanner: false,
           theme: _buildDesktopTheme(theme),
           builder: (context, child) => _MediaKeyListener(
@@ -45,7 +46,7 @@ class TuneifyApp extends StatelessWidget {
       );
     }
     return MaterialApp(
-      title: 'Tuneify',
+      title: 'Utify',
       debugShowCheckedModeBanner: false,
       theme: _buildDarkTheme(),
       builder: (context, child) => _MediaKeyListener(
@@ -349,6 +350,7 @@ class _AppShellState extends ConsumerState<AppShell>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       ref.read(localMusicProvider.notifier).scan();
+      ref.read(downloadProvider.notifier).refresh();
       final uid = ref.read(authServiceProvider).currentUser?.uid;
       if (uid != null) {
         ref.read(presenceProvider.notifier).start(
@@ -375,7 +377,6 @@ class _AppShellState extends ConsumerState<AppShell>
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden) {
       ref.read(playerProvider.notifier).saveSession().catchError((_) {});
-      ref.read(presenceProvider.notifier).stop();
     }
   }
 
@@ -414,6 +415,7 @@ class _AppShellState extends ConsumerState<AppShell>
   void _showCreatePlaylistDialog(BuildContext context) {
     final controller = TextEditingController();
     var visibility = 'private';
+    var collaborative = false;
     showDialog(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
@@ -444,6 +446,14 @@ class _AppShellState extends ConsumerState<AppShell>
                     .toList(),
                 onChanged: (v) => setState(() => visibility = v ?? 'private'),
               ),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                value: collaborative,
+                title: const Text('Collaborative',
+                    style: TextStyle(color: Colors.white)),
+                onChanged: (value) =>
+                    setState(() => collaborative = value ?? false),
+              ),
             ],
           ),
           actions: [
@@ -453,13 +463,23 @@ class _AppShellState extends ConsumerState<AppShell>
                   style: TextStyle(color: Color(0xFFB3B3B3))),
             ),
             TextButton(
-              onPressed: () {
-                if (controller.text.trim().isNotEmpty) {
-                  ref.read(libraryProvider.notifier).createPlaylist(
-                        controller.text.trim(),
+              onPressed: () async {
+                final name = controller.text.trim();
+                if (name.isEmpty) return;
+                try {
+                  await ref.read(libraryProvider.notifier).createPlaylist(
+                        name,
                         visibility: visibility,
+                        collaborative: collaborative,
                       );
-                  Navigator.pop(dialogContext);
+                  if (dialogContext.mounted) Navigator.pop(dialogContext);
+                } catch (error) {
+                  if (dialogContext.mounted) {
+                    ScaffoldMessenger.of(dialogContext).showSnackBar(
+                      SnackBar(
+                          content: Text('Could not create playlist: $error')),
+                    );
+                  }
                 }
               },
               child: const Text('Create',

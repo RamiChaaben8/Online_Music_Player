@@ -13,9 +13,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/playlist.dart';
 import '../../providers/library_provider.dart';
+import '../../providers/auth_provider.dart';
 import '../../services/firestore_service.dart';
 import '../../providers/player_provider.dart';
 import '../theme/desktop_theme.dart';
+import '../widgets/invite_collaborator_dialog.dart';
 import '../../widgets/import_playlist_dialog.dart';
 
 class DesktopSidebar extends ConsumerStatefulWidget {
@@ -34,6 +36,7 @@ class DesktopSidebar extends ConsumerStatefulWidget {
 
 class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
   bool _collapsed = false;
+  final Set<String> _expandedFolders = <String>{};
 
   static const double _kCollapsedWidth = 64.0;
 
@@ -145,6 +148,36 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
   // ── Expanded: full sidebar ───────────────────────────────────────────────
 
   Widget _buildExpanded(Playlist? likedPlaylist, LibraryState library) {
+    final folders = <String, List<Playlist>>{};
+    final unfiled = <Playlist>[];
+    for (final folder in library.folders) {
+      folders[folder] = [];
+    }
+    for (final playlist in library.playlists) {
+      final folder = playlist.folderId;
+      if (folder == null || folder.isEmpty) {
+        unfiled.add(playlist);
+      } else {
+        folders.putIfAbsent(folder, () => []).add(playlist);
+      }
+    }
+    final sorted = (List<Playlist> items) => items
+      ..sort((a, b) {
+        if (a.pinned != b.pinned) return a.pinned ? -1 : 1;
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      });
+
+    Widget playlistTile(Playlist playlist) {
+      final isActive = widget.selectedPlaylist != null &&
+          _isSamePlaylist(widget.selectedPlaylist!, playlist);
+      return _PlaylistTile(
+        playlist: playlist,
+        isActive: isActive,
+        onTap: () => widget.onPlaylistSelected(isActive ? null : playlist),
+        onOpen: () => widget.onPlaylistSelected(playlist),
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -200,6 +233,18 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
                   splashRadius: 16,
                 ),
               ),
+              Tooltip(
+                message: 'Create folder',
+                child: IconButton(
+                  onPressed: () => _showCreateFolderDialog(context),
+                  icon: Icon(Icons.create_new_folder_outlined,
+                      size: 18, color: context.appTheme.button),
+                  padding: EdgeInsets.all(6),
+                  constraints:
+                      const BoxConstraints(minWidth: 30, minHeight: 30),
+                  splashRadius: 16,
+                ),
+              ),
             ],
           ),
         ),
@@ -244,7 +289,7 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
               if (likedPlaylist != null)
                 Divider(
                     color: context.appTheme.shadow, height: 16, thickness: 0.5),
-              if (library.playlists.isEmpty)
+              if (library.playlists.isEmpty && library.folders.isEmpty)
                 Padding(
                   padding: EdgeInsets.all(16),
                   child: Text(
@@ -254,18 +299,110 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
                     textAlign: TextAlign.center,
                   ),
                 )
-              else
-                ...library.playlists.map((playlist) {
-                  final isActive = widget.selectedPlaylist != null &&
-                      _isSamePlaylist(widget.selectedPlaylist!, playlist);
-                  return _PlaylistTile(
-                    playlist: playlist,
-                    isActive: isActive,
-                    onTap: () =>
-                        widget.onPlaylistSelected(isActive ? null : playlist),
-                    onOpen: () => widget.onPlaylistSelected(playlist),
+              else ...[
+                // ── Drop here to remove from folder ──────────────
+                DragTarget<Playlist>(
+                  onWillAcceptWithDetails: (details) {
+                    // Accept only playlists that are currently in a folder.
+                    // Check live state, not the stale drag data object.
+                    final library = ref.read(libraryProvider);
+                    final draggedId = details.data.firestoreId ??
+                        details.data.sharedId ??
+                        details.data.key?.toString();
+                    Playlist? live;
+                    try {
+                      live = library.playlists.firstWhere((p) {
+                        if (draggedId != null) {
+                          if (p.firestoreId == draggedId) return true;
+                          if (p.sharedId == draggedId) return true;
+                          if (p.key?.toString() == draggedId) return true;
+                        }
+                        return p.name == details.data.name &&
+                            p.createdAt == details.data.createdAt;
+                      });
+                    } catch (_) {
+                      live = null;
+                    }
+                    return (live ?? details.data).folderId != null;
+                  },
+                  onAcceptWithDetails: (details) {
+                    final library = ref.read(libraryProvider);
+                    final draggedId = details.data.firestoreId ??
+                        details.data.sharedId ??
+                        details.data.key?.toString();
+                    late Playlist live;
+                    try {
+                      live = library.playlists.firstWhere((p) {
+                        if (draggedId != null) {
+                          if (p.firestoreId == draggedId) return true;
+                          if (p.sharedId == draggedId) return true;
+                          if (p.key?.toString() == draggedId) return true;
+                        }
+                        return p.name == details.data.name &&
+                            p.createdAt == details.data.createdAt;
+                      });
+                    } catch (_) {
+                      live = details.data;
+                    }
+                    ref.read(libraryProvider.notifier).organizePlaylist(
+                          live,
+                          folderId: null,
+                          changeFolder: true,
+                        );
+                  },
+                  builder: (context, candidates, _) {
+                    final active = candidates.isNotEmpty;
+                    return AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      height: active ? 40 : 4,
+                      margin: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: active
+                            ? context.appTheme.button.withValues(alpha: 0.15)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(8),
+                        border: active
+                            ? Border.all(
+                                color: context.appTheme.button
+                                    .withValues(alpha: 0.5),
+                                width: 1.5,
+                              )
+                            : null,
+                      ),
+                      child: active
+                          ? Center(
+                              child: Text(
+                                'Drop here to remove from folder',
+                                style: TextStyle(
+                                  color: context.appTheme.button,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            )
+                          : null,
+                    );
+                  },
+                ),
+                ...sorted(unfiled).map(playlistTile),
+                ...folders.entries.map((entry) {
+                  final expanded = _expandedFolders.contains(entry.key);
+                  return _FolderSection(
+                    name: entry.key,
+                    playlists: sorted(entry.value),
+                    expanded: expanded,
+                    playlistTile: playlistTile,
+                    onToggle: () => setState(() {
+                      if (expanded) {
+                        _expandedFolders.remove(entry.key);
+                      } else {
+                        _expandedFolders.add(entry.key);
+                      }
+                    }),
                   );
                 }),
+              ],
             ],
           ),
         ),
@@ -276,7 +413,8 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
   Future<void> _showCreatePlaylistDialog(BuildContext context) async {
     final controller = TextEditingController();
     var visibility = 'private';
-    final name = await showDialog<String>(
+    var collaborative = false;
+    final result = await showDialog<(String, bool)>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: context.appTheme.card,
@@ -300,7 +438,12 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
                   borderSide: BorderSide.none,
                 ),
               ),
-              onSubmitted: (value) => Navigator.pop(ctx, value.trim()),
+              onSubmitted: (value) {
+                final name = value.trim();
+                if (name.isNotEmpty) {
+                  Navigator.pop(ctx, (name, collaborative));
+                }
+              },
             ),
             DropdownButtonFormField<String>(
               value: visibility,
@@ -311,6 +454,18 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
                 DropdownMenuItem(value: 'public', child: Text('Public')),
               ],
               onChanged: (value) => visibility = value ?? 'private',
+            ),
+            StatefulBuilder(
+              builder: (context, setDialogState) => CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                value: collaborative,
+                title: Text('Collaborative playlist',
+                    style: TextStyle(color: context.appTheme.text)),
+                subtitle: Text('Invite friends to add songs',
+                    style: TextStyle(color: context.appTheme.subtext)),
+                onChanged: (value) =>
+                    setDialogState(() => collaborative = value ?? false),
+              ),
             ),
           ],
         ),
@@ -323,7 +478,12 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(
                 backgroundColor: context.appTheme.button),
-            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            onPressed: () {
+              final name = controller.text.trim();
+              if (name.isNotEmpty) {
+                Navigator.pop(ctx, (name, collaborative));
+              }
+            },
             child:
                 Text('Create', style: TextStyle(color: context.appTheme.text)),
           ),
@@ -331,11 +491,279 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
       ),
     );
     controller.dispose();
-    if (name != null && name.isNotEmpty) {
+    if (result != null && result.$1.isNotEmpty) {
+      try {
+        await ref.read(libraryProvider.notifier).createPlaylist(result.$1,
+            visibility: visibility, collaborative: result.$2);
+        if (result.$2 && mounted) {
+          _showMessage(
+              'Collaborative playlist created. Open its menu to invite a friend.');
+        }
+      } catch (error) {
+        if (mounted) {
+          _showMessage('Could not create playlist: $error');
+        }
+      }
+    }
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _showCreateFolderDialog(BuildContext context) async {
+    final controller = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: context.appTheme.card,
+        title:
+            Text('New folder', style: TextStyle(color: context.appTheme.text)),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          style: TextStyle(color: context.appTheme.text),
+          decoration: InputDecoration(
+            hintText: 'Folder name',
+            hintStyle: TextStyle(color: context.appTheme.subtext),
+          ),
+          onSubmitted: (value) => Navigator.pop(ctx, value.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Cancel',
+                style: TextStyle(color: context.appTheme.subtext)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('Create'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (name == null || name.isEmpty || !mounted) return;
+    try {
+      await ref.read(libraryProvider.notifier).createFolder(name);
+      setState(() => _expandedFolders.add(name));
+    } catch (error) {
+      _showMessage('Could not create folder: $error');
+    }
+  }
+
+  Future<void> _movePlaylistToFolder(Playlist playlist, String folder) async {
+    try {
       await ref
           .read(libraryProvider.notifier)
-          .createPlaylist(name, visibility: visibility);
+          .organizePlaylist(playlist, folderId: folder, changeFolder: true);
+    } catch (error) {
+      _showMessage('Could not move playlist: $error');
     }
+  }
+
+  Future<void> _showFolderMenu(String name, Offset position) async {
+    final action = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+          position.dx, position.dy, position.dx + 1, position.dy + 1),
+      items: const [
+        PopupMenuItem(value: 'rename', child: Text('Rename folder')),
+        PopupMenuItem(value: 'delete', child: Text('Delete folder')),
+      ],
+    );
+    if (!mounted || action == null) return;
+    if (action == 'rename') {
+      final controller = TextEditingController(text: name);
+      final next = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Rename folder'),
+          content: TextField(controller: controller, autofocus: true),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+                child: const Text('Save')),
+          ],
+        ),
+      );
+      controller.dispose();
+      if (next != null && next.isNotEmpty) {
+        await ref.read(libraryProvider.notifier).renameFolder(name, next);
+        setState(() {
+          if (_expandedFolders.remove(name)) _expandedFolders.add(next);
+        });
+      }
+    } else if (action == 'delete') {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Delete folder?'),
+          content: Text('Playlists in "$name" will stay in your library.'),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Delete')),
+          ],
+        ),
+      );
+      if (confirmed == true) {
+        await ref.read(libraryProvider.notifier).deleteFolder(name);
+        setState(() => _expandedFolders.remove(name));
+      }
+    }
+  }
+}
+
+class _FolderSection extends StatelessWidget {
+  final String name;
+  final List<Playlist> playlists;
+  final bool expanded;
+  final Widget Function(Playlist) playlistTile;
+  final VoidCallback onToggle;
+
+  const _FolderSection({
+    required this.name,
+    required this.playlists,
+    required this.expanded,
+    required this.playlistTile,
+    required this.onToggle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.appTheme;
+    return Column(
+      children: [
+        DragTarget<Playlist>(
+          onWillAcceptWithDetails: (details) {
+            // Check live state so we don't use a stale folderId on drag data.
+            final sidebarState =
+                context.findAncestorStateOfType<_DesktopSidebarState>();
+            if (sidebarState == null) return false;
+            final library = sidebarState.ref.read(libraryProvider);
+            final draggedId = details.data.firestoreId ??
+                details.data.sharedId ??
+                details.data.key?.toString();
+            Playlist? live;
+            try {
+              live = library.playlists.firstWhere((p) {
+                if (draggedId != null) {
+                  if (p.firestoreId == draggedId) return true;
+                  if (p.sharedId == draggedId) return true;
+                  if (p.key?.toString() == draggedId) return true;
+                }
+                return p.name == details.data.name &&
+                    p.createdAt == details.data.createdAt;
+              });
+            } catch (_) {
+              live = null;
+            }
+            // Don't accept if already in this folder.
+            return (live ?? details.data).folderId != name;
+          },
+          onAcceptWithDetails: (details) {
+            final state =
+                context.findAncestorStateOfType<_DesktopSidebarState>();
+            if (state == null) return;
+            // Use the live playlist from provider state by matching IDs so we
+            // never pass a stale drag-data object into organizePlaylist.
+            final draggedId = details.data.firestoreId ??
+                details.data.sharedId ??
+                details.data.key?.toString();
+            final library = state.ref.read(libraryProvider);
+            final live = library.playlists.firstWhere(
+              (p) {
+                if (draggedId != null) {
+                  if (p.firestoreId == draggedId) return true;
+                  if (p.sharedId == draggedId) return true;
+                  if (p.key?.toString() == draggedId) return true;
+                }
+                return p.name == details.data.name &&
+                    p.createdAt == details.data.createdAt;
+              },
+              orElse: () => details.data,
+            );
+            state._movePlaylistToFolder(live, name);
+          },
+          builder: (context, candidates, _) => GestureDetector(
+            onSecondaryTapUp: (details) {
+              final state =
+                  context.findAncestorStateOfType<_DesktopSidebarState>();
+              state?._showFolderMenu(name, details.globalPosition);
+            },
+            child: Material(
+              color: candidates.isNotEmpty ? theme.selectedRow : theme.card,
+              borderRadius: BorderRadius.circular(8),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: onToggle,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: theme.misc.withValues(alpha: 0.55),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Icon(Icons.folder_outlined,
+                            color: theme.subtext, size: 25),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: theme.button,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              '${playlists.length} playlist${playlists.length == 1 ? '' : 's'}',
+                              style:
+                                  TextStyle(color: theme.subtext, fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Icon(
+                        expanded
+                            ? Icons.keyboard_arrow_up
+                            : Icons.keyboard_arrow_down,
+                        color: theme.subtext,
+                        size: 22,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        if (expanded)
+          Padding(
+            padding: const EdgeInsets.only(left: 12),
+            child: Column(children: playlists.map(playlistTile).toList()),
+          ),
+      ],
+    );
   }
 }
 
@@ -445,6 +873,27 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
         ? widget.playlist.songs.first.thumbnailUrl
         : '';
 
+    return Draggable<Playlist>(
+      data: widget.playlist,
+      feedback: Material(
+        color: context.appTheme.card,
+        child: SizedBox(
+          width: 260,
+          child: ListTile(
+            leading: const Icon(Icons.queue_music),
+            title: Text(widget.playlist.name),
+          ),
+        ),
+      ),
+      childWhenDragging: Opacity(
+        opacity: 0.35,
+        child: _buildTile(context, thumbUrl),
+      ),
+      child: _buildTile(context, thumbUrl),
+    );
+  }
+
+  Widget _buildTile(BuildContext context, String thumbUrl) {
     return MouseRegion(
       child: GestureDetector(
         // Right-click opens context menu
@@ -526,6 +975,9 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
                       ],
                     ),
                   ),
+                  if (widget.playlist.pinned)
+                    Icon(Icons.push_pin,
+                        color: context.appTheme.button, size: 16),
                   IconButton(
                     tooltip: 'Playlist options',
                     icon: Icon(Icons.more_horiz,
@@ -545,6 +997,9 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
   }
 
   void _showMenu(BuildContext context, Offset position) {
+    final currentUid = ref.read(authServiceProvider).currentUser?.uid;
+    final isOwner = widget.playlist.sharedId == null ||
+        widget.playlist.ownerUid == currentUid;
     showMenu<_PlaylistAction>(
       context: context,
       position: RelativeRect.fromLTRB(
@@ -569,22 +1024,57 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
           Icons.queue_music_outlined,
           'Add to Queue',
         ),
+        _menuItem(
+          _PlaylistAction.addToPlaylist,
+          Icons.playlist_add,
+          'Add to another playlist',
+        ),
+        _menuItem(
+          _PlaylistAction.pin,
+          widget.playlist.pinned ? Icons.push_pin : Icons.push_pin_outlined,
+          widget.playlist.pinned ? 'Unpin playlist' : 'Pin playlist',
+        ),
+        _menuItem(
+          _PlaylistAction.folder,
+          Icons.create_new_folder_outlined,
+          'Add to folder',
+        ),
+        if (widget.playlist.folderId != null)
+          _menuItem(
+            _PlaylistAction.removeFromFolder,
+            Icons.folder_off_outlined,
+            'Remove from folder',
+          ),
+        if (isOwner)
+          _menuItem(
+            widget.playlist.sharedId == null
+                ? _PlaylistAction.collaborate
+                : _PlaylistAction.invite,
+            Icons.group_add_outlined,
+            widget.playlist.sharedId == null
+                ? 'Make collaborative'
+                : 'Invite collaborator',
+          ),
         const PopupMenuDivider(height: 1),
-        _menuItem(
-          _PlaylistAction.rename,
-          Icons.edit_outlined,
-          'Edit playlist',
-        ),
-        _menuItem(
-          _PlaylistAction.visibility,
-          Icons.lock_outline,
-          'Change privacy',
-        ),
+        if (isOwner)
+          _menuItem(
+            _PlaylistAction.rename,
+            Icons.edit_outlined,
+            'Edit playlist',
+          ),
+        if (isOwner)
+          _menuItem(
+            _PlaylistAction.visibility,
+            Icons.lock_outline,
+            'Change privacy',
+          ),
         _menuItem(
           _PlaylistAction.delete,
           Icons.delete_outline,
-          'Remove playlist',
-          color: context.appTheme.notificationError,
+          isOwner ? 'Remove playlist' : 'Quit playlist',
+          color: isOwner
+              ? context.appTheme.notificationError
+              : context.appTheme.text,
         ),
       ],
     ).then((action) {
@@ -594,12 +1084,28 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
           widget.onOpen();
         case _PlaylistAction.addToQueue:
           _addAllToQueue();
+        case _PlaylistAction.addToPlaylist:
+          _showAddToPlaylistDialog();
+        case _PlaylistAction.pin:
+          _togglePin();
+        case _PlaylistAction.folder:
+          _showFolderDialog();
+        case _PlaylistAction.removeFromFolder:
+          _removeFromFolder();
+        case _PlaylistAction.collaborate:
+          _makeCollaborative();
+        case _PlaylistAction.invite:
+          _showInviteDialog();
         case _PlaylistAction.rename:
           _showRenameDialog();
         case _PlaylistAction.visibility:
           _showVisibilityMenu();
         case _PlaylistAction.delete:
-          _confirmDelete();
+          if (isOwner) {
+            _confirmDelete();
+          } else {
+            _quitPlaylist();
+          }
       }
     });
   }
@@ -685,6 +1191,159 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
     }
   }
 
+  Future<void> _showAddToPlaylistDialog() async {
+    final targets = ref
+        .read(libraryProvider)
+        .playlists
+        .where((p) => !_same(p, widget.playlist))
+        .toList();
+    if (targets.isEmpty) {
+      _showMessage('Create another playlist first.');
+      return;
+    }
+    final target = await showDialog<Playlist>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        backgroundColor: context.appTheme.card,
+        title: Text('Add playlist to…',
+            style: TextStyle(color: context.appTheme.text)),
+        children: targets
+            .map((p) => SimpleDialogOption(
+                  onPressed: () => Navigator.pop(ctx, p),
+                  child: Text(p.name,
+                      style: TextStyle(color: context.appTheme.text)),
+                ))
+            .toList(),
+      ),
+    );
+    if (target == null || !mounted) return;
+    await ref
+        .read(libraryProvider.notifier)
+        .copyPlaylistTo(widget.playlist, target);
+    _showMessage(
+        'Added ${widget.playlist.songs.length} songs to ${target.name}.');
+  }
+
+  Future<void> _togglePin() async {
+    await ref.read(libraryProvider.notifier).organizePlaylist(
+          widget.playlist,
+          pinned: !widget.playlist.pinned,
+        );
+  }
+
+  Future<void> _removeFromFolder() async {
+    await ref.read(libraryProvider.notifier).organizePlaylist(
+          widget.playlist,
+          folderId: null,
+          changeFolder: true,
+        );
+  }
+
+  Future<void> _showFolderDialog() async {
+    final folders = ref.read(libraryProvider).folders;
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        backgroundColor: context.appTheme.card,
+        title: Text('Add to folder',
+            style: TextStyle(color: context.appTheme.text)),
+        children: [
+          ...folders.map((folder) => SimpleDialogOption(
+                onPressed: () => Navigator.pop(ctx, folder),
+                child: Text(folder,
+                    style: TextStyle(color: context.appTheme.text)),
+              )),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, '__new__'),
+            child: Text('New folder…',
+                style: TextStyle(color: context.appTheme.button)),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || selected == null) return;
+    if (selected == '__new__') {
+      final controller = TextEditingController();
+      final name = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: context.appTheme.card,
+          title: Text('New folder',
+              style: TextStyle(color: context.appTheme.text)),
+          content: TextField(controller: controller, autofocus: true),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+              child: const Text('Create'),
+            ),
+          ],
+        ),
+      );
+      controller.dispose();
+      if (name == null || name.isEmpty) return;
+      try {
+        await ref.read(libraryProvider.notifier).createFolder(name);
+        _showMessage('Folder created.');
+      } catch (error) {
+        _showMessage('Could not create folder: $error');
+      }
+      return;
+    }
+    await ref.read(libraryProvider.notifier).organizePlaylist(widget.playlist,
+        folderId: selected, changeFolder: true);
+  }
+
+  Future<void> _makeCollaborative() async {
+    try {
+      final sharedId = await ref
+          .read(libraryProvider.notifier)
+          .makePlaylistCollaborative(widget.playlist);
+      if (sharedId != null) {
+        _showMessage(
+            'Playlist is now collaborative. Use "Invite collaborator" to add friends.');
+      } else {
+        _showMessage('This playlist is already collaborative.');
+      }
+    } catch (error) {
+      _showMessage('Could not enable collaboration: $error');
+    }
+  }
+
+  Future<void> _showInviteDialog() async {
+    final uid = await showCollaboratorInviteDialog(
+      context,
+      ref,
+      widget.playlist,
+    );
+    if (uid == null || !mounted) return;
+    try {
+      await ref
+          .read(libraryProvider.notifier)
+          .inviteCollaborator(widget.playlist, uid);
+      _showMessage('Playlist invitation sent.');
+    } catch (error) {
+      _showMessage(error.toString());
+    }
+  }
+
+  bool _same(Playlist a, Playlist b) {
+    if (a.sharedId != null || b.sharedId != null)
+      return a.sharedId == b.sharedId;
+    if (a.firestoreId != null && b.firestoreId != null) {
+      return a.firestoreId == b.firestoreId;
+    }
+    return a.key != null && a.key == b.key;
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+
   Future<void> _showVisibilityMenu() async {
     final value = await showDialog<String>(
       context: context,
@@ -745,9 +1404,32 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
           .deletePlaylistObj(widget.playlist);
     }
   }
+
+  Future<void> _quitPlaylist() async {
+    try {
+      await ref
+          .read(libraryProvider.notifier)
+          .quitCollaborativePlaylist(widget.playlist);
+      _showMessage('You left the playlist.');
+    } catch (error) {
+      _showMessage('Could not leave playlist: $error');
+    }
+  }
 }
 
-enum _PlaylistAction { open, addToQueue, rename, visibility, delete }
+enum _PlaylistAction {
+  open,
+  addToQueue,
+  addToPlaylist,
+  pin,
+  folder,
+  removeFromFolder,
+  collaborate,
+  invite,
+  rename,
+  visibility,
+  delete
+}
 
 // ─── Liked Songs tile (read-only, opens like a playlist) ─────────────────────
 

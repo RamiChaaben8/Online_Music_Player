@@ -142,7 +142,10 @@ class FirestoreService {
     if (writeActivity || !showActivity || !showOnlineStatus) {
       data['activity'] = showActivity && showOnlineStatus ? activity : null;
     }
-    await _db.collection('presence').doc(uid).set(data, SetOptions(merge: true));
+    await _db
+        .collection('presence')
+        .doc(uid)
+        .set(data, SetOptions(merge: true));
   }
 
   Stream<PresenceInfo?> presenceStream(String uid) {
@@ -337,7 +340,8 @@ class FirestoreService {
       'positionMs': 0,
       'isPlaying': isPlaying,
       'version': 1,
-      'controlMode': controlMode == PartyControlMode.everyone ? 'everyone' : 'host',
+      'controlMode':
+          controlMode == PartyControlMode.everyone ? 'everyone' : 'host',
       'openToFriends': openToFriends,
       'createdAt': Timestamp.fromDate(now),
       'updatedAt': FieldValue.serverTimestamp(),
@@ -396,10 +400,12 @@ class FirestoreService {
       final snap = await tx.get(ref);
       final data = snap.data();
       if (!snap.exists || data == null) {
-        throw const FirestoreFriendException('This listen party no longer exists.');
+        throw const FirestoreFriendException(
+            'This listen party no longer exists.');
       }
       if ((data['version'] as num?)?.toInt() != expectedVersion) {
-        throw const FirestoreFriendException('Party state changed. Please retry.');
+        throw const FirestoreFriendException(
+            'Party state changed. Please retry.');
       }
       tx.update(ref, {
         'queue': queue.take(100).map(_partySongMap).toList(),
@@ -420,7 +426,12 @@ class FirestoreService {
   }) async {
     final profile = await getCachedPublicProfile(fromUid) ??
         await getPublicProfile(fromUid);
-    await _db.collection('partyInvites').doc(toUid).collection('items').doc(partyId).set({
+    await _db
+        .collection('partyInvites')
+        .doc(toUid)
+        .collection('items')
+        .doc(partyId)
+        .set({
       'partyId': partyId,
       'fromUid': fromUid,
       'fromName': profile?.displayName ?? 'A friend',
@@ -429,8 +440,7 @@ class FirestoreService {
     });
   }
 
-  PartyInvite _partyInviteFromDoc(
-      String partyId, Map<String, dynamic> data) {
+  PartyInvite _partyInviteFromDoc(String partyId, Map<String, dynamic> data) {
     final createdAt = data['createdAt'];
     return PartyInvite(
       partyId: partyId,
@@ -442,7 +452,12 @@ class FirestoreService {
   }
 
   Stream<List<PartyInvite>> listenPartyInvites(String uid) {
-    return _db.collection('partyInvites').doc(uid).collection('items').snapshots().map(
+    return _db
+        .collection('partyInvites')
+        .doc(uid)
+        .collection('items')
+        .snapshots()
+        .map(
           (snap) => snap.docs
               .map((doc) => _partyInviteFromDoc(doc.id, doc.data()))
               .toList(),
@@ -450,14 +465,20 @@ class FirestoreService {
   }
 
   Future<List<PartyInvite>> getListenPartyInvites(String uid) async {
-    final snap = await _db.collection('partyInvites').doc(uid).collection('items').get();
+    final snap =
+        await _db.collection('partyInvites').doc(uid).collection('items').get();
     return snap.docs
         .map((doc) => _partyInviteFromDoc(doc.id, doc.data()))
         .toList();
   }
 
   Future<void> deleteListenPartyInvite(String uid, String partyId) {
-    return _db.collection('partyInvites').doc(uid).collection('items').doc(partyId).delete();
+    return _db
+        .collection('partyInvites')
+        .doc(uid)
+        .collection('items')
+        .doc(partyId)
+        .delete();
   }
 
   Future<int> estimateServerClockOffset(String uid) async {
@@ -472,8 +493,8 @@ class FirestoreService {
       final serverTime = snapshot.data()?['serverTime'];
       if (serverTime is! Timestamp) continue;
       final roundTrip = finishedAt.difference(startedAt).inMilliseconds;
-      final midpoint = startedAt.millisecondsSinceEpoch +
-          (roundTrip / 2).round();
+      final midpoint =
+          startedAt.millisecondsSinceEpoch + (roundTrip / 2).round();
       final offset = serverTime.millisecondsSinceEpoch - midpoint;
       if (roundTrip < bestRoundTrip) {
         bestRoundTrip = roundTrip;
@@ -549,6 +570,8 @@ class FirestoreService {
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
       'visibility': visibility,
+      'pinned': false,
+      'folderId': null,
     });
     return ref.id;
   }
@@ -569,6 +592,8 @@ class FirestoreService {
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
       'visibility': 'private',
+      'pinned': false,
+      'folderId': null,
     });
     return ref.id;
   }
@@ -582,11 +607,15 @@ class FirestoreService {
   }
 
   Future<void> setPlaylistVisibility(
-      String uid, String playlistId, String visibility) async {
+      String uid, String playlistId, String visibility,
+      {String? sharedPlaylistId}) async {
     if (!{'private', 'friends', 'public'}.contains(visibility)) {
       throw ArgumentError.value(visibility, 'visibility');
     }
-    await _userCol(uid, 'playlists').doc(playlistId).update({
+    final ref = sharedPlaylistId == null
+        ? _userCol(uid, 'playlists').doc(playlistId)
+        : _db.collection('sharedPlaylists').doc(sharedPlaylistId);
+    await ref.update({
       'visibility': visibility,
       'updatedAt': FieldValue.serverTimestamp(),
     });
@@ -619,6 +648,227 @@ class FirestoreService {
       'tracks': tracks,
       'updatedAt': FieldValue.serverTimestamp(),
     });
+  }
+
+  // ── Shared playlists ─────────────────────────────────────────────────────
+
+  Stream<List<Playlist>> sharedPlaylistsStream(String uid) {
+    return _db
+        .collection('sharedPlaylists')
+        .where('memberUids', arrayContains: uid)
+        .snapshots()
+        .asyncMap((snap) async {
+      final playlists = <Playlist>[];
+      for (final doc in snap.docs) {
+        var playlist = _docToSharedPlaylist(doc);
+        if (playlist.ownerName?.trim().isNotEmpty != true) {
+          final ownerUid = doc.data()['ownerUid'] as String?;
+          if (ownerUid != null) {
+            final profile = await getCachedPublicProfile(ownerUid) ??
+                await getPublicProfile(ownerUid);
+            if (profile != null) {
+              playlist = Playlist(
+                name: playlist.name,
+                songs: playlist.songs,
+                createdAt: playlist.createdAt,
+                description: playlist.description,
+                visibility: playlist.visibility,
+                pinned: playlist.pinned,
+                folderId: playlist.folderId,
+                sharedId: playlist.sharedId,
+                ownerName: profile.displayName.isNotEmpty
+                    ? profile.displayName
+                    : profile.username,
+              );
+              playlistFirestoreIds[playlist] = doc.id;
+            }
+          }
+        }
+        playlists.add(playlist);
+      }
+      return playlists;
+    });
+  }
+
+  Future<String> createSharedPlaylist(String uid, String name, List<Song> songs,
+      {String visibility = 'private'}) async {
+    if (!{'private', 'friends', 'public'}.contains(visibility)) {
+      throw ArgumentError.value(visibility, 'visibility');
+    }
+    final ref = _db.collection('sharedPlaylists').doc();
+    PublicProfile? profile;
+    try {
+      profile =
+          await getCachedPublicProfile(uid) ?? await getPublicProfile(uid);
+    } on FirestoreProfileException {
+      // The playlist can still be created; ownerName is backfilled by the
+      // shared-playlist stream when the profile becomes available.
+    }
+    await ref.set({
+      'name': name,
+      'description': '',
+      'trackIds': songs.map((song) => song.id).toList(),
+      'tracks': songs.map(_songToMap).toList(),
+      'ownerUid': uid,
+      'ownerName': profile?.displayName ?? profile?.username ?? '',
+      'memberUids': [uid],
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+      'pinned': false,
+      'folderId': null,
+      'visibility': visibility,
+    });
+    return ref.id;
+  }
+
+  Future<void> addCollaborator(String sharedPlaylistId, String uid) async {
+    await _db.collection('sharedPlaylists').doc(sharedPlaylistId).update({
+      'memberUids': FieldValue.arrayUnion([uid]),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<void> removeCollaborator(String sharedPlaylistId, String uid) async {
+    await _db.collection('sharedPlaylists').doc(sharedPlaylistId).update({
+      'memberUids': FieldValue.arrayRemove([uid]),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<void> inviteToSharedPlaylist({
+    required String sharedPlaylistId,
+    required String fromUid,
+    required String toUid,
+    required String playlistName,
+  }) async {
+    final sharedRef = _db.collection('sharedPlaylists').doc(sharedPlaylistId);
+    final shared = await sharedRef.get();
+    if (!shared.exists || shared.data()?['ownerUid'] != fromUid) {
+      throw const FirestoreFriendException(
+          'This playlist is no longer available for collaboration.');
+    }
+
+    // Path: users/{toUid}/playlistInvites/{sharedPlaylistId}
+    final inviteRef = _userCol(toUid, 'playlistInvites').doc(sharedPlaylistId);
+    if ((await inviteRef.get()).exists) {
+      throw const FirestoreFriendException(
+          'You already sent an invitation to this friend.');
+    }
+    final profile = await getCachedPublicProfile(fromUid) ??
+        await getPublicProfile(fromUid);
+    await inviteRef.set({
+      'sharedPlaylistId': sharedPlaylistId,
+      'playlistName': playlistName,
+      'fromUid': fromUid,
+      'fromName': profile?.displayName ?? 'A friend',
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Stream<List<PlaylistInvite>> playlistInvitesStream(String uid) {
+    // Path: users/{uid}/playlistInvites/{sharedPlaylistId}
+    return _userCol(uid, 'playlistInvites').snapshots().map((snap) => snap.docs
+        .map((doc) => PlaylistInvite.fromMap(doc.id, doc.data()))
+        .toList());
+  }
+
+  Future<void> acceptPlaylistInvite(String uid, PlaylistInvite invite) async {
+    await addCollaborator(invite.sharedPlaylistId, uid);
+    await _userCol(uid, 'playlistInvites')
+        .doc(invite.sharedPlaylistId)
+        .delete();
+  }
+
+  Future<void> declinePlaylistInvite(String uid, String sharedPlaylistId) {
+    return _userCol(uid, 'playlistInvites').doc(sharedPlaylistId).delete();
+  }
+
+  Future<void> addSongsToPlaylist(
+      String uid, String playlistId, List<Song> songs) async {
+    for (final song in songs) {
+      await addSongToPlaylist(uid, playlistId, song);
+    }
+  }
+
+  Future<void> addSongsToSharedPlaylist(
+      String sharedPlaylistId, List<Song> songs) async {
+    final ref = _db.collection('sharedPlaylists').doc(sharedPlaylistId);
+    for (final song in songs) {
+      await ref.update({
+        'trackIds': FieldValue.arrayUnion([song.id]),
+        'tracks': FieldValue.arrayUnion([_songToMap(song)]),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    }
+  }
+
+  /// Remove a song from a shared (collaborative) playlist.
+  /// Any member may remove songs — not just the owner.
+  Future<void> removeSongFromSharedPlaylist(
+      String sharedPlaylistId, String songId) async {
+    final ref = _db.collection('sharedPlaylists').doc(sharedPlaylistId);
+    final doc = await ref.get();
+    if (!doc.exists) return;
+    final tracks = List<Map>.from(doc.data()?['tracks'] ?? []);
+    tracks.removeWhere((t) => t['id'] == songId);
+    await ref.update({
+      'trackIds': FieldValue.arrayRemove([songId]),
+      'tracks': tracks,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<void> setPlaylistOrganization({
+    required String uid,
+    required Playlist playlist,
+    required bool pinned,
+    required String? folderId,
+  }) async {
+    final ref = playlist.sharedId != null
+        ? _db.collection('sharedPlaylists').doc(playlist.sharedId)
+        : _userCol(uid, 'playlists').doc(playlist.firestoreId);
+    await ref.update({
+      'pinned': pinned,
+      'folderId': folderId,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Stream<List<String>> foldersStream(String uid) {
+    return _userCol(uid, 'playlistFolders')
+        .orderBy('createdAt')
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((doc) => doc.data()['name'] as String? ?? '')
+            .where((name) => name.isNotEmpty)
+            .toList());
+  }
+
+  Future<void> createFolder(String uid, String name) async {
+    await _userCol(uid, 'playlistFolders').add({
+      'name': name,
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<void> renameFolder(String uid, String oldName, String newName) async {
+    final snap = await _userCol(uid, 'playlistFolders')
+        .where('name', isEqualTo: oldName)
+        .limit(1)
+        .get();
+    if (snap.docs.isNotEmpty) {
+      await snap.docs.first.reference.update({'name': newName});
+    }
+  }
+
+  Future<void> deleteFolder(String uid, String name) async {
+    final snap = await _userCol(uid, 'playlistFolders')
+        .where('name', isEqualTo: name)
+        .limit(1)
+        .get();
+    if (snap.docs.isNotEmpty) {
+      await snap.docs.first.reference.delete();
+    }
   }
 
   // ── Likes ─────────────────────────────────────────────────────────────────
@@ -897,6 +1147,8 @@ class FirestoreService {
       'createdAt': Timestamp.fromDate(playlist.createdAt),
       'updatedAt': FieldValue.serverTimestamp(),
       'visibility': playlist.visibility,
+      'pinned': playlist.pinned,
+      'folderId': playlist.folderId,
     });
   }
 
@@ -926,8 +1178,30 @@ class FirestoreService {
       name: d['name'] as String? ?? 'Untitled',
       description: d['description'] as String?,
       visibility: d['visibility'] as String? ?? 'private',
+      pinned: d['pinned'] as bool? ?? false,
+      folderId: d['folderId'] as String?,
       songs: tracks.map(_docToSong).toList(),
       createdAt: (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+    );
+    playlistFirestoreIds[playlist] = doc.id;
+    return playlist;
+  }
+
+  Playlist _docToSharedPlaylist(
+      QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+    final d = doc.data();
+    final tracks = (d['tracks'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+    final playlist = Playlist(
+      name: d['name'] as String? ?? 'Shared playlist',
+      description: d['description'] as String?,
+      songs: tracks.map(_docToSong).toList(),
+      createdAt: (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      pinned: d['pinned'] as bool? ?? false,
+      folderId: d['folderId'] as String?,
+      sharedId: doc.id,
+      visibility: d['visibility'] as String? ?? 'private',
+      ownerName: d['ownerName'] as String?,
+      ownerUid: d['ownerUid'] as String?,
     );
     playlistFirestoreIds[playlist] = doc.id;
     return playlist;
@@ -1009,20 +1283,16 @@ class PresenceInfo {
     final rawActivity = data['activity'];
     return PresenceInfo(
       online: data['online'] as bool? ?? false,
-      lastActiveAt:
-          timestamp is Timestamp ? timestamp.toDate() : null,
+      lastActiveAt: timestamp is Timestamp ? timestamp.toDate() : null,
       deviceName: data['deviceName'] as String? ?? 'Unknown device',
-      activity: rawActivity is Map
-          ? rawActivity.cast<String, dynamic>()
-          : null,
+      activity: rawActivity is Map ? rawActivity.cast<String, dynamic>() : null,
     );
   }
 
   bool get isOnline =>
       online &&
       lastActiveAt != null &&
-      DateTime.now().difference(lastActiveAt!) <
-          const Duration(seconds: 150);
+      DateTime.now().difference(lastActiveAt!) < const Duration(seconds: 150);
 }
 
 class Friendship {
@@ -1069,6 +1339,33 @@ class Friendship {
       acceptedAt: acceptedAt,
       otherUid: otherUid ?? this.otherUid,
       profile: profile ?? this.profile,
+    );
+  }
+}
+
+class PlaylistInvite {
+  final String sharedPlaylistId;
+  final String playlistName;
+  final String fromUid;
+  final String fromName;
+  final DateTime? createdAt;
+
+  const PlaylistInvite({
+    required this.sharedPlaylistId,
+    required this.playlistName,
+    required this.fromUid,
+    required this.fromName,
+    this.createdAt,
+  });
+
+  factory PlaylistInvite.fromMap(String id, Map<String, dynamic> data) {
+    final timestamp = data['createdAt'];
+    return PlaylistInvite(
+      sharedPlaylistId: data['sharedPlaylistId'] as String? ?? id,
+      playlistName: data['playlistName'] as String? ?? 'Playlist',
+      fromUid: data['fromUid'] as String? ?? '',
+      fromName: data['fromName'] as String? ?? 'A friend',
+      createdAt: timestamp is Timestamp ? timestamp.toDate() : null,
     );
   }
 }

@@ -275,6 +275,42 @@ class _SongActionsSheet extends ConsumerWidget {
               );
             },
           ),
+          if (!song.isLocal) ...[
+            Builder(builder: (ctx) {
+              final dlState = ref.watch(downloadProvider);
+              final isDownloaded = dlState.isDownloaded(song.id);
+              final isDownloading = dlState.isDownloading(song.id);
+              
+              if (isDownloaded) {
+                return ListTile(
+                  leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                  title: const Text('Delete downloaded file', style: TextStyle(color: Colors.redAccent)),
+                  onTap: () {
+                    Navigator.pop(context);
+                    ref.read(downloadProvider.notifier).deleteSong(song);
+                  },
+                );
+              } else if (isDownloading) {
+                return ListTile(
+                  leading: const Icon(Icons.cancel_outlined, color: Colors.orange),
+                  title: const Text('Cancel download', style: TextStyle(color: Colors.orange)),
+                  onTap: () {
+                    Navigator.pop(context);
+                    ref.read(downloadProvider.notifier).cancelDownload(song.id);
+                  },
+                );
+              } else {
+                return ListTile(
+                  leading: const Icon(Icons.download_outlined, color: Color(0xFF1DB954)),
+                  title: const Text('Download', style: TextStyle(color: Color(0xFF1DB954))),
+                  onTap: () {
+                    Navigator.pop(context);
+                    ref.read(downloadProvider.notifier).downloadSong(song);
+                  },
+                );
+              }
+            }),
+          ],
         ],
       ),
     );
@@ -734,20 +770,11 @@ class _LyricsPage extends ConsumerWidget {
                     final isActive = position >= line.start &&
                         (i == lyrics.lines.length - 1 ||
                             position < lyrics.lines[i + 1].start);
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 16),
-                      child: Text(
-                        line.text,
-                        textAlign:
-                            lyrics.isArabic ? TextAlign.right : TextAlign.left,
-                        style: TextStyle(
-                          color: isActive ? Colors.white : Colors.white54,
-                          fontSize: isActive ? 18 : 16,
-                          fontWeight:
-                              isActive ? FontWeight.bold : FontWeight.normal,
-                          height: 1.4,
-                        ),
-                      ),
+                    return _MobileLyricLine(
+                      line: line,
+                      isActive: isActive,
+                      isPast: i < _activeLineIndex(lyrics, position),
+                      position: position,
                     );
                   },
                 ),
@@ -791,18 +818,97 @@ class _LyricsBody extends StatelessWidget {
             final isActive = globalIdx == activeIdx;
             return Padding(
               padding: const EdgeInsets.only(bottom: 12),
-              child: Text(
-                e.value.text,
-                textAlign: lyrics.isArabic ? TextAlign.right : TextAlign.left,
-                style: TextStyle(
-                  color: isActive ? Colors.white : Colors.white60,
-                  fontSize: isActive ? 17 : 15,
-                  fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-                  height: 1.4,
-                ),
+              child: _MobileLyricLine(
+                line: e.value,
+                isActive: isActive,
+                isPast: globalIdx < activeIdx,
+                position: position,
+                compact: true,
               ),
             );
           }).toList(),
+        ),
+      ),
+    );
+  }
+
+}
+
+int _activeLineIndex(LyricsState lyrics, Duration position) {
+  var active = 0;
+  for (var i = 0; i < lyrics.lines.length; i++) {
+    if (position >= lyrics.lines[i].start) active = i;
+  }
+  return active;
+}
+
+class _MobileLyricLine extends StatelessWidget {
+  final LyricLine line;
+  final bool isActive;
+  final bool isPast;
+  final Duration position;
+  final bool compact;
+
+  const _MobileLyricLine({
+    required this.line,
+    required this.isActive,
+    required this.isPast,
+    required this.position,
+    this.compact = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final rtl = Directionality.of(context) == TextDirection.rtl;
+    final fontSize = compact ? (isActive ? 17.0 : 15.0) : 18.0;
+
+    if (isActive && line.hasWordTiming) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: Align(
+          alignment: rtl ? Alignment.centerRight : Alignment.centerLeft,
+          child: Wrap(
+            textDirection: rtl ? TextDirection.rtl : TextDirection.ltr,
+            spacing: 0,
+            runSpacing: 2,
+            children: line.words.map((word) {
+              final lit = position >= word.start;
+              return AnimatedDefaultTextStyle(
+                duration: const Duration(milliseconds: 120),
+                style: TextStyle(
+                  color: lit ? const Color(0xFF1DB954) : Colors.white54,
+                  fontSize: fontSize,
+                  fontWeight: FontWeight.bold,
+                  height: 1.4,
+                ),
+                child: Text('${word.text} '),
+              );
+            }).toList(),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Align(
+        alignment: rtl ? Alignment.centerRight : Alignment.centerLeft,
+        child: AnimatedDefaultTextStyle(
+          duration: const Duration(milliseconds: 220),
+          style: TextStyle(
+            color: isActive
+                ? Colors.white
+                : isPast
+                    ? Colors.white38
+                    : Colors.white60,
+            fontSize: fontSize,
+            fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+            height: 1.4,
+          ),
+          child: Text(
+            line.text,
+            textAlign: rtl ? TextAlign.right : TextAlign.left,
+          ),
         ),
       ),
     );

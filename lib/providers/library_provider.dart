@@ -18,12 +18,14 @@ class LibraryState {
   final List<Song> likedSongs;
   final List<Song> recentlyPlayed;
   final List<Playlist> playlists;
+  final List<String> folders;
   final bool isLoading;
 
   const LibraryState({
     this.likedSongs = const [],
     this.recentlyPlayed = const [],
     this.playlists = const [],
+    this.folders = const [],
     this.isLoading = false,
   });
 
@@ -31,12 +33,14 @@ class LibraryState {
     List<Song>? likedSongs,
     List<Song>? recentlyPlayed,
     List<Playlist>? playlists,
+    List<String>? folders,
     bool? isLoading,
   }) {
     return LibraryState(
       likedSongs: likedSongs ?? this.likedSongs,
       recentlyPlayed: recentlyPlayed ?? this.recentlyPlayed,
       playlists: playlists ?? this.playlists,
+      folders: folders ?? this.folders,
       isLoading: isLoading ?? this.isLoading,
     );
   }
@@ -52,7 +56,11 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
 
   String? _uid;
   StreamSubscription? _playlistsSub;
+  StreamSubscription? _sharedPlaylistsSub;
+  StreamSubscription? _foldersSub;
   StreamSubscription? _likesSub;
+  List<Playlist> _ownedPlaylists = const [];
+  List<Playlist> _sharedPlaylists = const [];
 
   LibraryNotifier(this._hive, this._fs) : super(const LibraryState()) {
     _loadLocal();
@@ -71,15 +79,30 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
   void initForUser(String uid) {
     if (_uid == uid) return;
     _uid = uid;
-    state = state.copyWith(isLoading: true);
+    // Do not keep the unauthenticated Hive cache visible while the account
+    // streams are loading. Those local-only objects can be stale ghosts from
+    // an earlier offline creation and must not appear beside account data.
+    state = state.copyWith(playlists: const [], isLoading: true);
 
     _playlistsSub?.cancel();
+    _sharedPlaylistsSub?.cancel();
+    _foldersSub?.cancel();
     _likesSub?.cancel();
 
     _playlistsSub = _fs.playlistsStream(uid).listen(
-          (playlists) =>
-              state = state.copyWith(playlists: playlists, isLoading: false),
-          onError: (_) => state = state.copyWith(isLoading: false),
+      (playlists) {
+        _ownedPlaylists = playlists;
+        state = state.copyWith(playlists: _mergePlaylists(), isLoading: false);
+      },
+      onError: (_) => state = state.copyWith(isLoading: false),
+    );
+    _sharedPlaylistsSub = _fs.sharedPlaylistsStream(uid).listen((shared) {
+      _sharedPlaylists = shared;
+      state = state.copyWith(playlists: _mergePlaylists());
+    });
+    _foldersSub = _fs.foldersStream(uid).listen(
+          (folders) => state = state.copyWith(folders: folders),
+          onError: (_) {},
         );
 
     _likesSub = _fs.likesStream(uid).listen((liked) {
@@ -89,9 +112,32 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     _fs.ensurePlaylistVisibilityDefaults(uid).catchError((_) {});
   }
 
+  List<Playlist> _mergePlaylists() {
+    final merged = <Playlist>[];
+    final seenShared = <String>{};
+    final seenFirestore = <String>{};
+    for (final playlist in [..._ownedPlaylists, ..._sharedPlaylists]) {
+      if (playlist.sharedId != null && !seenShared.add(playlist.sharedId!)) {
+        continue;
+      }
+      final firestoreId = playlist.firestoreId;
+      if (firestoreId != null &&
+          playlist.sharedId == null &&
+          !seenFirestore.add(firestoreId)) {
+        continue;
+      }
+      merged.add(playlist);
+    }
+    return merged;
+  }
+
   void resetForLogout() {
     _playlistsSub?.cancel();
     _likesSub?.cancel();
+    _sharedPlaylistsSub?.cancel();
+    _foldersSub?.cancel();
+    _ownedPlaylists = const [];
+    _sharedPlaylists = const [];
     _uid = null;
     _loadLocal();
   }
@@ -139,18 +185,17 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
   // ── Playlists ──────────────────────────────────────────────────────────────
 
   Future<void> createPlaylist(String name,
-      {String? description, String visibility = 'private'}) async {
+      {String? description,
+      String visibility = 'private',
+      bool collaborative = false}) async {
     if (_uid != null) {
-      try {
+      if (collaborative) {
+        await _fs.createSharedPlaylist(_uid!, name, const [],
+            visibility: visibility);
+      } else {
         await _fs.createPlaylist(_uid!, name,
             description: description, visibility: visibility);
-        // Live listener will update state
-      } catch (_) {
-        await _hive
-            .createPlaylist(name,
-                description: description, visibility: visibility)
-            .catchError((_) {});
-        state = state.copyWith(playlists: _hive.getPlaylists());
+        // The live Firestore listener updates the library.
       }
     } else {
       await _hive.createPlaylist(name,
@@ -174,6 +219,172 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     state = state.copyWith(playlists: _hive.getPlaylists());
   }
 
+  Future<void> copyPlaylistTo(Playlist source, Playlist target) async {
+    if (_uid == null || source.songs.isEmpty) return;
+    if (target.sharedId != null) {
+      await _fs.addSongsToSharedPlaylist(target.sharedId!, source.songs);
+    } else if (target.firestoreId != null) {
+      await _fs.addSongsToPlaylist(_uid!, target.firestoreId!, source.songs);
+    } else {
+      final targetKey = target.key as int?;
+      if (targetKey != null) {
+        for (final song in source.songs) {
+          await _hive.addSongToPlaylist(targetKey, song);
+        }
+      }
+    }
+  }
+
+  Future<void> createCollaborativePlaylist(
+      String name, List<Song> songs) async {
+    if (_uid == null) return;
+    await _fs.createSharedPlaylist(_uid!, name, songs);
+  }
+
+  Future<String?> makePlaylistCollaborative(Playlist playlist) async {
+    if (_uid == null || playlist.sharedId != null) return playlist.sharedId;
+    final sharedId =
+        await _fs.createSharedPlaylist(_uid!, playlist.name, playlist.songs);
+    final playlistId = playlist.firestoreId;
+    if (playlistId != null) {
+      await _fs.deletePlaylist(_uid!, playlistId);
+    }
+    final shared = Playlist(
+      name: playlist.name,
+      songs: playlist.songs,
+      createdAt: playlist.createdAt,
+      description: playlist.description,
+      visibility: playlist.visibility,
+      pinned: playlist.pinned,
+      folderId: playlist.folderId,
+      sharedId: sharedId,
+      ownerUid: _uid,
+    );
+    // Attach the Firestore ID expando so the new shared playlist is identifiable.
+    playlistFirestoreIds[shared] = sharedId;
+    state = state.copyWith(
+      playlists: state.playlists
+          .map((p) => _matchesPlaylist(p, playlist) ? shared : p)
+          .toList(),
+    );
+    return sharedId;
+  }
+
+  Future<void> inviteCollaborator(Playlist playlist, String uid) async {
+    if (_uid == null || playlist.sharedId == null) return;
+    await _fs.inviteToSharedPlaylist(
+      sharedPlaylistId: playlist.sharedId!,
+      fromUid: _uid!,
+      toUid: uid,
+      playlistName: playlist.name,
+    );
+  }
+
+  Future<void> quitCollaborativePlaylist(Playlist playlist) async {
+    if (_uid == null || playlist.sharedId == null) return;
+    await _fs.removeCollaborator(playlist.sharedId!, _uid!);
+    state = state.copyWith(
+      playlists: state.playlists
+          .where((item) => item.sharedId != playlist.sharedId)
+          .toList(),
+    );
+  }
+
+  Future<void> createFolder(String name) async {
+    if (_uid == null || name.trim().isEmpty) return;
+    await _fs.createFolder(_uid!, name.trim());
+  }
+
+  Future<void> renameFolder(String oldName, String newName) async {
+    final next = newName.trim();
+    if (_uid == null || next.isEmpty || oldName == next) return;
+    await _fs.renameFolder(_uid!, oldName, next);
+    for (final playlist
+        in state.playlists.where((p) => p.folderId == oldName)) {
+      await organizePlaylist(playlist, folderId: next, changeFolder: true);
+    }
+  }
+
+  Future<void> deleteFolder(String name) async {
+    if (_uid == null) return;
+    await _fs.deleteFolder(_uid!, name);
+    final affected =
+        state.playlists.where((playlist) => playlist.folderId == name).toList();
+    for (final playlist in affected) {
+      await organizePlaylist(playlist, folderId: null, changeFolder: true);
+    }
+  }
+
+  Future<void> organizePlaylist(Playlist playlist,
+      {bool? pinned, String? folderId, bool changeFolder = false}) async {
+    final nextPinned = pinned ?? playlist.pinned;
+    final nextFolder = changeFolder ? folderId : playlist.folderId;
+    final updated = Playlist(
+      name: playlist.name,
+      songs: playlist.songs,
+      createdAt: playlist.createdAt,
+      description: playlist.description,
+      visibility: playlist.visibility,
+      pinned: nextPinned,
+      folderId: nextFolder,
+      sharedId: playlist.sharedId,
+      ownerName: playlist.ownerName,
+    );
+
+    // Copy the Firestore ID expando onto the new object immediately.
+    final fsId = playlist.firestoreId ?? playlist.sharedId;
+    if (fsId != null) playlistFirestoreIds[updated] = fsId;
+
+    // ── Optimistic UI update BEFORE the async call ────────────────────────
+    // We scan state.playlists *now*, while we still hold the same object
+    // references. Doing it after an await risks the Firestore snapshot
+    // listener replacing the list with fresh objects that don't match.
+    bool matched = false;
+    final replaced = state.playlists.map((current) {
+      if (matched) return current;
+      final sameShared =
+          playlist.sharedId != null && current.sharedId == playlist.sharedId;
+      final sameFirestore = fsId != null && current.firestoreId == fsId;
+      final sameHive = playlist.key != null && current.key == playlist.key;
+      // Name+createdAt fallback ONLY for local-only playlists (no Firestore ID).
+      final sameName = fsId == null &&
+          current.firestoreId == null &&
+          current.sharedId == null &&
+          current.name == playlist.name &&
+          current.createdAt == playlist.createdAt;
+      if (sameShared || sameFirestore || sameHive || sameName) {
+        matched = true;
+        return updated;
+      }
+      return current;
+    }).toList();
+
+    if (matched) {
+      state = state.copyWith(playlists: replaced);
+    }
+
+    // ── Persist to Firestore / Hive ───────────────────────────────────────
+    if ((playlist.firestoreId != null || playlist.sharedId != null) &&
+        _uid != null) {
+      await _fs.setPlaylistOrganization(
+        uid: _uid!,
+        playlist: playlist,
+        pinned: nextPinned,
+        folderId: nextFolder,
+      );
+    } else {
+      final key = playlist.key as int?;
+      if (key != null) {
+        try {
+          final local = _hive.getPlaylists().firstWhere((p) => p.key == key);
+          local.pinned = nextPinned;
+          local.folderId = nextFolder;
+          await local.save();
+        } catch (_) {}
+      }
+    }
+  }
+
   /// Rename a playlist by Playlist object (primary — works for both Hive and Firestore playlists).
   Future<void> renamePlaylistObj(Playlist playlist, String name) async {
     final fsId = playlist.firestoreId;
@@ -188,7 +399,10 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
               songs: p.songs,
               createdAt: p.createdAt,
               description: p.description,
-              visibility: p.visibility);
+              visibility: p.visibility,
+              pinned: p.pinned,
+              folderId: p.folderId,
+              sharedId: p.sharedId);
         }
         return p;
       }).toList(),
@@ -217,7 +431,10 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
               songs: p.songs,
               createdAt: p.createdAt,
               description: p.description,
-              visibility: p.visibility);
+              visibility: p.visibility,
+              pinned: p.pinned,
+              folderId: p.folderId,
+              sharedId: p.sharedId);
         }
 
         return p;
@@ -242,6 +459,9 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
             createdAt: p.createdAt,
             description: p.description,
             visibility: visibility,
+            pinned: p.pinned,
+            folderId: p.folderId,
+            sharedId: p.sharedId,
           );
         }
         return p;
@@ -250,7 +470,12 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
 
     final fsId = playlist.firestoreId;
     if (_uid != null && fsId != null) {
-      await _fs.setPlaylistVisibility(_uid!, fsId, visibility);
+      await _fs.setPlaylistVisibility(
+        _uid!,
+        fsId,
+        visibility,
+        sharedPlaylistId: playlist.sharedId,
+      );
     }
     final hiveKey = playlist.key as int?;
     if (hiveKey != null) {
@@ -276,7 +501,7 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     if (hiveKey != null) {
       await _hive.deletePlaylist(hiveKey).catchError((_) {});
     }
-    if (_uid != null && fsId != null) {
+    if (_uid != null && fsId != null && playlist.sharedId == null) {
       await _fs.deletePlaylist(_uid!, fsId).catchError((_) {});
     }
   }
@@ -314,7 +539,10 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
                 songs: [...p.songs, song],
                 createdAt: p.createdAt,
                 description: p.description,
-                visibility: p.visibility);
+                visibility: p.visibility,
+                pinned: p.pinned,
+                folderId: p.folderId,
+                sharedId: p.sharedId);
           }
         }
         return p;
@@ -324,7 +552,10 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     if (hiveKey != null) {
       await _hive.addSongToPlaylist(hiveKey, song).catchError((_) {});
     }
-    if (_uid != null && fsId != null) {
+    if (_uid != null && playlist.sharedId != null) {
+      await _fs.addSongsToSharedPlaylist(
+          playlist.sharedId!, [song]).catchError((_) {});
+    } else if (_uid != null && fsId != null) {
       await _fs.addSongToPlaylist(_uid!, fsId, song).catchError((_) {});
     }
   }
@@ -343,7 +574,10 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
                 songs: [...p.songs, song],
                 createdAt: p.createdAt,
                 description: p.description,
-                visibility: p.visibility);
+                visibility: p.visibility,
+                pinned: p.pinned,
+                folderId: p.folderId,
+                sharedId: p.sharedId);
           }
         }
         return p;
@@ -370,7 +604,10 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
               songs: p.songs.where((s) => s.id != songId).toList(),
               createdAt: p.createdAt,
               description: p.description,
-              visibility: p.visibility);
+              visibility: p.visibility,
+              pinned: p.pinned,
+              folderId: p.folderId,
+              sharedId: p.sharedId);
         }
         return p;
       }).toList(),
@@ -379,7 +616,11 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     if (hiveKey != null) {
       await _hive.removeSongFromPlaylist(hiveKey, songId).catchError((_) {});
     }
-    if (_uid != null && fsId != null) {
+    if (_uid != null && playlist.sharedId != null) {
+      await _fs
+          .removeSongFromSharedPlaylist(playlist.sharedId!, songId)
+          .catchError((_) {});
+    } else if (_uid != null && fsId != null) {
       await _fs.removeSongFromPlaylist(_uid!, fsId, songId).catchError((_) {});
     }
   }
@@ -397,7 +638,10 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
               songs: p.songs.where((s) => s.id != songId).toList(),
               createdAt: p.createdAt,
               description: p.description,
-              visibility: p.visibility);
+              visibility: p.visibility,
+              pinned: p.pinned,
+              folderId: p.folderId,
+              sharedId: p.sharedId);
         }
         return p;
       }).toList(),
@@ -427,17 +671,24 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
   }
 
   bool _matchesPlaylist(Playlist p, Playlist target) {
+    if (target.sharedId != null && p.sharedId == target.sharedId) return true;
     if (target.firestoreId != null && p.firestoreId == target.firestoreId) {
       return true;
     }
     if (target.key != null && p.key == target.key) return true;
-    // Last resort: same name + createdAt
-    return p.name == target.name && p.createdAt == target.createdAt;
+    // Last resort: same name + createdAt — only for local-only playlists.
+    if (target.firestoreId == null && target.sharedId == null &&
+        p.firestoreId == null && p.sharedId == null) {
+      return p.name == target.name && p.createdAt == target.createdAt;
+    }
+    return false;
   }
 
   @override
   void dispose() {
     _playlistsSub?.cancel();
+    _sharedPlaylistsSub?.cancel();
+    _foldersSub?.cancel();
     _likesSub?.cancel();
     super.dispose();
   }

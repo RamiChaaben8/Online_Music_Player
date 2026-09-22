@@ -201,6 +201,79 @@ service cloud.firestore {
       allow delete: if request.auth != null && request.auth.uid == uid;
     }
 
+    match /sharedPlaylists/{playlistId} {
+      allow read: if signedIn() && request.auth.uid in resource.data.memberUids;
+      allow create: if signedIn()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.memberUids.size() == 1
+        && request.resource.data.memberUids[0] == request.auth.uid
+        && request.resource.data.tracks is list
+        && request.resource.data.tracks.size() <= 500
+        && request.resource.data.pinned is bool
+        && (!request.resource.data.keys().hasAny(['visibility'])
+          || request.resource.data.visibility in ['private', 'friends', 'public']);
+      allow update: if signedIn()
+        && (
+          request.auth.uid in resource.data.memberUids
+          || exists(/databases/$(database)/documents/users/$(request.auth.uid)/playlistInvites/$(playlistId))
+        )
+        && (
+          request.auth.uid == resource.data.ownerUid
+          || request.resource.data.memberUids == resource.data.memberUids
+          || (
+            request.auth.uid in resource.data.memberUids
+            && !(request.auth.uid in request.resource.data.memberUids)
+            && request.resource.data.memberUids.size() ==
+                resource.data.memberUids.size() - 1
+          )
+          || (
+            exists(/databases/$(database)/documents/users/$(request.auth.uid)/playlistInvites/$(playlistId))
+            && request.auth.uid in request.resource.data.memberUids
+            && !(request.auth.uid in resource.data.memberUids)
+          )
+        )
+        && (
+          request.resource.data.memberUids.size() >= resource.data.memberUids.size()
+          || (
+            request.auth.uid in resource.data.memberUids
+            && !(request.auth.uid in request.resource.data.memberUids)
+            && request.resource.data.memberUids.size() ==
+                resource.data.memberUids.size() - 1
+          )
+        )
+        && request.resource.data.memberUids.size() <= 20
+        && request.resource.data.tracks is list
+        && request.resource.data.tracks.size() <= 500
+        && request.resource.data.pinned is bool
+        && (!request.resource.data.keys().hasAny(['visibility'])
+          || request.resource.data.visibility in ['private', 'friends', 'public']);
+      allow delete: if signedIn() && request.auth.uid == resource.data.ownerUid;
+    }
+
+    match /users/{uid}/playlistFolders/{folderId} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+
+    match /users/{uid}/playlistInvites/{playlistId} {
+      // The invite recipient can read and delete their own invites.
+      // The owner of the shared playlist can also read (to check for duplicates).
+      allow read: if signedIn()
+        && (
+          request.auth.uid == uid
+          || (
+            exists(/databases/$(database)/documents/sharedPlaylists/$(playlistId))
+            && get(/databases/$(database)/documents/sharedPlaylists/$(playlistId)).data.ownerUid == request.auth.uid
+          )
+        );
+      allow delete: if signedIn() && request.auth.uid == uid;
+      allow create: if signedIn()
+        && request.auth.uid == request.resource.data.fromUid
+        && request.auth.uid != uid
+        && request.resource.data.sharedPlaylistId == playlistId
+        && exists(/databases/$(database)/documents/sharedPlaylists/$(playlistId))
+        && get(/databases/$(database)/documents/sharedPlaylists/$(playlistId)).data.ownerUid == request.auth.uid;
+    }
+
     match /users/{uid}/likes/{trackId} {
       allow read, delete: if request.auth != null && request.auth.uid == uid;
 

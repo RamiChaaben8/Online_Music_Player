@@ -61,15 +61,15 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     }
     // Debounce: fire after 600ms idle
     _debounce = Timer(const Duration(milliseconds: 600), () {
-      _doSearch(q);
+      _doSearch(q, false);
     });
   }
 
-  void _doSearch([String? overrideQuery]) {
+  void _doSearch([String? overrideQuery, bool unfocus = true]) {
     final query = overrideQuery ?? _controller.text.trim();
     if (query.isEmpty) return;
     if (overrideQuery != null) _controller.text = overrideQuery;
-    _focusNode.unfocus();
+    if (unfocus) _focusNode.unfocus();
     ref.read(searchHistoryProvider.notifier).addQuery(query);
     ref.read(searchProvider.notifier).search(query);
   }

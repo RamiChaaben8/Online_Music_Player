@@ -24,12 +24,29 @@ class Playlist extends HiveObject {
   @HiveField(4)
   String visibility;
 
+  @HiveField(5)
+  bool pinned;
+
+  @HiveField(6)
+  String? folderId;
+
+  /// Firestore ID for shared playlists. Kept on the model so shared
+  /// playlists can be updated regardless of which user's library displays it.
+  String? sharedId;
+  String? ownerName;
+  String? ownerUid;
+
   Playlist({
     required this.name,
     List<Song>? songs,
     DateTime? createdAt,
     this.description,
     this.visibility = 'private',
+    this.pinned = false,
+    this.folderId,
+    this.sharedId,
+    this.ownerName,
+    this.ownerUid,
   })  : songs = songs ?? [],
         createdAt = createdAt ?? DateTime.now();
 

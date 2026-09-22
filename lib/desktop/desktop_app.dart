@@ -15,7 +15,7 @@ class DesktopApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return AppThemeBuilder(
       builder: (context, theme) => MaterialApp(
-        title: 'Tuneify',
+        title: 'Utify',
         debugShowCheckedModeBanner: false,
         theme: _buildDesktopTheme(theme),
         home: const DesktopShell(),

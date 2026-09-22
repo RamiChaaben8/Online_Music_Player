@@ -5,6 +5,7 @@ import 'dart:io';
 import '../providers/auth_provider.dart';
 import '../providers/friends_provider.dart';
 import '../providers/listen_party_provider.dart';
+import '../providers/collaboration_invites_provider.dart';
 import '../desktop/theme/desktop_theme.dart';
 
 class ListenPartyControls extends ConsumerStatefulWidget {
@@ -221,34 +222,28 @@ class _PartyInviteButtonState extends ConsumerState<PartyInviteButton> {
   }
 
   Future<void> _openInvites() async {
-    if (Platform.isWindows) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Party invitations are temporarily unavailable on Windows.',
-          ),
-        ),
-      );
-      return;
-    }
     final invites = ref.read(listenPartyProvider).invites;
-    if (invites.isEmpty) {
+    final playlistInvites = ref.read(collaborationInvitesProvider);
+    if (invites.isEmpty && playlistInvites.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No listen party invitations.')),
+        const SnackBar(content: Text('No invitations.')),
       );
       return;
     }
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Listen party invitations'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: invites
-              .map(
+        title: const Text('Invitations'),
+        content: SizedBox(
+          width: 460,
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              ...invites.map(
                 (invite) => ListTile(
+                  leading: const Icon(Icons.headphones_outlined),
                   title: Text(invite.partyName),
-                  subtitle: Text('${invite.fromName} invited you'),
+                  subtitle: Text('${invite.fromName} invited you to listen'),
                   trailing: Wrap(
                     spacing: 4,
                     children: [
@@ -259,22 +254,61 @@ class _PartyInviteButtonState extends ConsumerState<PartyInviteButton> {
                               .read(listenPartyProvider.notifier)
                               .acceptInvite(invite);
                         },
-                        child: const Text('Join'),
+                        child: const Text('Accept'),
                       ),
                       IconButton(
                         tooltip: 'Decline',
                         icon: const Icon(Icons.close),
-                        onPressed: () {
-                          ref
-                              .read(listenPartyProvider.notifier)
-                              .declineInvite(invite);
+                        onPressed: () => ref
+                            .read(listenPartyProvider.notifier)
+                            .declineInvite(invite),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              ...playlistInvites.map(
+                (invite) => ListTile(
+                  leading: const Icon(Icons.queue_music_outlined),
+                  title: Text(invite.playlistName),
+                  subtitle:
+                      Text('${invite.fromName} invited you to collaborate'),
+                  trailing: Wrap(
+                    spacing: 4,
+                    children: [
+                      TextButton(
+                        onPressed: () async {
+                          Navigator.pop(dialogContext);
+                          await ref
+                              .read(collaborationInvitesProvider.notifier)
+                              .accept(invite);
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                    'Joined "${invite.playlistName}" playlist.'),
+                              ),
+                            );
+                          }
+                        },
+                        child: const Text('Accept'),
+                      ),
+                      IconButton(
+                        tooltip: 'Decline',
+                        icon: const Icon(Icons.close),
+                        onPressed: () async {
+                          Navigator.pop(dialogContext);
+                          await ref
+                              .read(collaborationInvitesProvider.notifier)
+                              .decline(invite);
                         },
                       ),
                     ],
                   ),
                 ),
-              )
-              .toList(),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -282,13 +316,14 @@ class _PartyInviteButtonState extends ConsumerState<PartyInviteButton> {
 
   @override
   Widget build(BuildContext context) {
-    final count = ref.watch(listenPartyProvider).invites.length;
+    final count = ref.watch(listenPartyProvider).invites.length +
+        ref.watch(collaborationInvitesProvider).length;
     final theme = AppThemeScope.maybeOf(context);
     return Stack(
       clipBehavior: Clip.none,
       children: [
         IconButton(
-          tooltip: 'Listen party invitations',
+          tooltip: 'Invitations',
           icon: const Icon(Icons.notifications_none),
           onPressed: _openInvites,
         ),

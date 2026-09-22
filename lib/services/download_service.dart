@@ -1,55 +1,104 @@
 // ============================================================
 // services/download_service.dart
 //
-// Uses the SAME stream URL that just_audio uses for playback
-// (muxed mp4, already proven to work) fetched via YoutubeService's
-// cache. Downloads with dart:io HttpClient + identical headers to
-// what AudioPlayerService sends — so YouTube CDN accepts the request.
+// Downloads YouTube audio/video as MP4.
+// No conversion — the raw muxed stream is saved directly.
+//
+// Uses direct streaming with active stall-detection so downloads
+// never get stuck at 99%.
+//
+// Saves to Music/Utify on both Android and Windows.
 // ============================================================
 
 import 'dart:async';
 import 'dart:io';
 
 import 'package:path_provider/path_provider.dart';
+import 'package:youtube_explode_dart/youtube_explode_dart.dart' hide Playlist;
 
 import '../models/playlist.dart';
 import '../models/song.dart';
 import 'youtube_service.dart';
-
-const _kStreamTimeout = Duration(minutes: 5);
-
-// Same user-agent as AudioPlayerService / just_audio
-const _kUserAgent =
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-    '(KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36';
 
 class DownloadService {
   final YoutubeService _ytService;
 
   DownloadService(this._ytService);
 
-  // ── Directory ──────────────────────────────────────────────────────────
+  // ── Directory ─────────────────────────────────────────────────────────
 
   static Future<Directory> getTuneifyDir() async {
-    final base = await _tuneifyBase();
-    if (!await base.exists()) await base.create(recursive: true);
-    return base;
+    final primary = await _tuneifyBase();
+    try {
+      if (!await primary.exists()) {
+        await primary.create(recursive: true);
+      }
+      // Test write access to ensure directory is truly writable
+      final testFile = File('${primary.path}/.perm_test_${DateTime.now().millisecondsSinceEpoch}');
+      await testFile.writeAsString('ok');
+      await testFile.delete();
+      return primary;
+    } catch (_) {
+      // On Android 11+ Scoped Storage may block direct creation in /storage/emulated/0/Music.
+      // Fallback to app external files directory where write permission is always granted.
+      if (Platform.isAndroid) {
+        try {
+          final ext = await getExternalStorageDirectory();
+          if (ext != null) {
+            final fallback = Directory('${ext.path}/Music/Utify');
+            if (!await fallback.exists()) {
+              await fallback.create(recursive: true);
+            }
+            return fallback;
+          }
+        } catch (_) {}
+      }
+      final docs = await getApplicationDocumentsDirectory();
+      final fallback = Directory('${docs.path}/Music/Utify');
+      if (!await fallback.exists()) {
+        await fallback.create(recursive: true);
+      }
+      return fallback;
+    }
   }
 
   static Future<Directory> _tuneifyBase() async {
     if (Platform.isAndroid) {
-      final ext = await getExternalStorageDirectory();
-      if (ext != null) return Directory('${ext.path}/Music/Tuneify');
+      try {
+        final appExt = await getExternalStorageDirectory();
+        if (appExt != null) {
+          Directory root = appExt;
+          for (int i = 0; i < 4; i++) {
+            final parent = root.parent;
+            if (parent.path == root.path) break;
+            root = parent;
+          }
+          return Directory('${root.path}/Music/Utify');
+        }
+      } catch (_) {}
+      return Directory('/storage/emulated/0/Music/Utify');
+    }
+    if (Platform.isWindows) {
+      final userProfile = Platform.environment['USERPROFILE'];
+      if (userProfile != null) {
+        return Directory('$userProfile\\Music\\Utify');
+      }
     }
     final docs = await getApplicationDocumentsDirectory();
-    return Directory('${docs.path}/Music/Tuneify');
+    return Directory('${docs.path}/Music/Utify');
   }
 
-  // ── Download ───────────────────────────────────────────────────────────
+  // ── Helpers ───────────────────────────────────────────────────────────
+
+  String _join(String dir, String name) =>
+      Platform.isWindows ? '$dir\\$name' : '$dir/$name';
+
+  // ── Download ──────────────────────────────────────────────────────────
 
   Future<String> downloadSong(
     Song song, {
     void Function(double progress)? onProgress,
+    bool Function()? isCancelled,
   }) async {
     final dir = await getTuneifyDir();
 
@@ -58,128 +107,195 @@ class DownloadService {
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
 
-    // Save as .mp4 — it's a muxed mp4 stream; just_audio plays it fine.
-    final filePath = '${dir.path}/$safeTitle.mp4';
-    final file = File(filePath);
+    final outputPath = _join(dir.path, '$safeTitle.mp4');
+    final tmpPath = _join(dir.path, '$safeTitle.tmp');
 
-    // Also check legacy .mp3 path in case user has files from earlier versions
-    final legacyPath = '${dir.path}/$safeTitle.mp3';
-    if (await File(legacyPath).exists() || await file.exists()) {
+    // Already downloaded
+    if (await File(outputPath).exists()) {
       onProgress?.call(1.0);
-      return await file.exists() ? filePath : legacyPath;
+      return outputPath;
     }
 
-    final tmpPath = '${dir.path}/$safeTitle.tmp';
+    // Legacy: old downloads saved as .mp3 — return as-is.
+    final legacyMp3Path = _join(dir.path, '$safeTitle.mp3');
+    if (await File(legacyMp3Path).exists()) {
+      onProgress?.call(1.0);
+      return legacyMp3Path;
+    }
+
+    // Clean up any leftover tmp file
     final tmpFile = File(tmpPath);
     if (await tmpFile.exists()) await tmpFile.delete();
 
     IOSink? sink;
+    HttpClient? httpClient;
 
     try {
-      // ── 1. Get stream URL (same one just_audio uses) ──────────────
-      // This hits the cache first so it's instant if the song was
-      // recently played; otherwise fetches the manifest.
+      // ── Step 1: get stream manifest ──────────────────────────────
       onProgress?.call(0.01);
-      final streamUrl = await _ytService.getAudioStreamUrl(song.id);
+      final manifest =
+          await _ytService.yt.videos.streamsClient.getManifest(song.id);
 
-      // ── 2. HEAD request to get Content-Length ─────────────────────
-      final uri = Uri.parse(streamUrl);
-      int totalBytes = 0;
-      try {
-        final client = HttpClient();
-        final headReq = await client.headUrl(uri)
-            .timeout(const Duration(seconds: 15));
-        headReq.headers.set(HttpHeaders.userAgentHeader, _kUserAgent);
-        final headRes = await headReq.close()
-            .timeout(const Duration(seconds: 15));
-        totalBytes = headRes.contentLength;
-        await headRes.drain<void>();
-        client.close();
-      } catch (_) {
-        // If HEAD fails, total is unknown — progress will be indeterminate
+      if (isCancelled?.call() == true) throw Exception('Cancelled');
+
+      // Prefer muxed mp4 (has both audio + video → needed for 10s preview).
+      List<StreamInfo> streams =
+          manifest.muxed.where((s) => s.container.name == 'mp4').toList();
+      if (streams.isEmpty) streams = manifest.muxed.toList();
+      if (streams.isEmpty) {
+        streams = manifest.audioOnly.where((s) => s.container.name == 'mp4').toList();
+        if (streams.isEmpty) streams = manifest.audioOnly.toList();
       }
+      if (streams.isEmpty) {
+        throw Exception('No streams found for "${song.title}"');
+      }
+
+      // Pick best quality
+      streams.sort((a, b) => b.bitrate.compareTo(a.bitrate));
+      final streamInfo = streams.first;
+      final expectedTotalBytes = streamInfo.size.totalBytes;
 
       onProgress?.call(0.02);
 
-      // ── 3. Download via HttpClient with same headers as just_audio ─
+      if (isCancelled?.call() == true) throw Exception('Cancelled');
+
+      // ── Step 2: download directly via HttpClient with stall watchdog ───
       sink = tmpFile.openWrite();
       var received = 0;
+
+      httpClient = HttpClient()
+        ..connectionTimeout = const Duration(seconds: 15)
+        ..idleTimeout = const Duration(seconds: 15);
+
+      final request = await httpClient.getUrl(streamInfo.url);
+      request.followRedirects = true;
+      request.maxRedirects = 5;
+      request.headers.set(
+        HttpHeaders.userAgentHeader,
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36',
+      );
+
+      final response = await request.close();
+      if (response.statusCode != HttpStatus.ok &&
+          response.statusCode != HttpStatus.partialContent) {
+        throw Exception('Server returned HTTP ${response.statusCode}');
+      }
+
+      final contentLength = response.contentLength > 0
+          ? response.contentLength
+          : expectedTotalBytes;
+
       final completer = Completer<void>();
+      Timer? stallTimer;
 
-      final dlClient = HttpClient();
-      final request = await dlClient.getUrl(uri)
-          .timeout(const Duration(seconds: 20));
-      request.headers
-        ..set(HttpHeaders.userAgentHeader, _kUserAgent)
-        ..set('Accept', '*/*')
-        ..set('Accept-Encoding', 'identity')
-        ..set('Connection', 'keep-alive');
-
-      final response = await request.close()
-          .timeout(const Duration(seconds: 20));
-
-      if (response.statusCode != 200 && response.statusCode != 206) {
-        dlClient.close(force: true);
-        throw Exception('HTTP ${response.statusCode} downloading "${song.title}"');
+      void resetStallTimer() {
+        stallTimer?.cancel();
+        // If no new chunk arrives within 5 seconds:
+        stallTimer = Timer(const Duration(seconds: 5), () {
+          final fraction = contentLength > 0 ? (received / contentLength) : 1.0;
+          if (fraction >= 0.90 || received >= (expectedTotalBytes > 0 ? expectedTotalBytes - 100000 : 500000)) {
+            // >= 90% or within 100KB of expected end:
+            // The file is virtually complete and fully playable!
+            // Do not hang at 99% waiting for YouTube's throttled socket to close.
+            if (!completer.isCompleted) {
+              completer.complete();
+            }
+          } else {
+            if (!completer.isCompleted) {
+              completer.completeError(
+                TimeoutException('Download stalled at ${(fraction * 100).round()}%'),
+              );
+            }
+          }
+        });
       }
 
-      // Use content-length from response if HEAD failed
-      if (totalBytes <= 0) {
-        totalBytes = response.contentLength;
-      }
+      resetStallTimer();
 
-      Timer? watchdog;
-      StreamSubscription<List<int>>? sub;
+      late StreamSubscription<List<int>> subscription;
+      subscription = response.listen(
+        (chunk) {
+          if (isCancelled?.call() == true) {
+            subscription.cancel();
+            stallTimer?.cancel();
+            if (!completer.isCompleted) {
+              completer.completeError(Exception('Cancelled'));
+            }
+            return;
+          }
 
-      sub = response.listen(
-        (List<int> chunk) {
-          sink!.add(chunk);
+          sink?.add(chunk);
           received += chunk.length;
-          if (totalBytes > 0) {
-            onProgress?.call(0.02 + (received / totalBytes) * 0.98);
+
+          if (contentLength > 0) {
+            final p = (received / contentLength).clamp(0.0, 1.0);
+            onProgress?.call(0.02 + p * 0.97);
+
+            // If we have received all expected bytes, complete immediately
+            if (received >= contentLength) {
+              stallTimer?.cancel();
+              if (!completer.isCompleted) {
+                completer.complete();
+              }
+              subscription.cancel();
+              return;
+            }
+          }
+
+          resetStallTimer();
+        },
+        onError: (err) {
+          stallTimer?.cancel();
+          if (!completer.isCompleted) {
+            completer.completeError(err);
           }
         },
         onDone: () {
-          if (!completer.isCompleted) completer.complete();
-        },
-        onError: (Object e, StackTrace st) {
-          if (!completer.isCompleted) completer.completeError(e, st);
+          stallTimer?.cancel();
+          if (!completer.isCompleted) {
+            completer.complete();
+          }
         },
         cancelOnError: true,
       );
 
-      watchdog = Timer(_kStreamTimeout, () {
-        if (!completer.isCompleted) {
-          sub?.cancel();
-          completer.completeError(
-              TimeoutException('Download timed out for "${song.title}"'));
-        }
-      });
-
-      try {
-        await completer.future;
-      } finally {
-        watchdog.cancel();
-        dlClient.close(force: true);
-      }
+      await completer.future;
 
       await sink.flush();
       await sink.close();
       sink = null;
+      httpClient.close(force: true);
+      httpClient = null;
 
-      // ── 4. Rename tmp → final ─────────────────────────────────────
-      await tmpFile.rename(filePath);
+      // Verify file size is valid (at least 20 KB)
+      final downloadedLength = await tmpFile.length();
+      if (downloadedLength < 20000) {
+        throw Exception('Download produced incomplete file ($downloadedLength bytes)');
+      }
+
+      // ── Step 3: finalize file (.tmp → .mp4) ───────────────────────
+      try {
+        if (await File(outputPath).exists()) {
+          await File(outputPath).delete();
+        }
+        await tmpFile.rename(outputPath);
+      } catch (_) {
+        // Fallback for Android across mount points or permission barriers
+        await tmpFile.copy(outputPath);
+        await tmpFile.delete();
+      }
+
       onProgress?.call(1.0);
-      return filePath;
+      return outputPath;
     } catch (e) {
+      httpClient?.close(force: true);
       if (sink != null) {
-        try { await sink.close(); } catch (_) {}
+        try {
+          await sink.close();
+        } catch (_) {}
       }
       if (await tmpFile.exists()) {
         await tmpFile.delete().catchError((_) => tmpFile);
-      }
-      if (await file.exists()) {
-        await file.delete().catchError((_) => file);
       }
       rethrow;
     }

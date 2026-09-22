@@ -12,10 +12,12 @@ import '../providers/auth_provider.dart';
 import '../providers/player_provider.dart';
 import '../providers/download_provider.dart';
 import '../providers/library_provider.dart';
+import '../services/firestore_service.dart';
 import '../screens/library_screen.dart';
 import '../screens/now_playing_screen.dart';
 import '../widgets/mini_player.dart';
 import '../widgets/song_tile.dart';
+import '../desktop/widgets/invite_collaborator_dialog.dart';
 
 class PlaylistScreen extends ConsumerStatefulWidget {
   final String title;
@@ -58,6 +60,25 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
   }
 
   List<Song> get _filtered => applyFilter(_songs, _filter);
+
+  Playlist? _currentPlaylist() {
+    final target = widget.playlist;
+    if (target == null) return null;
+    final playlists = ref.read(libraryProvider).playlists;
+    for (final playlist in playlists) {
+      if (target.sharedId != null && playlist.sharedId == target.sharedId) {
+        return playlist;
+      }
+      if (target.firestoreId != null &&
+          playlist.firestoreId == target.firestoreId) {
+        return playlist;
+      }
+      if (target.key != null && playlist.key == target.key) {
+        return playlist;
+      }
+    }
+    return target;
+  }
 
   void _playSong(Song song, List<Song> queue) {
     final currentId = ref.read(playerProvider).currentSong?.id;
@@ -110,29 +131,40 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
   }
 
   Widget _buildPlaylistActions() {
+    final playlist = _currentPlaylist();
+    final canEdit = playlist == null ||
+        playlist.sharedId == null ||
+        playlist.ownerUid ==
+            ref.read(authServiceProvider).currentUser?.uid;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       child: Row(
         children: [
-          _ActionChip(
-            icon: _editingOrder ? Icons.check : Icons.sort,
-            label: _editingOrder ? 'Done' : 'Edit order',
-            onTap: () => setState(() => _editingOrder = !_editingOrder),
-          ),
+          if (canEdit)
+            _ActionChip(
+              icon: _editingOrder ? Icons.check : Icons.sort,
+              label: _editingOrder ? 'Done' : 'Edit order',
+              onTap: () => setState(() => _editingOrder = !_editingOrder),
+            ),
           const SizedBox(width: 8),
-          _ActionChip(
-            icon: Icons.edit_outlined,
-            label: 'Name & details',
-            onTap: _showPlaylistDetails,
-          ),
+          if (canEdit) ...[
+            const SizedBox(width: 8),
+            _ActionChip(
+              icon: Icons.edit_outlined,
+              label: 'Name & details',
+              onTap: _showPlaylistDetails,
+            ),
+          ],
         ],
       ),
     );
   }
 
   void _showPlaylistDetails() {
-    final playlist = widget.playlist;
+    final playlist = _currentPlaylist();
     if (playlist == null) return;
+    final isOwner = playlist.sharedId == null ||
+        playlist.ownerUid == ref.read(authServiceProvider).currentUser?.uid;
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: const Color(0xFF282828),
@@ -140,7 +172,8 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(
+            if (isOwner)
+              ListTile(
               leading: const Icon(Icons.edit, color: Colors.white),
               title: const Text('Edit name'),
               onTap: () {
@@ -148,7 +181,8 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
                 _showRenameDialog(playlist);
               },
             ),
-            ListTile(
+            if (isOwner)
+              ListTile(
               leading: const Icon(Icons.lock_outline, color: Colors.white),
               title: const Text('Privacy'),
               subtitle: Text(playlist.visibility),
@@ -157,19 +191,135 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
                 _showVisibilityMenu(playlist);
               },
             ),
-            ListTile(
-              leading: const Icon(Icons.delete_outline, color: Colors.red),
-              title: const Text('Delete playlist',
-                  style: TextStyle(color: Colors.red)),
+            if (isOwner)
+              ListTile(
+              leading:
+                  const Icon(Icons.group_add_outlined, color: Colors.white),
+              title: Text(
+                playlist.sharedId == null
+                    ? 'Make collaborative'
+                    : 'Invite collaborator',
+              ),
+              onTap: () async {
+                Navigator.pop(sheetContext);
+                if (playlist.sharedId == null) {
+                  final sharedId = await ref
+                      .read(libraryProvider.notifier)
+                      .makePlaylistCollaborative(playlist);
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                        content: Text('Playlist is now collaborative.')),
+                  );
+                  if (sharedId != null) {
+                    // Build an up-to-date playlist object with the fresh sharedId.
+                    final updatedPlaylist = Playlist(
+                      name: playlist.name,
+                      songs: playlist.songs,
+                      createdAt: playlist.createdAt,
+                      description: playlist.description,
+                      visibility: playlist.visibility,
+                      pinned: playlist.pinned,
+                      folderId: playlist.folderId,
+                      sharedId: sharedId,
+                      ownerUid: ref
+                          .read(authServiceProvider)
+                          .currentUser
+                          ?.uid,
+                    );
+                    playlistFirestoreIds[updatedPlaylist] = sharedId;
+                    if (mounted) {
+                      final selected = await showCollaboratorInviteDialog(
+                          context, ref, updatedPlaylist);
+                      if (selected != null && mounted) {
+                        try {
+                          await ref
+                              .read(libraryProvider.notifier)
+                              .inviteCollaborator(updatedPlaylist, selected);
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text('Playlist invitation sent.')),
+                            );
+                          }
+                        } catch (error) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(error.toString())),
+                            );
+                          }
+                        }
+                      }
+                    }
+                  }
+                } else {
+                  final selected = await showCollaboratorInviteDialog(
+                      context, ref, playlist);
+                  if (selected != null) {
+                    await ref
+                        .read(libraryProvider.notifier)
+                        .inviteCollaborator(playlist, selected);
+                  }
+                }
+              },
+            ),
+            if (isOwner)
+              ListTile(
+              leading: Icon(
+                playlist.pinned ? Icons.push_pin : Icons.push_pin_outlined,
+                color: Colors.white,
+              ),
+              title: Text(playlist.pinned ? 'Unpin playlist' : 'Pin playlist'),
               onTap: () {
                 Navigator.pop(sheetContext);
-                _showDeleteDialog(playlist);
+                ref.read(libraryProvider.notifier).organizePlaylist(
+                      playlist,
+                      pinned: !playlist.pinned,
+                    );
+              },
+            ),
+            if (isOwner)
+              ListTile(
+              leading: const Icon(Icons.folder_outlined, color: Colors.white),
+              title: const Text('Add to folder'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _showFolderPicker(playlist);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.playlist_add, color: Colors.white),
+              title: const Text('Add to another playlist'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _showCopyPlaylistDialog(playlist);
+              },
+            ),
+            ListTile(
+              leading: Icon(isOwner ? Icons.delete_outline : Icons.logout,
+                  color: isOwner ? Colors.red : Colors.white),
+              title: Text(isOwner ? 'Delete playlist' : 'Quit playlist',
+                  style: TextStyle(color: isOwner ? Colors.red : Colors.white)),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                if (isOwner) {
+                  _showDeleteDialog(playlist);
+                } else {
+                  _quitPlaylist(playlist);
+                }
               },
             ),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _quitPlaylist(Playlist playlist) async {
+    await ref
+        .read(libraryProvider.notifier)
+        .quitCollaborativePlaylist(playlist);
+    if (mounted) Navigator.pop(context);
   }
 
   void _showRenameDialog(Playlist playlist) {
@@ -232,6 +382,94 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
     );
   }
 
+  void _showFolderPicker(Playlist playlist) {
+    final folders = ref.read(libraryProvider).folders;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A1A),
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(
+              title:
+                  Text('Choose folder', style: TextStyle(color: Colors.white)),
+            ),
+            ...folders.map((folder) => ListTile(
+                  leading:
+                      const Icon(Icons.folder_outlined, color: Colors.white70),
+                  title:
+                      Text(folder, style: const TextStyle(color: Colors.white)),
+                  onTap: () {
+                    ref.read(libraryProvider.notifier).organizePlaylist(
+                          playlist,
+                          folderId: folder,
+                          changeFolder: true,
+                        );
+                    Navigator.pop(sheetContext);
+                  },
+                )),
+            ListTile(
+              leading:
+                  const Icon(Icons.folder_off_outlined, color: Colors.white70),
+              title: const Text('Remove from folder',
+                  style: TextStyle(color: Colors.white)),
+              onTap: () {
+                ref.read(libraryProvider.notifier).organizePlaylist(
+                      playlist,
+                      folderId: null,
+                      changeFolder: true,
+                    );
+                Navigator.pop(sheetContext);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showCopyPlaylistDialog(Playlist source) async {
+    final targets = ref
+        .read(libraryProvider)
+        .playlists
+        .where((playlist) => playlist != source && playlist.name != source.name)
+        .toList();
+    if (targets.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Create another playlist first.')),
+      );
+      return;
+    }
+    final target = await showDialog<Playlist>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: const Text('Add to another playlist'),
+        children: targets
+            .map((playlist) => SimpleDialogOption(
+                  onPressed: () => Navigator.pop(dialogContext, playlist),
+                  child: Text(playlist.name),
+                ))
+            .toList(),
+      ),
+    );
+    if (target == null || !mounted) return;
+    try {
+      await ref.read(libraryProvider.notifier).copyPlaylistTo(source, target);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Added songs to ${target.name}.')),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not add playlist: $error')),
+        );
+      }
+    }
+  }
+
   void _showDeleteDialog(Playlist playlist) {
     showDialog(
       context: context,
@@ -262,8 +500,11 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
   Widget build(BuildContext context) {
     final playerState = ref.watch(playerProvider);
     final downloadState = ref.watch(downloadProvider);
-    final filtered = _filtered;
-    final onlineSongs = _songs.where((song) => !song.isLocal).toList();
+    ref.watch(libraryProvider);
+    final currentPlaylist = _currentPlaylist();
+    final songs = currentPlaylist?.songs ?? _songs;
+    final filtered = applyFilter(songs, _filter);
+    final onlineSongs = songs.where((song) => !song.isLocal).toList();
     final downloadedCount =
         onlineSongs.where((song) => downloadState.isDownloaded(song.id)).length;
     final allDownloaded =
@@ -281,25 +522,50 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
             SliverToBoxAdapter(
               child: _PlaylistHeader(
                 title: widget.title,
-                songs: _songs,
+                songs: songs,
                 icon: widget.icon,
-                creatorName:
+                creatorName: currentPlaylist?.ownerName ??
                     ref.watch(authServiceProvider).currentUser?.displayName ??
-                        'You',
+                    'You',
                 shuffle: playerState.shuffle,
                 onPlay: () => _playPlaylist(shuffle: false),
                 onShuffle: () => _playPlaylist(shuffle: true),
                 allDownloaded: allDownloaded,
                 isDownloading: isDownloading,
                 onDownload: _downloadPlaylist,
+                onMore: currentPlaylist == null ? null : _showPlaylistDetails,
+                onInvite: currentPlaylist == null
+                    ? null
+                    : () async {
+                        final selected = await showCollaboratorInviteDialog(
+                            context, ref, currentPlaylist);
+                        if (selected == null || !context.mounted) return;
+                        try {
+                          await ref
+                              .read(libraryProvider.notifier)
+                              .inviteCollaborator(currentPlaylist, selected);
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text('Playlist invitation sent.')),
+                            );
+                          }
+                        } catch (error) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(error.toString())),
+                            );
+                          }
+                        }
+                      },
               ),
             ),
 
-            if (widget.playlist != null)
+            if (currentPlaylist != null)
               SliverToBoxAdapter(child: _buildPlaylistActions()),
 
             // ── Song list ─────────────────────────────────────────────────
-            _editingOrder && widget.playlist != null
+            _editingOrder && currentPlaylist != null
                 ? SliverReorderableList(
                     itemCount: _songs.length,
                     onReorder: (oldIndex, newIndex) {
@@ -317,7 +583,7 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
                         child: SongTile(
                           song: song,
                           onTap: () => _playSong(song, _songs),
-                          currentPlaylist: widget.playlist,
+                          currentPlaylist: currentPlaylist,
                           trailing: const Icon(Icons.drag_handle,
                               color: Color(0xFFB3B3B3)),
                         ),
@@ -342,7 +608,7 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
                               isPlaying: isCurrent && playerState.isPlaying,
                               isSelected: isCurrent,
                               onTap: () => _playSong(song, filtered),
-                              currentPlaylist: widget.playlist,
+                              currentPlaylist: currentPlaylist,
                             );
                           },
                           childCount: filtered.length,
@@ -376,6 +642,8 @@ class _PlaylistHeader extends StatelessWidget {
   final bool allDownloaded;
   final bool isDownloading;
   final VoidCallback onDownload;
+  final VoidCallback? onInvite;
+  final VoidCallback? onMore;
 
   const _PlaylistHeader({
     required this.title,
@@ -387,6 +655,8 @@ class _PlaylistHeader extends StatelessWidget {
     required this.allDownloaded,
     required this.isDownloading,
     required this.onDownload,
+    this.onInvite,
+    this.onMore,
     this.icon,
   });
 
@@ -468,6 +738,13 @@ class _PlaylistHeader extends StatelessWidget {
               const SizedBox(height: 14),
               Row(
                 children: [
+                  if (onInvite != null)
+                    IconButton(
+                      icon: const Icon(Icons.person_add_alt_1,
+                          color: Color(0xFFB3B3B3), size: 27),
+                      tooltip: 'Invite to playlist',
+                      onPressed: onInvite,
+                    ),
                   IconButton(
                     icon: Icon(
                       isDownloading
@@ -489,7 +766,7 @@ class _PlaylistHeader extends StatelessWidget {
                   IconButton(
                     icon: const Icon(Icons.more_vert,
                         color: Color(0xFFB3B3B3), size: 28),
-                    onPressed: () {},
+                    onPressed: onMore,
                   ),
                   const Spacer(),
                   IconButton(

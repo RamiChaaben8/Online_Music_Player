@@ -108,6 +108,21 @@ class YoutubeService {
     } finally {
       _inflight.remove(videoId);
     }
+
+  }
+
+  /// Resolves an audio-only stream for downloads. Playback keeps using the
+  /// cached muxed stream because it is supported consistently by just_audio.
+  Future<String> getAudioOnlyStreamUrl(String videoId) async {
+    final manifest = await _yt.videos.streamsClient.getManifest(videoId);
+    var streams =
+        manifest.audioOnly.where((s) => s.container.name == 'mp4').toList();
+    if (streams.isEmpty) streams = manifest.audioOnly.toList();
+    if (streams.isEmpty) {
+      throw YoutubeServiceException('No audio-only stream found for $videoId');
+    }
+    streams.sort((a, b) => b.bitrate.compareTo(a.bitrate));
+    return streams.first.url.toString();
   }
 
   Future<String> _fetchAndCache(String videoId) async {

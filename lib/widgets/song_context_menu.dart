@@ -16,6 +16,7 @@ import '../models/song.dart';
 import '../models/playlist.dart';
 import '../providers/library_provider.dart';
 import '../providers/player_provider.dart';
+import '../providers/download_provider.dart';
 import '../screens/queue_screen.dart';
 import '../desktop/theme/desktop_theme.dart';
 
@@ -61,6 +62,9 @@ Future<void> showSongContextMenu({
 }) async {
   final library = ref.read(libraryProvider);
   final isLiked = library.isLiked(song.id);
+  final downloadState = ref.read(downloadProvider);
+  final isDownloaded = downloadState.isDownloaded(song.id);
+  final isDownloading = downloadState.isDownloading(song.id);
   final theme = AppThemeScope.maybeOf(context);
 
   final result = await showMenu<_Action>(
@@ -98,6 +102,25 @@ Future<void> showSongContextMenu({
         value: _Action.addToQueue,
         child: _row(Icons.queue_music, 'Add to queue', theme: theme),
       ),
+      // Download option — only for online songs not yet downloaded or downloading
+      if (!song.isLocal && !isDownloaded && !isDownloading)
+        PopupMenuItem(
+          value: _Action.downloadSong,
+          child: _row(Icons.download_outlined, 'Download',
+              color: theme?.button ?? const Color(0xFF1DB954), theme: theme),
+        ),
+      if (isDownloading)
+        PopupMenuItem(
+          value: _Action.cancelDownload,
+          child: _row(Icons.cancel_outlined, 'Cancel download',
+              color: Colors.orange, theme: theme),
+        ),
+      if (isDownloaded)
+        PopupMenuItem(
+          value: _Action.deleteDownload,
+          child: _row(Icons.delete_outline, 'Delete downloaded file',
+              color: Colors.redAccent, theme: theme),
+        ),
       if (currentPlaylist != null)
         PopupMenuItem(
           value: _Action.goToQueue,
@@ -130,12 +153,21 @@ Future<void> showSongContextMenu({
     case _Action.addToQueue:
       ref.read(playerProvider.notifier).addToQueue(song);
       if (context.mounted) _snack(context, 'Added to queue');
+    case _Action.downloadSong:
+      ref.read(downloadProvider.notifier).downloadSong(song);
+      if (context.mounted) _snack(context, 'Downloading "${song.title}"…');
+    case _Action.cancelDownload:
+      ref.read(downloadProvider.notifier).cancelDownload(song.id);
+      if (context.mounted) _snack(context, 'Cancelled download');
     case _Action.goToQueue:
       if (context.mounted) {
         Navigator.of(context).push(
           MaterialPageRoute(builder: (_) => const QueueScreen()),
         );
       }
+    case _Action.deleteDownload:
+      await ref.read(downloadProvider.notifier).deleteSong(song);
+      if (context.mounted) _snack(context, 'Downloaded file deleted');
   }
 }
 
@@ -195,6 +227,9 @@ enum _Action {
   toggleLike,
   addToQueue,
   goToQueue,
+  downloadSong,
+  cancelDownload,
+  deleteDownload,
 }
 
 Widget _row(IconData icon, String label, {Color? color, AppThemeData? theme}) {

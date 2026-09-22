@@ -7,12 +7,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 import '../providers/library_provider.dart';
+import '../providers/auth_provider.dart';
 import '../providers/local_music_provider.dart';
 import '../models/playlist.dart';
 import '../models/song.dart';
 import '../screens/playlist_screen.dart';
+import '../services/firestore_service.dart';
 import '../widgets/import_playlist_dialog.dart';
 import '../widgets/profile_avatar.dart';
+import '../widgets/listen_party_controls.dart';
+import '../desktop/widgets/invite_collaborator_dialog.dart';
 
 /// Which songs to show in playlist/library screens.
 enum SongFilter { all, local, online }
@@ -54,6 +58,7 @@ class LibraryScreen extends ConsumerStatefulWidget {
 
 class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   bool _gridView = false;
+  final Set<String> _expandedFolders = <String>{};
 
   @override
   Widget build(BuildContext context) {
@@ -90,6 +95,13 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                         color: Colors.white, size: 26),
                     onPressed: () => showImportPlaylistDialog(context, ref),
                     tooltip: 'Import playlist',
+                  ),
+                  const PartyInviteButton(),
+                  IconButton(
+                    icon: const Icon(Icons.create_new_folder_outlined,
+                        color: Colors.white, size: 25),
+                    onPressed: () => _showCreateFolderDialog(context),
+                    tooltip: 'Create folder',
                   ),
                   // Create (+)
                   IconButton(
@@ -201,7 +213,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
 
   Widget _buildGridView(
       BuildContext context, LibraryState library, LocalMusicState localState) {
-    final playlists = library.playlists;
+    final playlists = [...library.playlists]..sort((a, b) {
+        if (a.pinned != b.pinned) return a.pinned ? -1 : 1;
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      });
     if (playlists.isEmpty) return _emptyState(context);
     return GridView.builder(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -267,8 +282,14 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       ));
     }
 
-    // Custom playlists
-    for (final pl in library.playlists) {
+    final unfiled = library.playlists
+        .where((playlist) => playlist.folderId == null)
+        .toList()
+      ..sort((a, b) {
+        if (a.pinned != b.pinned) return a.pinned ? -1 : 1;
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      });
+    for (final pl in unfiled) {
       items.add(_SpotifyPlaylistTile(
         playlist: pl,
         thumbnail: pl.coverThumbnail,
@@ -285,7 +306,161 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       ));
     }
 
+    for (final folder in library.folders) {
+      final playlists = library.playlists
+          .where((playlist) => playlist.folderId == folder)
+          .toList();
+      playlists.sort((a, b) {
+        if (a.pinned != b.pinned) return a.pinned ? -1 : 1;
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      });
+      final expanded = _expandedFolders.contains(folder);
+      items.add(ListTile(
+        leading: Icon(
+          expanded ? Icons.folder_open_outlined : Icons.folder_outlined,
+          color: const Color(0xFFB3B3B3),
+        ),
+        title: Text(folder,
+            style: const TextStyle(
+                color: Colors.white, fontWeight: FontWeight.w600)),
+        subtitle: Text(
+            '${playlists.length} playlist${playlists.length == 1 ? '' : 's'}',
+            style: const TextStyle(color: Color(0xFFB3B3B3))),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.more_vert, color: Color(0xFFB3B3B3)),
+              onPressed: () => _showFolderOptions(context, folder),
+            ),
+            Icon(
+              expanded ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_right,
+              color: const Color(0xFFB3B3B3),
+            ),
+          ],
+        ),
+        onTap: () => setState(() {
+          if (expanded) {
+            _expandedFolders.remove(folder);
+          } else {
+            _expandedFolders.add(folder);
+          }
+        }),
+      ));
+      if (expanded) {
+        for (final playlist in playlists) {
+          items.add(Padding(
+            padding: const EdgeInsets.only(left: 28),
+            child: _SpotifyPlaylistTile(
+              playlist: playlist,
+              thumbnail: playlist.coverThumbnail,
+              title: playlist.name,
+              subtitle: 'Playlist • ${playlist.songs.length} songs',
+              onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => PlaylistScreen(
+                  title: playlist.name,
+                  songs: playlist.songs,
+                  playlist: playlist,
+                ),
+              )),
+              onMoreTap: () => _showPlaylistOptions(context, playlist),
+            ),
+          ));
+        }
+      }
+    }
+
     return items;
+  }
+
+  void _showCreateFolderDialog(BuildContext context) {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        title: const Text('New folder', style: TextStyle(color: Colors.white)),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          style: const TextStyle(color: Colors.white),
+          decoration: const InputDecoration(hintText: 'Folder name'),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel')),
+          TextButton(
+            onPressed: () async {
+              final name = controller.text.trim();
+              if (name.isEmpty) return;
+              await ref.read(libraryProvider.notifier).createFolder(name);
+              if (dialogContext.mounted) Navigator.pop(dialogContext);
+            },
+            child: const Text('Create',
+                style: TextStyle(color: Color(0xFF1DB954))),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showFolderOptions(BuildContext context, String folder) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A1A),
+      builder: (sheetContext) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.edit, color: Colors.white),
+              title:
+                  const Text('Rename', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _renameFolder(context, folder);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: Colors.red),
+              title: const Text('Delete folder',
+                  style: TextStyle(color: Colors.red)),
+              onTap: () async {
+                await ref.read(libraryProvider.notifier).deleteFolder(folder);
+                if (sheetContext.mounted) Navigator.pop(sheetContext);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _renameFolder(BuildContext context, String folder) {
+    final controller = TextEditingController(text: folder);
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Rename folder'),
+        content: TextField(controller: controller, autofocus: true),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel')),
+          TextButton(
+            onPressed: () async {
+              final name = controller.text.trim();
+              if (name.isEmpty) return;
+              await ref
+                  .read(libraryProvider.notifier)
+                  .renameFolder(folder, name);
+              if (dialogContext.mounted) Navigator.pop(dialogContext);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _emptyState(BuildContext context) {
@@ -320,6 +495,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   void _showCreatePlaylistDialog(BuildContext context, WidgetRef ref) {
     final controller = TextEditingController();
     var visibility = 'private';
+    var collaborative = false;
     showDialog(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
@@ -352,6 +528,18 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                     .toList(),
                 onChanged: (v) => setState(() => visibility = v ?? 'private'),
               ),
+              StatefulBuilder(
+                builder: (context, setInnerState) => CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: collaborative,
+                  title: const Text('Collaborative',
+                      style: TextStyle(color: Colors.white)),
+                  onChanged: (value) {
+                    setInnerState(() => collaborative = value ?? false);
+                    setState(() {});
+                  },
+                ),
+              ),
             ],
           ),
           actions: [
@@ -361,13 +549,23 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                   style: TextStyle(color: Color(0xFFB3B3B3))),
             ),
             TextButton(
-              onPressed: () {
-                if (controller.text.trim().isNotEmpty) {
-                  ref.read(libraryProvider.notifier).createPlaylist(
-                        controller.text.trim(),
+              onPressed: () async {
+                final name = controller.text.trim();
+                if (name.isEmpty) return;
+                try {
+                  await ref.read(libraryProvider.notifier).createPlaylist(
+                        name,
                         visibility: visibility,
+                        collaborative: collaborative,
                       );
-                  Navigator.pop(dialogContext);
+                  if (dialogContext.mounted) Navigator.pop(dialogContext);
+                } catch (error) {
+                  if (dialogContext.mounted) {
+                    ScaffoldMessenger.of(dialogContext).showSnackBar(
+                      SnackBar(
+                          content: Text('Could not create playlist: $error')),
+                    );
+                  }
                 }
               },
               child: const Text('Create',
@@ -380,6 +578,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   }
 
   void _showPlaylistOptions(BuildContext context, Playlist pl) {
+    final isOwner = pl.sharedId == null ||
+        pl.ownerUid == ref.read(authServiceProvider).currentUser?.uid;
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF282828),
@@ -399,7 +599,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
-            ListTile(
+            if (isOwner)
+              ListTile(
               leading: const Icon(Icons.edit_outlined, color: Colors.white70),
               title:
                   const Text('Rename', style: TextStyle(color: Colors.white)),
@@ -408,7 +609,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 _showRenameDialog(context, pl);
               },
             ),
-            ListTile(
+            if (isOwner)
+              ListTile(
               leading: const Icon(Icons.public_outlined, color: Colors.white70),
               title: Text(
                   'Visibility: ${_playlistVisibilityLabel(pl.visibility)}',
@@ -418,14 +620,113 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 _showVisibilityMenu(context, pl);
               },
             ),
-            ListTile(
-              leading:
-                  const Icon(Icons.delete_outline, color: Colors.redAccent),
-              title: const Text('Delete',
-                  style: TextStyle(color: Colors.redAccent)),
+            if (isOwner)
+              ListTile(
+              leading: Icon(
+                pl.pinned ? Icons.push_pin : Icons.push_pin_outlined,
+                color: Colors.white70,
+              ),
+              title: Text(pl.pinned ? 'Unpin playlist' : 'Pin playlist',
+                  style: const TextStyle(color: Colors.white)),
               onTap: () {
                 Navigator.pop(context);
-                _showDeleteDialog(context, pl);
+                ref.read(libraryProvider.notifier).organizePlaylist(
+                      pl,
+                      pinned: !pl.pinned,
+                    );
+              },
+            ),
+            if (isOwner)
+              ListTile(
+              leading: const Icon(Icons.folder_outlined, color: Colors.white70),
+              title: const Text('Move to folder',
+                  style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(context);
+                _showPlaylistFolderPicker(context, pl);
+              },
+            ),
+            if (isOwner)
+              ListTile(
+              leading: const Icon(Icons.playlist_add, color: Colors.white70),
+              title: const Text('Add to another playlist',
+                  style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(context);
+                _showCopyPlaylistDialog(context, pl);
+              },
+            ),
+            if (isOwner)
+              ListTile(
+              leading:
+                  const Icon(Icons.group_add_outlined, color: Colors.white70),
+              title: Text(
+                pl.sharedId == null
+                    ? 'Make collaborative'
+                    : 'Invite collaborator',
+                style: const TextStyle(color: Colors.white),
+              ),
+              onTap: () async {
+                Navigator.pop(context);
+                if (pl.sharedId == null) {
+                  final sharedId = await ref
+                      .read(libraryProvider.notifier)
+                      .makePlaylistCollaborative(pl);
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                        content: Text('Playlist is now collaborative.')),
+                  );
+                  if (sharedId != null && mounted) {
+                    final updated = Playlist(
+                      name: pl.name,
+                      songs: pl.songs,
+                      createdAt: pl.createdAt,
+                      description: pl.description,
+                      visibility: pl.visibility,
+                      pinned: pl.pinned,
+                      folderId: pl.folderId,
+                      sharedId: sharedId,
+                      ownerUid: ref
+                          .read(authServiceProvider)
+                          .currentUser
+                          ?.uid,
+                    );
+                    playlistFirestoreIds[updated] = sharedId;
+                    final uid = await showCollaboratorInviteDialog(
+                        context, ref, updated);
+                    if (uid != null && mounted) {
+                      await ref
+                          .read(libraryProvider.notifier)
+                          .inviteCollaborator(updated, uid);
+                    }
+                  }
+                } else {
+                  final uid =
+                      await showCollaboratorInviteDialog(context, ref, pl);
+                  if (uid != null && mounted) {
+                    await ref
+                        .read(libraryProvider.notifier)
+                        .inviteCollaborator(pl, uid);
+                  }
+                }
+              },
+            ),
+            ListTile(
+              leading: Icon(
+                isOwner ? Icons.delete_outline : Icons.logout,
+                color: isOwner ? Colors.redAccent : Colors.white70,
+              ),
+              title: Text(isOwner ? 'Delete' : 'Quit playlist',
+                  style: TextStyle(
+                      color: isOwner ? Colors.redAccent : Colors.white)),
+              onTap: () {
+                Navigator.pop(context);
+                if (isOwner) {
+                  _showDeleteDialog(context, pl);
+                } else {
+                  _quitPlaylist(pl);
+                }
               },
             ),
             const SizedBox(height: 8),
@@ -433,6 +734,118 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _quitPlaylist(Playlist playlist) async {
+    try {
+      await ref
+          .read(libraryProvider.notifier)
+          .quitCollaborativePlaylist(playlist);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('You left the playlist.')),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not leave playlist: $error')),
+        );
+      }
+    }
+  }
+
+  void _showPlaylistFolderPicker(BuildContext context, Playlist playlist) {
+    final folders = ref.read(libraryProvider).folders;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A1A),
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(
+              title: Text('Move playlist to folder',
+                  style: TextStyle(color: Colors.white)),
+            ),
+            ...folders.map((folder) => ListTile(
+                  leading:
+                      const Icon(Icons.folder_outlined, color: Colors.white70),
+                  title:
+                      Text(folder, style: const TextStyle(color: Colors.white)),
+                  onTap: () {
+                    ref.read(libraryProvider.notifier).organizePlaylist(
+                          playlist,
+                          folderId: folder,
+                          changeFolder: true,
+                        );
+                    Navigator.pop(sheetContext);
+                  },
+                )),
+            ListTile(
+              leading:
+                  const Icon(Icons.folder_off_outlined, color: Colors.white70),
+              title: const Text('Remove from folder',
+                  style: TextStyle(color: Colors.white)),
+              onTap: () {
+                ref.read(libraryProvider.notifier).organizePlaylist(
+                      playlist,
+                      folderId: null,
+                      changeFolder: true,
+                    );
+                Navigator.pop(sheetContext);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showCopyPlaylistDialog(
+      BuildContext context, Playlist source) async {
+    final targets = ref
+        .read(libraryProvider)
+        .playlists
+        .where((playlist) =>
+            playlist.sharedId != source.sharedId &&
+            playlist.firestoreId != source.firestoreId &&
+            playlist.key != source.key &&
+            playlist.name != source.name)
+        .toList();
+    if (targets.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Create another playlist first.')),
+      );
+      return;
+    }
+    final target = await showDialog<Playlist>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: const Text('Add to another playlist'),
+        children: targets
+            .map((playlist) => SimpleDialogOption(
+                  onPressed: () => Navigator.pop(dialogContext, playlist),
+                  child: Text(playlist.name),
+                ))
+            .toList(),
+      ),
+    );
+    if (target == null || !mounted) return;
+    try {
+      await ref.read(libraryProvider.notifier).copyPlaylistTo(source, target);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Added songs to ${target.name}.')),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not add playlist: $error')),
+        );
+      }
+    }
   }
 
   void _showRenameDialog(BuildContext context, Playlist playlist) {
@@ -568,9 +981,17 @@ class _SpotifyPlaylistTile extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
       ),
       trailing: onMoreTap != null
-          ? IconButton(
-              icon: const Icon(Icons.more_vert, color: Color(0xFFB3B3B3)),
-              onPressed: onMoreTap,
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (playlist?.pinned == true)
+                  const Icon(Icons.push_pin,
+                      color: Color(0xFF1DB954), size: 18),
+                IconButton(
+                  icon: const Icon(Icons.more_vert, color: Color(0xFFB3B3B3)),
+                  onPressed: onMoreTap,
+                ),
+              ],
             )
           : null,
     );

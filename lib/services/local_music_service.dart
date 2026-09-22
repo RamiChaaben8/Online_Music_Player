@@ -120,6 +120,8 @@ class LocalMusicService {
       // USERPROFILE is always set (e.g. C:\Users\username).
       final userProfile = Platform.environment['USERPROFILE'];
       if (userProfile != null) {
+        // Always include the Utify download folder first.
+        dirs.add(Directory('$userProfile\\Music\\Utify'));
         dirs.add(Directory('$userProfile\\Music'));
         dirs.add(Directory('$userProfile\\Downloads'));
         dirs.add(Directory('$userProfile\\Desktop'));

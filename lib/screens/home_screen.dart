@@ -22,6 +22,7 @@ import '../providers/library_provider.dart';
 import '../providers/player_provider.dart';
 import 'now_playing_screen.dart';
 import '../widgets/profile_avatar.dart';
+import '../widgets/listen_party_controls.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -51,9 +52,8 @@ class HomeScreen extends ConsumerWidget {
                   child: Row(
                     children: [
                       const ProfileAvatar(),
-                      Expanded(
-                        child: const SizedBox.shrink(),
-                      ),
+                      const Spacer(),
+                      const PartyInviteButton(),
                     ],
                   ),
                 ),
