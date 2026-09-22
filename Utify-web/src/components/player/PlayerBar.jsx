@@ -1,0 +1,660 @@
+/**
+ * PlayerBar.jsx
+ * Fixed 80-px bottom bar — mirrors desktop_player_bar.dart from the Flutter app.
+ *
+ * Layout (3 equal-ish columns):
+ *   LEFT  (30%) — thumbnail · title · channel · like
+ *   CENTER(40%) — transport controls + seek bar
+ *   RIGHT (30%) — panel toggles + volume
+ *
+ * Styling: CSS variables only, no Tailwind.
+ * Icons: lucide-react.
+ */
+
+import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  Heart,
+  LayoutList,
+  ListMusic,
+  Mic2,
+  Pause,
+  Play,
+  Repeat,
+  Repeat1,
+  Shuffle,
+  SkipBack,
+  SkipForward,
+  Volume2,
+  VolumeX,
+  MonitorSpeaker,
+} from "lucide-react"
+
+import { usePlayerStore, PanelMode, RepeatMode } from "../../stores/playerStore"
+import { useAuthStore } from "../../stores/authStore"
+import { useSyncStore } from "../../hooks/useSyncSession"
+import { publishRemoteCommand } from "../../services/firestoreService"
+import { useLibraryStore } from '../../stores/libraryStore'
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Formats a time in seconds to m:ss  (e.g. 75 → "1:15") */
+function formatTime(seconds) {
+  if (!seconds || isNaN(seconds) || seconds < 0) return '0:00'
+  const s = Math.floor(seconds)
+  const m = Math.floor(s / 60)
+  const remaining = s % 60
+  return `${m}:${remaining.toString().padStart(2, '0')}`
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sub-components
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Invisible button reset — keeps a consistent base style. */
+function IconBtn({ onClick, title, active, highlight, children, style = {} }) {
+  const [hovered, setHovered] = useState(false)
+
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      aria-label={title}
+      aria-pressed={active}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        background: 'none',
+        border: 'none',
+        cursor: 'pointer',
+        padding: 6,
+        borderRadius: 4,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: highlight
+          ? 'var(--color-button)'
+          : active
+          ? 'var(--color-text)'
+          : 'var(--color-subtext)',
+        opacity: hovered ? 1 : active || highlight ? 0.9 : 0.7,
+        transition: 'opacity 0.15s, color 0.15s',
+        flexShrink: 0,
+        ...style,
+      }}
+    >
+      {children}
+    </button>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Seek + Volume slider — shared range styling via injected <style>
+// ─────────────────────────────────────────────────────────────────────────────
+
+const SLIDER_STYLE_ID = 'utify-slider-styles'
+
+function ensureSliderStyles() {
+  if (document.getElementById(SLIDER_STYLE_ID)) return
+  const style = document.createElement('style')
+  style.id = SLIDER_STYLE_ID
+  style.textContent = `
+    .utify-range {
+      -webkit-appearance: none;
+      appearance: none;
+      background: transparent;
+      cursor: pointer;
+      height: 4px;
+      border-radius: 2px;
+    }
+    .utify-range:focus {
+      outline: none;
+    }
+    /* Track */
+    .utify-range::-webkit-slider-runnable-track {
+      height: 4px;
+      border-radius: 2px;
+      background: var(--color-highlight);
+    }
+    .utify-range::-moz-range-track {
+      height: 4px;
+      border-radius: 2px;
+      background: var(--color-highlight);
+    }
+    /* Thumb */
+    .utify-range::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--color-text);
+      margin-top: -4px;
+      transition: transform 0.1s;
+    }
+    .utify-range::-moz-range-thumb {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--color-text);
+      border: none;
+    }
+    .utify-range:hover::-webkit-slider-thumb {
+      transform: scale(1.3);
+    }
+    .utify-range:hover::-moz-range-thumb {
+      transform: scale(1.3);
+    }
+    /* Progress fill via background-gradient trick */
+    .utify-seek-range {
+      /* filled portion painted dynamically in the component via inline style */
+    }
+    .utify-vol-range {
+      width: 80px;
+    }
+  `
+  document.head.appendChild(style)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LEFT SECTION — thumbnail · title · channel · like
+// ─────────────────────────────────────────────────────────────────────────────
+
+function LeftSection({ currentSong, onOpenNowPlaying }) {
+  const uid = useAuthStore((s) => s.user?.uid)
+  const isLiked = useLibraryStore((s) =>
+    currentSong ? s.likedSongs.some((x) => x.id === currentSong.id) : false
+  )
+  const toggleLike = useLibraryStore((s) => s.toggleLike)
+
+  const handleLike = useCallback(() => {
+    if (!uid || !currentSong) return
+    toggleLike(uid, currentSong)
+  }, [uid, currentSong, toggleLike])
+
+  if (!currentSong) {
+    return <div style={{ width: '30%', minWidth: 0 }} />
+  }
+
+  const thumbnailUrl =
+    currentSong.thumbnail ||
+    `https://i.ytimg.com/vi/${currentSong.id}/default.jpg`
+
+  return (
+    <div
+      style={{
+        width: '30%',
+        minWidth: 0,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        paddingLeft: 16,
+        overflow: 'hidden',
+      }}
+    >
+      {/* Thumbnail */}
+      <img
+        src={thumbnailUrl}
+        alt={currentSong.title}
+        width={48}
+        height={48}
+        style={{
+          width: 48,
+          height: 48,
+          borderRadius: 6,
+          objectFit: 'cover',
+          flexShrink: 0,
+          cursor: 'pointer',
+        }}
+        onClick={onOpenNowPlaying}
+      />
+
+      {/* Title + channel */}
+      <div
+        style={{
+          minWidth: 0,
+          flex: 1,
+          overflow: 'hidden',
+        }}
+      >
+        <div
+          onClick={onOpenNowPlaying}
+          title={currentSong.title}
+          style={{
+            fontSize: 13,
+            fontWeight: 600,
+            color: 'var(--color-text)',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            cursor: 'pointer',
+          }}
+        >
+          {currentSong.title}
+        </div>
+        <div
+          title={currentSong.channel || currentSong.channelTitle}
+          style={{
+            fontSize: 11,
+            color: 'var(--color-subtext)',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            marginTop: 2,
+          }}
+        >
+          {currentSong.channel || currentSong.channelTitle || ''}
+        </div>
+      </div>
+
+      {/* Like button */}
+      <IconBtn
+        onClick={handleLike}
+        title={isLiked ? 'Remove from liked songs' : 'Save to liked songs'}
+        active={isLiked}
+        highlight={isLiked}
+        style={{ color: isLiked ? 'var(--color-button)' : 'var(--color-subtext)' }}
+      >
+        <Heart
+          size={18}
+          fill={isLiked ? 'var(--color-button)' : 'none'}
+          strokeWidth={isLiked ? 0 : 2}
+        />
+      </IconBtn>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CENTER SECTION — controls + seek bar
+// ─────────────────────────────────────────────────────────────────────────────
+
+function CenterSection({ seekTo }) {
+  const isThisDeviceActive = useSyncStore((s) => s.activeDevice?.id === s.deviceId)
+  const uid = useAuthStore((s) => s.user?.uid)
+  const playing = usePlayerStore((s) => s.playing)
+  const position = usePlayerStore((s) => s.position)
+  const duration = usePlayerStore((s) => s.duration)
+  const shuffle = usePlayerStore((s) => s.shuffle)
+  const repeat = usePlayerStore((s) => s.repeat)
+  const buffering = usePlayerStore((s) => s.buffering)
+
+  const setPlaying = usePlayerStore((s) => s.setPlaying)
+  const toggleShuffle = usePlayerStore((s) => s.toggleShuffle)
+  const cycleRepeat = usePlayerStore((s) => s.cycleRepeat)
+  const skipNext = usePlayerStore((s) => s.skipNext)
+  const skipPrev = usePlayerStore((s) => s.skipPrev)
+  const setPosition = usePlayerStore((s) => s.setPosition)
+
+  // Local seeking state — while dragging, display the drag value, not the
+  // live polled position.
+  const [seeking, setSeeking] = useState(false)
+  const [seekValue, setSeekValue] = useState(0)
+
+  const displayPosition = seeking ? seekValue : position
+  const progress = duration > 0 ? (displayPosition / duration) * 100 : 0
+
+  // Build the two-colour gradient for the seek track
+  const seekTrackStyle = {
+    background: `linear-gradient(to right, var(--color-button) ${progress}%, var(--color-highlight) ${progress}%)`,
+  }
+
+  const handleSeekMouseDown = () => {
+    setSeeking(true)
+    setSeekValue(position)
+  }
+
+  const handleSeekChange = (e) => {
+    setSeekValue(Number(e.target.value))
+  }
+
+  const handleSeekMouseUp = (e) => {
+    const val = Number(e.target.value)
+    setSeeking(false)
+    seekTo(val)
+    setPosition(val)
+  }
+
+  // Repeat icon
+  const RepeatIcon =
+    repeat === RepeatMode.ONE ? Repeat1 : Repeat
+  const repeatActive = repeat !== RepeatMode.NONE
+
+  return (
+    <div
+      style={{
+        width: '40%',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: 6,
+        userSelect: 'none',
+      }}
+    >
+      {/* ── Row 1: Transport controls ── */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 4,
+        }}
+      >
+        {/* Shuffle */}
+        <IconBtn
+          onClick={toggleShuffle}
+          title={shuffle ? 'Disable shuffle' : 'Enable shuffle'}
+          active={shuffle}
+          highlight={shuffle}
+        >
+          <Shuffle size={18} />
+        </IconBtn>
+
+        {/* Skip Previous */}
+        <IconBtn onClick={skipPrev} title="Previous" active>
+          <SkipBack size={20} />
+        </IconBtn>
+
+        {/* Play / Pause — larger circle */}
+        <button
+          onClick={() => {
+  const isPlaying = !playing;
+  setPlaying(isPlaying);
+  if (window.utifyTogglePlay) {
+    window.utifyTogglePlay(isPlaying);
+  } else if (window.utifyPlayer) {
+    if (isPlaying) window.utifyPlayer.resume();
+    else window.utifyPlayer.pause();
+  }
+}}
+          title={playing ? 'Pause' : 'Play'}
+          aria-label={playing ? 'Pause' : 'Play'}
+          disabled={buffering}
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: '50%',
+            background: 'var(--color-button)',
+            border: 'none',
+            cursor: buffering ? 'default' : 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+            opacity: buffering ? 0.6 : 1,
+            transition: 'opacity 0.15s, transform 0.1s',
+            color: 'var(--color-player)',
+          }}
+          onMouseEnter={(e) => { if (!buffering) e.currentTarget.style.transform = 'scale(1.06)' }}
+          onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)' }}
+        >
+          {playing
+            ? <Pause size={18} fill="var(--color-player)" strokeWidth={0} />
+            : <Play size={18} fill="var(--color-player)" strokeWidth={0} style={{ marginLeft: 2 }} />
+          }
+        </button>
+
+        {/* Skip Next */}
+        <IconBtn onClick={skipNext} title="Next" active>
+          <SkipForward size={20} />
+        </IconBtn>
+
+        {/* Repeat */}
+        <IconBtn
+          onClick={cycleRepeat}
+          title={
+            repeat === RepeatMode.NONE
+              ? 'Enable repeat'
+              : repeat === RepeatMode.ALL
+              ? 'Enable repeat one'
+              : 'Disable repeat'
+          }
+          active={repeatActive}
+          highlight={repeatActive}
+        >
+          <RepeatIcon size={18} />
+        </IconBtn>
+      </div>
+
+      {/* ── Row 2: Progress bar ── */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          width: '100%',
+          maxWidth: 480,
+        }}
+      >
+        {/* Current time */}
+        <span
+          style={{
+            fontSize: 11,
+            color: 'var(--color-subtext)',
+            minWidth: 32,
+            textAlign: 'right',
+            fontVariantNumeric: 'tabular-nums',
+          }}
+        >
+          {formatTime(displayPosition)}
+        </span>
+
+        {/* Seek bar */}
+        <input
+          type="range"
+          className="utify-range utify-seek-range"
+          min={0}
+          max={duration > 0 ? duration : 100}
+          step={0.5}
+          value={displayPosition}
+          onMouseDown={handleSeekMouseDown}
+          onChange={handleSeekChange}
+          onMouseUp={handleSeekMouseUp}
+          // Touch devices
+          onTouchStart={handleSeekMouseDown}
+          onTouchEnd={handleSeekMouseUp}
+          aria-label="Seek"
+          aria-valuemin={0}
+          aria-valuemax={duration}
+          aria-valuenow={Math.floor(displayPosition)}
+          style={{
+            flex: 1,
+            ...seekTrackStyle,
+          }}
+        />
+
+        {/* Total duration */}
+        <span
+          style={{
+            fontSize: 11,
+            color: 'var(--color-subtext)',
+            minWidth: 32,
+            fontVariantNumeric: 'tabular-nums',
+          }}
+        >
+          {formatTime(duration)}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RIGHT SECTION — panel toggles + volume
+// ─────────────────────────────────────────────────────────────────────────────
+
+import DevicePicker from "../sync/DevicePicker"
+
+function RightSection() {
+  const [devicePickerOpen, setDevicePickerOpen] = useState(false)
+  const panelMode = usePlayerStore((s) => s.panelMode)
+  const setPanelMode = usePlayerStore((s) => s.setPanelMode)
+  const volume = usePlayerStore((s) => s.volume)
+  const muted = usePlayerStore((s) => s.muted)
+  const setVolume = usePlayerStore((s) => s.setVolume)
+  const toggleMute = usePlayerStore((s) => s.toggleMute)
+
+  // Clamp to 0-100 for the slider
+  const volPct = Math.round(volume * 100)
+  const volProgress = muted ? 0 : volPct
+
+  const volTrackStyle = {
+    background: `linear-gradient(to right, var(--color-button) ${volProgress}%, var(--color-highlight) ${volProgress}%)`,
+  }
+
+  const handleVolumeChange = (e) => {
+    const pct = Number(e.target.value) // 0-100
+    setVolume(pct / 100)               // store uses 0.0–1.0
+    // Drive the YT player imperatively so there is zero lag
+    window.utifyPlayer?.setVolume?.(pct)
+  }
+
+  const handleMuteToggle = () => {
+    toggleMute()
+    // Imperatively mute/unmute the YT player
+    if (!muted) {
+      window.utifyPlayer?.setVolume?.(0)
+    } else {
+      window.utifyPlayer?.setVolume?.(volPct)
+    }
+  }
+
+  return (
+    <div
+      style={{
+        width: '30%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'flex-end',
+        gap: 4,
+        paddingRight: 16,
+        overflow: 'hidden',
+      }}
+    >
+      {/* Device Picker */}
+        <div style={{ position: "relative" }}>
+          <IconBtn onClick={() => setDevicePickerOpen(!devicePickerOpen)} title="Connect to a device">
+            <MonitorSpeaker size={18} />
+          </IconBtn>
+          {devicePickerOpen && <DevicePicker onClose={() => setDevicePickerOpen(false)} />}
+        </div>
+        {/* Now Playing panel toggle */}
+      <IconBtn
+        onClick={() => setPanelMode(PanelMode.NOW_PLAYING)}
+        title="Now playing"
+        highlight={panelMode === PanelMode.NOW_PLAYING}
+      >
+        <LayoutList size={18} />
+      </IconBtn>
+
+      {/* Queue panel toggle */}
+      <IconBtn
+        onClick={() => setPanelMode(PanelMode.QUEUE)}
+        title="Queue"
+        highlight={panelMode === PanelMode.QUEUE}
+      >
+        <ListMusic size={18} />
+      </IconBtn>
+
+      {/* Lyrics panel toggle */}
+      <IconBtn
+        onClick={() => setPanelMode(PanelMode.LYRICS)}
+        title="Lyrics"
+        highlight={panelMode === PanelMode.LYRICS}
+      >
+        <Mic2 size={18} />
+      </IconBtn>
+
+      {/* Volume icon — click to mute/unmute */}
+      <IconBtn
+        onClick={handleMuteToggle}
+        title={muted ? 'Unmute' : 'Mute'}
+        active
+      >
+        {muted || volPct === 0
+          ? <VolumeX size={18} />
+          : <Volume2 size={18} />
+        }
+      </IconBtn>
+
+      {/* Volume slider */}
+      <input
+        type="range"
+        className="utify-range utify-vol-range"
+        min={0}
+        max={100}
+        step={1}
+        value={muted ? 0 : volPct}
+        onChange={handleVolumeChange}
+        aria-label="Volume"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={muted ? 0 : volPct}
+        style={volTrackStyle}
+      />
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main export
+// ─────────────────────────────────────────────────────────────────────────────
+
+export default function PlayerBar() {
+  // Inject slider CSS once
+  useEffect(() => { ensureSliderStyles() }, [])
+
+  const currentSong = usePlayerStore((s) => s.currentSong)
+  const setPanelMode = usePlayerStore((s) => s.setPanelMode)
+  const setPosition = usePlayerStore((s) => s.setPosition)
+
+  // seekTo delegates to the YT player via window.utifyPlayer, then syncs
+  // the store position.
+  const seekTo = useCallback((seconds) => {
+    window.utifyPlayer?.seekTo?.(seconds)
+    setPosition(seconds)
+  }, [setPosition])
+
+  const openNowPlaying = useCallback(() => {
+    setPanelMode(PanelMode.NOW_PLAYING)
+  }, [setPanelMode])
+
+  // Expose the YT player imperatively so PlayerBar (and other components) can
+  // call setVolume / seekTo without prop-drilling.  The hook in AppShell
+  // already returns these; we re-expose them here for completeness.
+  // AppShell's useYouTubePlayer() sets window.utifyPlayer via the hook.
+  // (See: useYouTubePlayer returns { seekTo, setVolume, … })
+
+  return (
+    <footer
+      role="region"
+      aria-label="Player controls"
+      style={{
+        height: 80,
+        minHeight: 80,
+        background: 'var(--color-player)',
+        flexShrink: 0,
+        display: 'flex',
+        alignItems: 'center',
+        zIndex: 100,
+        overflow: 'hidden',
+      }}
+    >
+      <LeftSection
+        currentSong={currentSong}
+        onOpenNowPlaying={openNowPlaying}
+      />
+
+      <CenterSection seekTo={seekTo} />
+
+      <RightSection />
+    </footer>
+  )
+}
+
+
+
+
+
+

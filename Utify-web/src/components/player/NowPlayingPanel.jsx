@@ -1,0 +1,635 @@
+/**
+ * NowPlayingPanel.jsx
+ *
+ * Exact match of desktop_now_playing_panel.dart:
+ *
+ *  ┌──────────────────────────────────┐
+ *  │  VideoPreview  (muted, looping)  │  ← 10-sec loop via stream URL
+ *  │  resizable height via drag bar   │
+ *  ├──────────────────────────────────┤
+ *  │  [Lyrics] header + lang picker   │  ← language dropdown
+ *  │  ─────────────────────────────── │
+ *  │  lyric lines (scrollable)        │  ← auto-scroll, karaoke words
+ *  └──────────────────────────────────┘
+ */
+
+import { useEffect, useRef, useState, useCallback, forwardRef } from 'react'
+import { Mic2, ChevronDown, Check, Music2, VideoOff } from 'lucide-react'
+import { usePlayerStore } from '../../stores/playerStore'
+import { getVideoStreamUrl, getCaptionTracks, getCaptionTrack } from '../../services/youtubeService'
+import { fetchLyricsForSong } from '../../services/lyricsService'
+
+// ── Constants ────────────────────────────────────────────────────────────────
+const VIDEO_MIN    = 230
+const LYRICS_MIN_H = 160
+const DRAG_BAR_W   = 7
+const PANEL_W      = 340
+const SNAP_FRAC    = 0.10
+const ANIM_MS      = 150
+const PAUSE_MS     = 3000
+const STORAGE_KEY  = 'utify_now_playing_video_h'
+const PREVIEW_SECS = 10   // 10-second loop window (mirrors Flutter)
+
+// ── Main component ────────────────────────────────────────────────────────────
+
+export default function NowPlayingPanel() {
+  const currentSong = usePlayerStore((s) => s.currentSong)
+  const position    = usePlayerStore((s) => s.position)
+  const panelRef    = useRef(null)
+
+  // ── Video height ──────────────────────────────────────────────────────────
+  const [videoH, setVideoH] = useState(() => {
+    const saved = parseFloat(localStorage.getItem(STORAGE_KEY))
+    return isNaN(saved) || saved < VIDEO_MIN ? VIDEO_MIN : saved
+  })
+  const videoHRef = useRef(videoH)
+  videoHRef.current = videoH
+
+  const getVideoMax = useCallback(() => {
+    const panelH = panelRef.current?.offsetHeight ?? 600
+    return Math.max(VIDEO_MIN, panelH - LYRICS_MIN_H)
+  }, [])
+
+  const applyH = useCallback((h, snap = false) => {
+    const max  = getVideoMax()
+    let   next = Math.max(VIDEO_MIN, Math.min(max, h))
+    if (snap) {
+      const range = max - VIDEO_MIN
+      if (range > 0) {
+        if ((next - VIDEO_MIN) / range < SNAP_FRAC) next = VIDEO_MIN
+        if ((max - next)       / range < SNAP_FRAC) next = max
+      }
+    }
+    setVideoH(next)
+    videoHRef.current = next
+    localStorage.setItem(STORAGE_KEY, String(next))
+  }, [getVideoMax])
+
+  // ── Drag bar ──────────────────────────────────────────────────────────────
+  const [dragging, setDragging] = useState(false)
+
+  function onDragBarMouseDown(e) {
+    e.preventDefault()
+    setDragging(true)
+    const startY = e.clientY
+    const startH = videoHRef.current
+    function onMove(ev) { applyH(startH + ev.clientY - startY) }
+    function onUp()     {
+      setDragging(false)
+      applyH(videoHRef.current, true)
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup',   onUp)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup',   onUp)
+  }
+
+  function onVideoWheel(e) {
+    e.preventDefault()
+    applyH(videoHRef.current - e.deltaY)
+  }
+
+  // ── Lyrics state ──────────────────────────────────────────────────────────
+  const [tracks,      setTracks]      = useState([])   // available language tracks
+  const [selTrack,    setSelTrack]    = useState(null)  // selected track code
+  const [lyricsLines, setLyricsLines] = useState([])
+  const [lyricsLoad,  setLyricsLoad]  = useState(false)
+  const [lyricsError, setLyricsError] = useState(null)
+  const [trackMenuOpen, setTrackMenuOpen] = useState(false)
+
+  const lastSongIdRef    = useRef(null)
+  const lyricsScrollRef  = useRef(null)
+  const lineRefs         = useRef([])
+  const [activeIdx, setActiveIdx]     = useState(-1)
+  const activeIdxRef                  = useRef(-1)
+  const autoScrollPaused              = useRef(false)
+  const isAutoScrolling               = useRef(false)
+  const pauseTimerRef                 = useRef(null)
+
+  // Load tracks + lyrics when song changes
+  useEffect(() => {
+    if (!currentSong || currentSong.id === lastSongIdRef.current) return
+    lastSongIdRef.current = currentSong.id
+    setActiveIdx(-1); activeIdxRef.current = -1
+    lineRefs.current = []
+    setTracks([]); setSelTrack(null)
+    setLyricsLines([]); setLyricsLoad(true); setLyricsError(null)
+
+    // Load caption tracks + LRCLIB lyrics in parallel
+    Promise.all([
+      getCaptionTracks(currentSong.id),
+      fetchLyricsForSong(currentSong),
+    ]).then(([ytTracks, lrcResult]) => {
+      setTracks(ytTracks)
+
+      // Prefer LRCLIB synced lyrics; fall back to YouTube captions
+      if (lrcResult.parsed?.length) {
+        setLyricsLines(lrcResult.parsed)
+        setLyricsLoad(false)
+        // If YouTube also has tracks, let user switch
+        if (ytTracks.length) {
+          // Auto-select best YT track (prefer English non-auto) for lang switcher
+          const eng = ytTracks.find((t) => t.code.startsWith('en') && !t.isAutoGenerated)
+            || ytTracks.find((t) => t.code.startsWith('en'))
+            || ytTracks[0]
+          setSelTrack(eng?.code || null)
+        }
+      } else if (ytTracks.length) {
+        // No LRCLIB lyrics — load from YT captions
+        const eng = ytTracks.find((t) => t.code.startsWith('en') && !t.isAutoGenerated)
+          || ytTracks.find((t) => t.code.startsWith('en'))
+          || ytTracks[0]
+        const code = eng?.code
+        setSelTrack(code)
+        if (code) {
+          getCaptionTrack(currentSong.id, code).then((lines) => {
+            setLyricsLines(lines)
+            setLyricsLoad(false)
+            if (!lines.length) setLyricsError('No lyrics available.')
+          }).catch(() => { setLyricsLoad(false); setLyricsError('No lyrics available.') })
+        } else {
+          setLyricsLoad(false); setLyricsError('No lyrics available.')
+        }
+      } else {
+        setLyricsLoad(false); setLyricsError('No lyrics available.')
+      }
+    }).catch(() => {
+      setLyricsLoad(false); setLyricsError('No lyrics available.')
+    })
+  }, [currentSong?.id])
+
+  // Switch language track
+  async function switchTrack(code) {
+    if (code === selTrack) return
+    setSelTrack(code)
+    setLyricsLoad(true); setLyricsError(null); setTrackMenuOpen(false)
+    try {
+      const lines = await getCaptionTrack(currentSong.id, code)
+      setLyricsLines(lines)
+      setLyricsLoad(false)
+      if (!lines.length) setLyricsError('No lyrics for this language.')
+    } catch {
+      setLyricsLoad(false); setLyricsError('Failed to load this language.')
+    }
+  }
+
+  // Sync active lyric line
+  useEffect(() => {
+    if (!lyricsLines.length) return
+    let active = -1
+    for (let i = 0; i < lyricsLines.length; i++) {
+      if (position >= lyricsLines[i].time) active = i
+    }
+    if (active !== activeIdxRef.current) {
+      activeIdxRef.current = active
+      setActiveIdx(active)
+      autoScrollToLine(active)
+    }
+  }, [position, lyricsLines])
+
+  function autoScrollToLine(index) {
+    if (autoScrollPaused.current || index < 0) return
+    const el  = lineRefs.current[index]
+    const box = lyricsScrollRef.current
+    if (!el || !box) return
+    isAutoScrolling.current = true
+    const top    = el.getBoundingClientRect().top - box.getBoundingClientRect().top
+    const target = box.scrollTop + top - box.clientHeight * 0.35
+    box.scrollTo({ top: Math.max(0, target), behavior: 'smooth' })
+    setTimeout(() => { isAutoScrolling.current = false }, 420)
+  }
+
+  function onLyricsScroll() {
+    if (isAutoScrolling.current) return
+    autoScrollPaused.current = true
+    clearTimeout(pauseTimerRef.current)
+    pauseTimerRef.current = setTimeout(() => { autoScrollPaused.current = false }, PAUSE_MS)
+  }
+
+  function onLyricsWheel(e) {
+    e.preventDefault()
+    const box = lyricsScrollRef.current
+    if (!box) return
+    box.scrollTop = Math.max(0, Math.min(box.scrollTop + e.deltaY, box.scrollHeight - box.clientHeight))
+  }
+
+  function seekToLine(time) {
+    if (window.utifyPlayer?.seekTo) window.utifyPlayer.seekTo(time)
+    usePlayerStore.getState().setPosition(time)
+  }
+
+  const safeVideoH = Math.max(VIDEO_MIN, Math.min(videoH, getVideoMax()))
+  const selTrackLabel = tracks.find((t) => t.code === selTrack)?.label || null
+
+  if (!currentSong) {
+    return (
+      <aside style={s.panel} ref={panelRef}>
+        <div style={s.placeholder}>
+          <Music2 size={64} color='var(--color-subtext)' style={{ opacity: 0.15 }} />
+          <p style={{ color: 'var(--color-subtext)', marginTop: 16, fontSize: 14, textAlign: 'center' }}>
+            Play a song to see<br />the video & lyrics
+          </p>
+        </div>
+        <DragBar onMouseDown={onDragBarMouseDown} dragging={dragging} />
+      </aside>
+    )
+  }
+
+  return (
+    <aside style={s.panel} ref={panelRef}>
+      {/* ── Video card ── */}
+      <div
+        style={{
+          height: safeVideoH, flexShrink: 0, position: 'relative', overflow: 'hidden',
+          transition: dragging ? 'none' : `height ${ANIM_MS}ms ease-out`,
+        }}
+        onWheel={onVideoWheel}
+      >
+        <VideoPreview videoId={currentSong.id} song={currentSong} />
+      </div>
+
+      {/* ── Lyrics card ── */}
+      <div style={s.lyricsOuter} onWheel={onLyricsWheel}>
+        <div style={s.lyricsCard}>
+
+          {/* Header row */}
+          <div style={s.lyricsHeaderRow}>
+            <Mic2 size={12} color='var(--color-button)' />
+            <span style={s.lyricsLabel}>Lyrics</span>
+            <div style={{ flex: 1 }} />
+
+            {/* Language picker — only when multiple tracks available */}
+            {tracks.length > 1 && (
+              <div style={{ position: 'relative' }}>
+                <button
+                  style={s.langBtn}
+                  onClick={() => setTrackMenuOpen((o) => !o)}
+                  title="Switch language"
+                >
+                  <span style={{ fontSize: 11, maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {selTrackLabel?.replace(' (auto-generated)', '') || 'Auto'}
+                  </span>
+                  <ChevronDown size={12} />
+                </button>
+
+                {trackMenuOpen && (
+                  <TrackMenu
+                    tracks={tracks}
+                    selected={selTrack}
+                    onSelect={switchTrack}
+                    onClose={() => setTrackMenuOpen(false)}
+                  />
+                )}
+              </div>
+            )}
+          </div>
+
+          <div style={s.headerDivider} />
+
+          {/* Scrollable lyrics */}
+          <div ref={lyricsScrollRef} style={s.lyricsScroll} onScroll={onLyricsScroll}>
+            {lyricsLoad && (
+              <div style={s.center}>
+                <div className="utify-spinner" />
+                <span style={{ color: 'var(--color-subtext)', fontSize: 13, marginTop: 10 }}>
+                  Loading lyrics…
+                </span>
+              </div>
+            )}
+
+            {!lyricsLoad && !lyricsLines.length && (
+              <div style={s.center}>
+                <Music2 size={36} color='var(--color-subtext)' style={{ opacity: 0.4 }} />
+                <span style={{ color: 'var(--color-subtext)', fontSize: 13, marginTop: 10, textAlign: 'center' }}>
+                  {lyricsError || 'No lyrics available.'}
+                </span>
+              </div>
+            )}
+
+            {lyricsLines.map((line, i) => (
+              <LyricLine
+                key={i}
+                ref={(el) => { lineRefs.current[i] = el }}
+                text={line.text}
+                words={line.words}
+                isActive={i === activeIdx}
+                position={position}
+                onClick={() => seekToLine(line.time)}
+              />
+            ))}
+
+            {lyricsLines.length > 0 && (
+              <p style={{ color: 'var(--color-shadow)', fontSize: 11, paddingTop: 8 }}>
+                Lyrics · {selTrackLabel || 'LRCLIB'}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Drag bar ── */}
+      <DragBar onMouseDown={onDragBarMouseDown} dragging={dragging} />
+
+      <style>{spinnerCSS}</style>
+    </aside>
+  )
+}
+
+// ── VideoPreview ──────────────────────────────────────────────────────────────
+// Mirrors VideoPreviewWidget.dart:
+//  - Fetches muxed MP4 stream URL via Cloud Function
+//  - Plays muted (audio stays with IFrame player)
+//  - Picks a random start point from middle 50% of video
+//  - Loops a 10-second window
+//  - Falls back to thumbnail if stream unavailable
+
+const previewStartCache = new Map() // videoId → startSeconds
+
+function VideoPreview({ videoId, song }) {
+  const videoRef = useRef(null)
+  const [status, setStatus] = useState('loading') // 'loading' | 'playing' | 'error'
+  const loopIntervalRef = useRef(null)
+  const startRef        = useRef(0)
+  const loadSerialRef   = useRef(0)
+
+  useEffect(() => {
+    if (!videoId) return
+    const serial = ++loadSerialRef.current
+    setStatus('loading')
+
+    // Clear any previous loop interval
+    clearInterval(loopIntervalRef.current)
+
+    getVideoStreamUrl(videoId).then((entry) => {
+      if (serial !== loadSerialRef.current) return
+      if (!entry?.url) { setStatus('error'); return }
+
+      const video = videoRef.current
+      if (!video) return
+
+      video.src    = entry.url
+      video.muted  = true  // audio authority stays with YT IFrame
+      video.volume = 0
+      video.loop   = false
+
+      video.addEventListener('loadedmetadata', () => {
+        if (serial !== loadSerialRef.current) return
+        const duration = video.duration || 60
+
+        // Pick random start from middle 50% (mirrors Flutter's _randomPreviewStart)
+        let start = previewStartCache.get(videoId)
+        if (start === undefined) {
+          const maxStart   = Math.max(0, duration - PREVIEW_SECS)
+          const midStart   = maxStart * 0.25
+          const midEnd     = maxStart * 0.75
+          const range      = Math.max(1, midEnd - midStart)
+          start = midStart + Math.random() * range
+          previewStartCache.set(videoId, start)
+        }
+        startRef.current = start
+        video.currentTime = start
+        video.play().then(() => setStatus('playing')).catch(() => setStatus('error'))
+      }, { once: true })
+
+      video.addEventListener('error', () => {
+        if (serial !== loadSerialRef.current) return
+        setStatus('error')
+      }, { once: true })
+
+    }).catch(() => {
+      if (serial !== loadSerialRef.current) return
+      setStatus('error')
+    })
+
+    return () => {
+      clearInterval(loopIntervalRef.current)
+      ++loadSerialRef.current
+      const video = videoRef.current
+      if (video) { video.pause(); video.src = '' }
+    }
+  }, [videoId])
+
+  // Loop: check every 200ms and seek back if past the 10s window
+  useEffect(() => {
+    if (status !== 'playing') return
+    loopIntervalRef.current = setInterval(() => {
+      const video = videoRef.current
+      if (!video) return
+      if (video.currentTime >= startRef.current + PREVIEW_SECS) {
+        video.currentTime = startRef.current
+        video.play().catch(() => {})
+      }
+    }, 200)
+    return () => clearInterval(loopIntervalRef.current)
+  }, [status])
+
+  return (
+    <div style={{ position: 'absolute', inset: 0, background: '#1A1A1A', overflow: 'hidden' }}>
+      {/* Hidden video element */}
+      <video
+        ref={videoRef}
+        muted
+        playsInline
+        style={{
+          position: 'absolute', inset: 0, width: '100%', height: '100%',
+          objectFit: 'cover',
+          display: status === 'playing' ? 'block' : 'none',
+        }}
+      />
+
+      {/* Loading state */}
+      {status === 'loading' && (
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+          {song?.thumbnailUrl && (
+            <img src={song.thumbnailUrl} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(8px)', opacity: 0.4 }} />
+          )}
+          <div className="utify-spinner" style={{ position: 'relative' }} />
+          <span style={{ color: 'var(--color-subtext)', fontSize: 13, marginTop: 10, position: 'relative' }}>
+            Loading video…
+          </span>
+        </div>
+      )}
+
+      {/* Error / fallback: show thumbnail */}
+      {status === 'error' && (
+        <div style={{ position: 'absolute', inset: 0 }}>
+          {song?.thumbnailUrl
+            ? <img src={song.thumbnailUrl} alt={song.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            : <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'var(--color-card)' }}>
+                <VideoOff size={40} color='var(--color-subtext)' style={{ opacity: 0.5 }} />
+                <span style={{ color: 'var(--color-subtext)', fontSize: 13, marginTop: 10 }}>Video preview unavailable</span>
+              </div>
+          }
+        </div>
+      )}
+
+      {/* Song info overlay at bottom */}
+      <div style={{
+        position: 'absolute', left: 0, right: 0, bottom: 0, height: 110,
+        background: 'linear-gradient(to bottom, transparent, rgba(0,0,0,0.88))',
+        pointerEvents: 'none',
+      }} />
+      <div style={{ position: 'absolute', left: 16, right: 16, bottom: 16, pointerEvents: 'none' }}>
+        <p style={{ color: 'var(--color-text)', fontSize: 15, fontWeight: 700, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textShadow: '0 0 10px rgba(0,0,0,0.8)' }}>
+          {song?.title}
+        </p>
+        <p style={{ color: 'var(--color-subtext)', fontSize: 12, margin: '3px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textShadow: '0 0 8px rgba(0,0,0,0.8)' }}>
+          {song?.channelName}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+// ── LyricLine ─────────────────────────────────────────────────────────────────
+
+const LyricLine = forwardRef(function LyricLine({ text, words, isActive, position, onClick }, ref) {
+  const base = {
+    cursor: 'pointer', lineHeight: 1.35, marginBottom: 18,
+    transition: 'font-size 220ms ease, color 220ms ease, font-weight 220ms ease',
+    userSelect: 'none',
+  }
+  const style = isActive
+    ? { ...base, fontSize: 22, fontWeight: 700, color: 'var(--color-text)' }
+    : { ...base, fontSize: 18, fontWeight: 500, color: 'var(--color-subtext)', opacity: 0.7 }
+
+  if (isActive && words?.length) {
+    return (
+      <div ref={ref} style={{ ...style, display: 'flex', flexWrap: 'wrap', gap: '0 2px' }} onClick={onClick}>
+        {words.map((w, i) => (
+          <span key={i} style={{ color: position >= w.time ? 'var(--color-button)' : 'rgba(255,255,255,0.45)', transition: 'color 120ms' }}>
+            {w.text}&nbsp;
+          </span>
+        ))}
+      </div>
+    )
+  }
+
+  return <div ref={ref} style={style} onClick={onClick}>{text}</div>
+})
+
+// ── TrackMenu ─────────────────────────────────────────────────────────────────
+
+function TrackMenu({ tracks, selected, onSelect, onClose }) {
+  const ref = useRef(null)
+  useEffect(() => {
+    function handler(e) { if (ref.current && !ref.current.contains(e.target)) onClose() }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [onClose])
+
+  return (
+    <div ref={ref} style={{
+      position: 'absolute', right: 0, top: '100%', marginTop: 4,
+      background: 'var(--color-card)', border: '1px solid var(--color-shadow)',
+      borderRadius: 8, minWidth: 180, zIndex: 200, boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+      overflow: 'hidden',
+    }}>
+      {tracks.map((t) => (
+        <button key={t.code} onClick={() => onSelect(t.code)} style={{
+          display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+          padding: '9px 12px', background: 'none', border: 'none',
+          color: t.code === selected ? 'var(--color-button)' : 'var(--color-text)',
+          fontSize: 12, fontWeight: t.code === selected ? 700 : 400, cursor: 'pointer',
+          textAlign: 'left',
+        }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--color-highlight)' }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'none' }}
+        >
+          <span style={{ width: 16, flexShrink: 0 }}>
+            {t.code === selected && <Check size={13} color='var(--color-button)' />}
+          </span>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {t.label}{t.isAutoGenerated ? ' ✦' : ''}
+          </span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// ── DragBar ───────────────────────────────────────────────────────────────────
+
+function DragBar({ onMouseDown, dragging }) {
+  const [hovered, setHovered] = useState(false)
+  return (
+    <div
+      style={{
+        position: 'absolute', top: 0, right: 0, width: DRAG_BAR_W, height: '100%',
+        cursor: 'ns-resize', zIndex: 10,
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      }}
+      onMouseDown={onMouseDown}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <div style={{
+        width: 4, height: 40, borderRadius: 2,
+        background: hovered || dragging ? 'var(--color-button-active)' : 'var(--color-button)',
+        transition: 'background 150ms',
+      }} />
+    </div>
+  )
+}
+
+// ── Styles + CSS ──────────────────────────────────────────────────────────────
+
+const s = {
+  panel: {
+    position: 'relative',
+    width: PANEL_W, minWidth: 280, flexShrink: 0,
+    display: 'flex', flexDirection: 'column',
+    background: 'var(--color-main)',
+    overflow: 'hidden',
+    borderTopLeftRadius: 12, borderBottomLeftRadius: 12,
+  },
+  placeholder: {
+    flex: 1, display: 'flex', flexDirection: 'column',
+    alignItems: 'center', justifyContent: 'center',
+    background: 'var(--color-card)',
+  },
+  lyricsOuter: {
+    flex: 1, minHeight: 0, padding: '10px 10px 16px', overflow: 'hidden',
+  },
+  lyricsCard: {
+    background: 'var(--color-card)', borderRadius: 12, overflow: 'hidden',
+    display: 'flex', flexDirection: 'column', height: '100%',
+  },
+  lyricsHeaderRow: {
+    display: 'flex', alignItems: 'center', gap: 5, padding: '12px 14px 8px',
+    position: 'relative',
+  },
+  lyricsLabel: {
+    color: 'var(--color-button)', fontSize: 12, fontWeight: 700, letterSpacing: 0.5,
+  },
+  headerDivider: {
+    height: 1, background: 'var(--color-shadow)', margin: '0 14px 8px',
+  },
+  lyricsScroll: {
+    flex: 1, overflowY: 'auto', overflowX: 'hidden',
+    padding: '0 14px 16px',
+    scrollbarWidth: 'thin',
+    scrollbarColor: 'var(--color-button) transparent',
+  },
+  center: {
+    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+    padding: 24, minHeight: 120,
+  },
+  langBtn: {
+    display: 'flex', alignItems: 'center', gap: 4,
+    padding: '3px 7px', borderRadius: 5,
+    background: 'var(--color-card)',
+    border: '1px solid var(--color-shadow)',
+    color: 'var(--color-button)', cursor: 'pointer', fontSize: 11,
+  },
+}
+
+const spinnerCSS = `
+  @keyframes utify-spin { to { transform: rotate(360deg); } }
+  .utify-spinner {
+    width: 28px; height: 28px; border-radius: 50%;
+    border: 3px solid var(--color-highlight);
+    border-top-color: var(--color-button);
+    animation: utify-spin 0.7s linear infinite;
+  }
+`

@@ -229,8 +229,9 @@ class PlaylistImportService {
 
     final songs = <Song>[];
     final tracks = playlist.tracks;
-    for (var start = 0; start < tracks.length; start += 2) {
-      final end = (start + 2).clamp(0, tracks.length);
+    const batchSize = 5;
+    for (var start = 0; start < tracks.length; start += batchSize) {
+      final end = (start + batchSize).clamp(0, tracks.length);
       final batch = tracks.sublist(start, end);
       final matches = await Future.wait(batch.map(_findSpotifyTrack));
       for (var offset = 0; offset < matches.length; offset++) {
@@ -309,17 +310,29 @@ class PlaylistImportService {
         if (playlist is! Map || content is! Map) return null;
 
         name ??= playlist['name'] as String?;
-        tracks.addAll(_spotifyPathfinderTrackNames(content['items']));
+        final newTracks = _spotifyPathfinderTrackNames(content['items']);
+        tracks.addAll(newTracks);
         totalCount = content['totalCount'] as int? ?? tracks.length;
+
+        // Stop when we've fetched everything.
+        if (tracks.length >= totalCount) break;
+
+        // Advance offset: use the API-provided nextOffset when available,
+        // otherwise step by 100 (Spotify's page size) so we keep paginating
+        // even when the anonymous token omits the pagingInfo.nextOffset field.
         final pagingInfo = content['pagingInfo'];
         final nextOffset =
             pagingInfo is Map ? pagingInfo['nextOffset'] as int? : null;
-        if (nextOffset == null ||
-            nextOffset <= offset ||
-            tracks.length >= totalCount) {
+        if (nextOffset != null && nextOffset > offset) {
+          offset = nextOffset;
+        } else if (newTracks.isNotEmpty) {
+          // Manual pagination: advance by the number of items received so
+          // we never loop infinitely on an empty page.
+          offset += newTracks.length;
+        } else {
+          // Empty page with no nextOffset — cannot make progress, stop.
           break;
         }
-        offset = nextOffset;
       }
 
       return _SpotifyPlaylistData(
@@ -393,23 +406,126 @@ class PlaylistImportService {
       }
     }
 
+    // Collect ALL candidates from every query variation (up to 2 queries to
+    // avoid hammering YouTube), then pick the best-scoring result.
+    final seen = <String>{};
+    final candidates = <Song>[];
+    var queriesTried = 0;
     for (final query in queries) {
+      if (queriesTried >= 2) break;
       for (var attempt = 0; attempt < 3; attempt++) {
         try {
-          final matches = await _youtube.search(query, maxResults: 10);
-          if (matches.isNotEmpty) return matches.first;
+          final results = await _youtube.search(query, maxResults: 10);
+          for (final r in results) {
+            if (seen.add(r.id)) candidates.add(r);
+          }
+          queriesTried++;
+          break; // success — move to next query
         } catch (_) {
-          // Retry transient YouTube failures before trying another query.
-        }
-        if (attempt < 2) {
-          await Future<void>.delayed(
-            Duration(milliseconds: 250 * (attempt + 1)),
-          );
+          if (attempt < 2) {
+            await Future<void>.delayed(
+              Duration(milliseconds: 250 * (attempt + 1)),
+            );
+          }
         }
       }
+      // If we already have a great match after the first query, stop early.
+      if (candidates.isNotEmpty &&
+          _scoreCandidate(candidates.first, track.title, track.artist) >= 60) {
+        break;
+      }
     }
-    return null;
+
+    if (candidates.isEmpty) return null;
+
+    // Score every candidate and return the highest-scoring one.
+    // If even the best score is too low, return null rather than a wrong song.
+    Song? best;
+    var bestScore = -1;
+    for (final c in candidates) {
+      final score = _scoreCandidate(c, track.title, track.artist);
+      if (score > bestScore) {
+        bestScore = score;
+        best = c;
+      }
+    }
+    // Minimum acceptance threshold: at least 20 points means the title
+    // shares some meaningful words with the Spotify track name.
+    return bestScore >= 20 ? best : null;
   }
+
+  /// Score a YouTube candidate [song] against the Spotify [title] and
+  /// optional [artist].  Higher = better match (0–100 scale, can exceed 100
+  /// on strong matches — that is fine for ranking purposes).
+  int _scoreCandidate(Song song, String title, String? artist) {
+    final ytTitle = song.title.toLowerCase();
+    final spTitle = title.toLowerCase();
+    final spArtist = artist?.toLowerCase() ?? '';
+
+    int score = 0;
+
+    // ── Exact substring hits ──────────────────────────────────────────────
+    if (ytTitle.contains(spTitle)) score += 50;
+    if (spTitle.contains(ytTitle)) score += 40;
+    if (spArtist.isNotEmpty && ytTitle.contains(spArtist)) score += 30;
+
+    // ── Channel name matches artist ───────────────────────────────────────
+    final ytChannel = song.channelName.toLowerCase();
+    if (spArtist.isNotEmpty) {
+      if (ytChannel.contains(spArtist) || spArtist.contains(ytChannel)) {
+        score += 25;
+      }
+    }
+
+    // ── Word-level overlap ────────────────────────────────────────────────
+    final spWords = _tokenize(spTitle);
+    final artWords = _tokenize(spArtist);
+    final ytWords = _tokenize(ytTitle);
+
+    // Stop-words we don't want to inflate the score on
+    const stopWords = {'the', 'a', 'an', 'in', 'on', 'at', 'of', 'and',
+        'or', 'to', 'is', 'it', 'ft', 'feat', 'remix', 'official',
+        'video', 'audio', 'lyrics', 'hd', 'mv'};
+
+    int titleOverlap = 0;
+    for (final w in spWords) {
+      if (stopWords.contains(w)) continue;
+      if (ytWords.contains(w)) titleOverlap++;
+    }
+    if (spWords.isNotEmpty) {
+      score += ((titleOverlap / spWords.length) * 40).round();
+    }
+
+    int artistOverlap = 0;
+    for (final w in artWords) {
+      if (stopWords.contains(w)) continue;
+      if (ytWords.contains(w) || _tokenize(ytChannel).contains(w)) {
+        artistOverlap++;
+      }
+    }
+    if (artWords.isNotEmpty) {
+      score += ((artistOverlap / artWords.length) * 20).round();
+    }
+
+    // ── Penalise undesired content ────────────────────────────────────────
+    // Covers / karaoke / instrumental versions shouldn't be ranked above
+    // originals unless the Spotify title specifically asks for them.
+    final spLower = '$spTitle $spArtist';
+    for (final noise in ['cover', 'karaoke', 'instrumental', 'tribute']) {
+      if (ytTitle.contains(noise) && !spLower.contains(noise)) {
+        score -= 20;
+      }
+    }
+
+    return score;
+  }
+
+  /// Split a string into lower-case word tokens (letters/digits only).
+  Set<String> _tokenize(String text) => text
+      .toLowerCase()
+      .split(RegExp(r'[^a-z0-9]+'))
+      .where((w) => w.length > 1)
+      .toSet();
 
   String? _spotifyPlaylistId(Uri uri) {
     final match = RegExp(r'/playlist/([A-Za-z0-9]+)').firstMatch(uri.path);
