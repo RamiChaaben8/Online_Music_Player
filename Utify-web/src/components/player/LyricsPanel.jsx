@@ -24,6 +24,7 @@
 import { useEffect, useRef, useState, forwardRef } from 'react'
 import { X, Music2, Mic2, ChevronDown, Check } from 'lucide-react'
 import { usePlayerStore, PanelMode } from '../../stores/playerStore'
+import { useSyncStore } from '../../hooks/useSyncSession'
 import { fetchLyricsForSong } from '../../services/lyricsService'
 import { getCaptionTracks, getCaptionTrack } from '../../services/youtubeService'
 
@@ -171,8 +172,21 @@ export default function LyricsPanel() {
   }
 
   function handleLineClick(time) {
-    if (window.utifyPlayer?.seekTo) window.utifyPlayer.seekTo(time)
-    usePlayerStore.getState().setPosition(time)
+    const syncState = useSyncStore.getState()
+    const isPassive = syncState.activeDevice?.id && syncState.activeDevice.id !== syncState.deviceId
+    if (isPassive) {
+      import('../../stores/authStore').then(({ useAuthStore }) => {
+        const uid = useAuthStore.getState().user?.uid
+        if (uid) {
+          import('../../services/firestoreService').then(({ sendRemoteCommand }) => {
+            sendRemoteCommand(uid, 'seek', { position: time }).catch(console.error)
+          })
+        }
+      })
+    } else {
+      if (window.utifyPlayer?.seekTo) window.utifyPlayer.seekTo(time)
+      usePlayerStore.getState().setPosition(time)
+    }
   }
 
   function handleClose() {

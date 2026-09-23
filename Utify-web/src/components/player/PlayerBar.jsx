@@ -358,16 +358,7 @@ function CenterSection({ seekTo }) {
 
         {/* Play / Pause — larger circle */}
         <button
-          onClick={() => {
-  const isPlaying = !playing;
-  setPlaying(isPlaying);
-  if (window.utifyTogglePlay) {
-    window.utifyTogglePlay(isPlaying);
-  } else if (window.utifyPlayer) {
-    if (isPlaying) window.utifyPlayer.resume();
-    else window.utifyPlayer.pause();
-  }
-}}
+          onClick={() => setPlaying(!playing)}
           title={playing ? 'Pause' : 'Play'}
           aria-label={playing ? 'Pause' : 'Play'}
           disabled={buffering}

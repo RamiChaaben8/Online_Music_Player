@@ -16,6 +16,7 @@
 import { useEffect, useRef, useState, useCallback, forwardRef } from 'react'
 import { Mic2, ChevronDown, Check, Music2, VideoOff } from 'lucide-react'
 import { usePlayerStore } from '../../stores/playerStore'
+import { useSyncStore } from '../../hooks/useSyncSession'
 import { getVideoStreamUrl, getCaptionTracks, getCaptionTrack } from '../../services/youtubeService'
 import { fetchLyricsForSong } from '../../services/lyricsService'
 
@@ -217,8 +218,21 @@ export default function NowPlayingPanel() {
   }
 
   function seekToLine(time) {
-    if (window.utifyPlayer?.seekTo) window.utifyPlayer.seekTo(time)
-    usePlayerStore.getState().setPosition(time)
+    const syncState = useSyncStore.getState()
+    const isPassive = syncState.activeDevice?.id && syncState.activeDevice.id !== syncState.deviceId
+    if (isPassive) {
+      import('../../stores/authStore').then(({ useAuthStore }) => {
+        const uid = useAuthStore.getState().user?.uid
+        if (uid) {
+          import('../../services/firestoreService').then(({ sendRemoteCommand }) => {
+            sendRemoteCommand(uid, 'seek', { position: time }).catch(console.error)
+          })
+        }
+      })
+    } else {
+      if (window.utifyPlayer?.seekTo) window.utifyPlayer.seekTo(time)
+      usePlayerStore.getState().setPosition(time)
+    }
   }
 
   const safeVideoH = Math.max(VIDEO_MIN, Math.min(videoH, getVideoMax()))
