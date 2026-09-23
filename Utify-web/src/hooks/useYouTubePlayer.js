@@ -2,9 +2,14 @@
 // Manages the YouTube IFrame API player instance.
 // The actual <div id="yt-player"> must exist in the DOM before this hook
 // initialises — render it once in App.jsx (hidden, position fixed off-screen).
+//
+// PASSIVE MODE: when another device is the active playback device, web must
+// not play audio. The YT player is muted+paused and position comes from
+// Firestore (via useSyncSession) instead of the local player poll.
 
 import { useEffect, useRef, useCallback } from 'react'
 import { usePlayerStore } from '../stores/playerStore'
+import { useSyncStore } from './useSyncSession'
 
 // ── Script loader (runs once per page load) ──────────────────────────────────
 
@@ -60,6 +65,13 @@ export function useYouTubePlayer() {
   const setBuffering  = usePlayerStore((s) => s.setBuffering)
   const setPlaying    = usePlayerStore((s) => s.setPlaying)
   const skipNext      = usePlayerStore((s) => s.skipNext)
+
+  // Is this browser tab the active playback device?
+  // When passive: stop audio, don't react to store changes.
+  const activeDeviceId = useSyncStore((s) => s.activeDevice?.id)
+  const myDeviceId     = useSyncStore((s) => s.deviceId)
+  // null activeDeviceId means no device has claimed active yet — treat as active
+  const isPassive = activeDeviceId != null && activeDeviceId !== myDeviceId
 
   // ── position poll ─────────────────────────────────────────────────────────
 
@@ -199,17 +211,24 @@ export function useYouTubePlayer() {
     const p = playerRef.current
     if (!playerReadyRef.current || !p) return
 
+    // Passive device: don't load or play audio
+    const passive = useSyncStore.getState().activeDevice?.id != null &&
+                    useSyncStore.getState().activeDevice?.id !== useSyncStore.getState().deviceId
+    if (passive) {
+      p.stopVideo?.()
+      p.setVolume?.(0)
+      return
+    }
+
     if (currentSong?.id) {
       p.loadVideoById(currentSong.id)
-      // loadVideoById auto-plays; if store says not playing, pause after cue
       if (!playing) {
-        // Brief timeout to let the player initialise before pausing
         setTimeout(() => p.pauseVideo?.(), 200)
       }
     }
   // We deliberately exclude `playing` here — the playing effect below handles that.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentSong?.id])
+  }, [currentSong?.id, isPassive])
 
   // ── React to playing state changes ────────────────────────────────────────
 
@@ -217,20 +236,41 @@ export function useYouTubePlayer() {
     const p = playerRef.current
     if (!playerReadyRef.current || !p) return
 
+    // Passive device: keep player silent, position comes from Firestore
+    if (isPassive) {
+      p.pauseVideo?.()
+      p.setVolume?.(0)
+      return
+    }
+
     if (playing) {
       p.playVideo?.()
     } else {
       p.pauseVideo?.()
     }
-  }, [playing])
+  }, [playing, isPassive])
+
+  // ── Stop position poll when passive ──────────────────────────────────────
+  // When another device becomes active, stop polling local YT position
+  // so the Firestore-synced position from useSyncSession is not overwritten.
+
+  useEffect(() => {
+    if (isPassive) {
+      stopPoll()
+      playerRef.current?.pauseVideo?.()
+      playerRef.current?.setVolume?.(0)
+    }
+  }, [isPassive, stopPoll])
 
   // ── React to volume / mute changes ───────────────────────────────────────
 
   useEffect(() => {
     const p = playerRef.current
     if (!playerReadyRef.current || !p) return
+    // Passive device stays silent regardless of volume store
+    if (isPassive) { p.setVolume?.(0); return }
     p.setVolume?.(muted ? 0 : Math.round(volume * 100))
-  }, [volume, muted])
+  }, [volume, muted, isPassive])
 
   // ── React to repeat ONE — seek to 0 when position resets ─────────────────
   // (skipNext in the store sets position:0 + playing:true for RepeatMode.ONE)

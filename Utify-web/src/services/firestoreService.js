@@ -242,15 +242,15 @@ export async function unlikeSong(uid, songId) {
 export async function savePlaybackState(uid, state) {
   const deviceId = localStorage.getItem("utify_device_id") || "web-unknown"
   await setDoc(stateDoc(uid, "remoteCommand"), {
-    command: state.command || "none",
+    command:      state.command || "none",
     currentTrack: state.songData ? songToMap(state.songData) : null,
-    queue: (state.queueData || []).map(songToMap),
-    queueIndex: state.queueIndex ?? 0,
-    positionMs: (state.position ?? 0) * 1000,
-    isPlaying: state.playing ?? false,
+    queue:        (state.queueData || []).map(songToMap),
+    queueIndex:   state.queueIndex ?? 0,
+    positionMs:   Math.round((state.position ?? 0) * 1000),
+    isPlaying:    state.playing ?? false,
     deviceId,
-    deviceName: "Utify Web",
-    updatedAt: serverTimestamp(),
+    deviceName:   "Utify Web",
+    updatedAt:    serverTimestamp(),
   })
 }
 
@@ -258,16 +258,17 @@ export async function publishRemoteCommand(uid, cmd, overrideState = {}) {
   const { usePlayerStore } = await import("../stores/playerStore")
   const s = usePlayerStore.getState()
   const deviceId = localStorage.getItem("utify_device_id") || "web-unknown"
+  const song = overrideState.currentSong || s.currentSong
   await setDoc(stateDoc(uid, "remoteCommand"), {
-    command: cmd,
-    currentTrack: (overrideState.currentSong || s.currentSong) ? songToMap(overrideState.currentSong || s.currentSong) : null,
-    queue: (overrideState.queue || s.queue || []).map(songToMap),
-    queueIndex: overrideState.queueIndex ?? s.queueIndex ?? 0,
-    positionMs: ((overrideState.position ?? s.position) ?? 0) * 1000,
-    isPlaying: overrideState.playing ?? s.playing ?? false,
+    command:      cmd,
+    currentTrack: song ? songToMap(song) : null,
+    queue:        (overrideState.queue || s.queue || []).map(songToMap),
+    queueIndex:   overrideState.queueIndex ?? s.queueIndex ?? 0,
+    positionMs:   Math.round(((overrideState.position ?? s.position) ?? 0) * 1000),
+    isPlaying:    overrideState.playing ?? s.playing ?? false,
     deviceId,
-    deviceName: "Utify Web",
-    updatedAt: serverTimestamp(),
+    deviceName:   "Utify Web",
+    updatedAt:    serverTimestamp(),
   })
 }
 
@@ -275,14 +276,16 @@ export async function loadPlaybackState(uid) {
   const snap = await getDoc(stateDoc(uid, "remoteCommand"))
   if (!snap.exists()) return null
   const d = snap.data()
+  // Support both currentTrack (Flutter/web) and legacy field names
+  const trackMap = d.currentTrack ?? d.currentSong ?? null
   return {
-    songData: d.currentTrack ? songFromMap(d.currentTrack) : null,
-    queueData: (d.queue || []).map(songFromMap),
+    songData:   trackMap ? songFromMap(trackMap) : null,
+    queueData:  (d.queue || []).map(songFromMap),
     queueIndex: d.queueIndex ?? 0,
-    position: (d.positionMs ?? 0) / 1000,
-    playing: d.isPlaying ?? false,
-    command: d.command ?? "none",
-    deviceId: d.deviceId,
+    position:   Math.round((d.positionMs ?? 0) / 1000),
+    playing:    d.isPlaying ?? false,
+    command:    d.command ?? "none",
+    deviceId:   d.deviceId ?? null,
   }
 }
 
@@ -290,14 +293,15 @@ export function subscribeToPlaybackState(uid, callback) {
   return onSnapshot(stateDoc(uid, "remoteCommand"), (snap) => {
     if (!snap.exists()) return
     const d = snap.data()
+    const trackMap = d.currentTrack ?? d.currentSong ?? null
     callback({
-      songData: d.currentTrack ? songFromMap(d.currentTrack) : null,
-      queueData: (d.queue || []).map(songFromMap),
+      songData:   trackMap ? songFromMap(trackMap) : null,
+      queueData:  (d.queue || []).map(songFromMap),
       queueIndex: d.queueIndex ?? 0,
-      position: (d.positionMs ?? 0) / 1000,
-      playing: d.isPlaying ?? false,
-      command: d.command ?? "none",
-      deviceId: d.deviceId,
+      position:   (d.positionMs ?? 0) / 1000,
+      playing:    d.isPlaying ?? false,
+      command:    d.command ?? "none",
+      deviceId:   d.deviceId ?? null,
     })
   })
 }
@@ -305,42 +309,89 @@ export function subscribeToPlaybackState(uid, callback) {
 // ── Devices / Presence ────────────────────────────────────────────────────────
 
 export async function registerDevice(uid, deviceId, deviceName) {
+  // Flutter schema: devices/{deviceId} has name, platform, lastActiveAt
+  // (no isActive field — active state is in state/activeDevice doc)
   await setDoc(userDoc(uid, 'devices', deviceId), {
-    name: deviceName,
-    platform: 'web',
-    lastSeen: serverTimestamp(),
-    isActive: false,
+    name:         deviceName,
+    platform:     'web',
+    lastActiveAt: serverTimestamp(),   // Flutter filters on this field (< 75s)
   }, { merge: true })
 }
 
 export async function claimActiveDevice(uid, deviceId) {
-  // First clear any other active device
-  const snap = await getDocs(
-    query(userCol(uid, 'devices'), where('isActive', '==', true))
+  // Flutter schema: state/activeDevice = { activeDeviceId, activeDeviceName, activeAt }
+  // Get our device name first
+  const devSnap = await getDoc(userDoc(uid, 'devices', deviceId))
+  const deviceName = devSnap.exists() ? (devSnap.data().name || 'Utify Web') : 'Utify Web'
+
+  await setDoc(
+    doc(db, 'users', uid, 'state', 'activeDevice'),
+    {
+      activeDeviceId:   deviceId,
+      activeDeviceName: deviceName,
+      activeAt:         serverTimestamp(),
+    }
   )
-  const batch = writeBatch(db)
-  snap.docs.forEach((d) => {
-    if (d.id !== deviceId) batch.update(d.ref, { isActive: false })
-  })
-  batch.update(userDoc(uid, 'devices', deviceId), {
-    isActive: true,
-    lastSeen: serverTimestamp(),
-  })
-  await batch.commit()
+  // Also heartbeat our device doc
+  await setDoc(userDoc(uid, 'devices', deviceId), {
+    lastActiveAt: serverTimestamp(),
+  }, { merge: true })
 }
 
 export async function releaseDevice(uid, deviceId) {
-  await updateDoc(userDoc(uid, 'devices', deviceId), {
-    isActive: false,
-    lastSeen: serverTimestamp(),
-  })
+  // Only release if we are the current active device
+  const snap = await getDoc(doc(db, 'users', uid, 'state', 'activeDevice'))
+  if (snap.exists() && snap.data()?.activeDeviceId === deviceId) {
+    await deleteDoc(doc(db, 'users', uid, 'state', 'activeDevice'))
+  }
 }
 
 export function subscribeToDevices(uid, callback) {
-  return onSnapshot(userCol(uid, 'devices'), (snap) => {
-    const devices = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
-    callback(devices)
-  })
+  // Subscribe to both the devices collection and the activeDevice doc
+  // so we can merge them into a unified list with isActive flag
+  let devicesList  = []
+  let activeDeviceId = null
+
+  function emit() {
+    const now = Date.now()
+    const active = devicesList
+      .filter((d) => {
+        // Flutter filters: lastActiveAt < 75s old
+        // Firestore Timestamp has .toMillis(), server timestamps may arrive as null briefly
+        const ts = d.lastActiveAt
+        if (!ts) return true  // just registered, include it (server timestamp pending)
+        const ms = typeof ts.toMillis === 'function'
+          ? ts.toMillis()
+          : typeof ts === 'number'
+            ? ts
+            : ts?.seconds * 1000 ?? null
+        if (!ms) return true  // can't determine age, include it
+        return (now - ms) < 75_000
+      })
+      .map((d) => ({
+        ...d,
+        isActive: d.id === activeDeviceId,
+      }))
+    callback(active)
+  }
+
+  const unsubDevices = onSnapshot(
+    collection(db, 'users', uid, 'devices'),
+    (snap) => {
+      devicesList = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+      emit()
+    }
+  )
+
+  const unsubActive = onSnapshot(
+    doc(db, 'users', uid, 'state', 'activeDevice'),
+    (snap) => {
+      activeDeviceId = snap.exists() ? snap.data()?.activeDeviceId : null
+      emit()
+    }
+  )
+
+  return () => { unsubDevices(); unsubActive() }
 }
 
 // ── Friends ───────────────────────────────────────────────────────────────────

@@ -44,21 +44,25 @@ export const usePlayerStore = create((set, get) => ({
   playSong(song, queue = null, index = 0) {
     const q = queue ?? [song]
     const i = queue ? index : 0
-    
-    // Check if we are a passive device
+
+    // If web is passive (another device is active), claim this device first,
+    // then play locally. The useSyncSession watcher will save state to Firestore
+    // so Flutter and other devices mirror us.
     import("../hooks/useSyncSession").then(({ useSyncStore }) => {
       const syncStore = useSyncStore.getState()
-      const isPassive = syncStore.activeDevice?.id && syncStore.activeDevice.id !== syncStore.deviceId
+      const isPassive = syncStore.activeDevice?.id &&
+                        syncStore.activeDevice.id !== syncStore.deviceId
       if (isPassive) {
-        import("../services/firestoreService").then(({ publishRemoteCommand }) => {
+        // Claim active, then play
+        import("../services/firestoreService").then(({ claimActiveDevice }) => {
           import("./authStore").then(({ useAuthStore }) => {
             const uid = useAuthStore.getState().user?.uid
-            if (uid) publishRemoteCommand(uid, "playSong", { currentSong: song, queue: q, queueIndex: i, position: 0, playing: true }).catch(console.error)
+            if (uid) claimActiveDevice(uid, syncStore.deviceId).catch(console.error)
           })
         })
-      } else {
-        set({ currentSong: song, queue: q, queueIndex: i, playing: true, position: 0 })
       }
+      // Always play locally — we just made (or already are) active
+      set({ currentSong: song, queue: q, queueIndex: i, playing: true, position: 0 })
     })
   },
 

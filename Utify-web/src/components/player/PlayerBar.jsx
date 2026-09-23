@@ -495,6 +495,11 @@ function RightSection() {
   const setVolume = usePlayerStore((s) => s.setVolume)
   const toggleMute = usePlayerStore((s) => s.toggleMute)
 
+  // Show green tint on device button when another device is the active one
+  const activeDevice = useSyncStore((s) => s.activeDevice)
+  const myDeviceId   = useSyncStore((s) => s.deviceId)
+  const remoteIsActive = activeDevice && activeDevice.id !== myDeviceId
+
   // Clamp to 0-100 for the slider
   const volPct = Math.round(volume * 100)
   const volProgress = muted ? 0 : volPct
@@ -534,7 +539,11 @@ function RightSection() {
     >
       {/* Device Picker */}
         <div style={{ position: "relative" }}>
-          <IconBtn onClick={() => setDevicePickerOpen(!devicePickerOpen)} title="Connect to a device">
+          <IconBtn
+            onClick={() => setDevicePickerOpen(!devicePickerOpen)}
+            title={remoteIsActive ? `Playing on ${activeDevice?.name}` : "Connect to a device"}
+            highlight={remoteIsActive}
+          >
             <MonitorSpeaker size={18} />
           </IconBtn>
           {devicePickerOpen && <DevicePicker onClose={() => setDevicePickerOpen(false)} />}

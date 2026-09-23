@@ -3,19 +3,17 @@
  *
  * React hook that mirrors sync_service.dart.
  *
- * Responsibilities:
- *  - Generate / persist a stable deviceId in localStorage
- *  - Register this device in Firestore on mount
- *  - Load the last saved playback state from Firestore, restore it into
- *    playerStore (paused) so the user can choose when to resume
- *  - Subscribe to the devices collection to detect other active devices
- *  - Save playback state every 10 s while playing, and immediately on
- *    pause / seek / track change
- *  - Release device presence on unmount with a final state save
+ * Active device model:
+ *  - One device owns playback (isActive=true in Firestore devices collection)
+ *  - Active device saves state to state/remoteCommand every 10s + on events
+ *  - Passive devices mirror the active device's state (song, position, playing)
+ *  - Any device can claim active by writing isActive to its device doc
  *
- * Exports:
- *  - useSyncSession()     → { activeDevice, isThisDeviceActive, claimDevice }
- *  - useRemotePlayback()  → { remoteDevice, claimHere }
+ * Fixes applied:
+ *  - Passive devices now mirror playing state (not always paused)
+ *  - Passive devices apply live position updates from Firestore
+ *  - claimDevice properly saves current state so other devices see the handoff
+ *  - subscribeToPlaybackState only applies updates from the active device
  */
 
 import { useCallback, useEffect, useRef } from 'react'
@@ -30,6 +28,7 @@ import {
   savePlaybackState,
   loadPlaybackState,
   subscribeToPlaybackState,
+  publishRemoteCommand,
 } from '../services/firestoreService'
 
 // ── Device ID ─────────────────────────────────────────────────────────────────
@@ -45,10 +44,6 @@ function getOrCreateDeviceId() {
   return id
 }
 
-/**
- * Returns a human-readable name for this browser/device.
- * Used so the remote-playback banner can say "Playing on Chrome – MacBook".
- */
 function getDeviceName() {
   const ua = navigator.userAgent
   let browser = 'Browser'
@@ -58,248 +53,236 @@ function getDeviceName() {
   else if (ua.includes('Safari'))  browser = 'Safari'
 
   let os = ''
-  if (ua.includes('Win'))        os = ' · Windows'
-  else if (ua.includes('Mac'))   os = ' · Mac'
-  else if (ua.includes('Linux')) os = ' · Linux'
+  if (ua.includes('Win'))          os = ' · Windows'
+  else if (ua.includes('Mac'))     os = ' · Mac'
+  else if (ua.includes('Linux'))   os = ' · Linux'
   else if (ua.includes('Android')) os = ' · Android'
   else if (ua.includes('iPhone') || ua.includes('iPad')) os = ' · iOS'
 
   return `${browser}${os}`
 }
 
-// ── Internal sync store (not exported directly) ────────────────────────────
+// ── Internal sync store ───────────────────────────────────────────────────────
 
-/**
- * Small Zustand slice that holds cross-hook sync state.
- * Both useSyncSession and useRemotePlayback read from here.
- */
 export const useSyncStore = create((set) => ({
-  /** Device object from Firestore that is currently marked isActive=true
-   *  (could be this device or another one). */
-  activeDevice:       null,
-  /** All known devices for this user. */
-  allDevices:         [],
-  /** The stable deviceId for this browser tab. */
-  deviceId:           getOrCreateDeviceId(),
-  /** Human-readable name for this device. */
-  deviceName:         getDeviceName(),
+  activeDevice: null,
+  allDevices:   [],
+  deviceId:     getOrCreateDeviceId(),
+  deviceName:   getDeviceName(),
 
-  setActiveDevice:  (d) => set({ activeDevice: d }),
-  setAllDevices:    (ds) => set({ allDevices: ds }),
+  setActiveDevice: (d)  => set({ activeDevice: d }),
+  setAllDevices:   (ds) => set({ allDevices: ds }),
 }))
 
 // ── Main hook ─────────────────────────────────────────────────────────────────
 
-/**
- * useSyncSession()
- *
- * Should be called once near the root of the authenticated app tree
- * (e.g. in AppShell).
- *
- * Returns:
- *  - activeDevice          Object | null — the Firestore device doc that is
- *                          currently active, or null.
- *  - isThisDeviceActive    boolean — true when *this* tab is the active device.
- *  - claimDevice()         async fn — marks this device active in Firestore
- *                          and saves current playback state.
- */
 export function useSyncSession() {
-  const user          = useAuthStore((s) => s.user)
-  const { deviceId, deviceName, setActiveDevice, setAllDevices } =
-    useSyncStore()
-
-  // Player state selectors — use getState() for non-reactive reads in
-  // callbacks to avoid stale closure issues.
-  const currentSong   = usePlayerStore((s) => s.currentSong)
-  const playing       = usePlayerStore((s) => s.playing)
-  const position      = usePlayerStore((s) => s.position)
-  const queueIndex    = usePlayerStore((s) => s.queueIndex)
-
-  const restoreSession = usePlayerStore((s) => s.restoreSession)
+  const user       = useAuthStore((s) => s.user)
+  const { deviceId, deviceName, setActiveDevice, setAllDevices } = useSyncStore()
 
   const activeDevice       = useSyncStore((s) => s.activeDevice)
   const isThisDeviceActive = activeDevice?.id === deviceId
 
-  // ── Refs ──────────────────────────────────────────────────────────────────────
-  const intervalRef        = useRef(null)
-  const unsubDevicesRef    = useRef(null)
-  const unsubPlaybackRef   = useRef(null)
-  const initializedRef     = useRef(false)
-  const prevSongIdRef      = useRef(null)
-  const prevPlayingRef     = useRef(null)
-  const prevPositionRef    = useRef(null)
+  const intervalRef     = useRef(null)
+  const unsubDevicesRef = useRef(null)
+  const unsubPlaybackRef= useRef(null)
+  const initializedRef  = useRef(false)
 
-  // ── Build the playback state payload ─────────────────────────────────────
-  const buildStatePayload = useCallback((cmd = "none") => {
+  // Track previous values for change detection
+  const prevSongIdRef   = useRef(null)
+  const prevPlayingRef  = useRef(null)
+  const prevPositionRef = useRef(null)
+
+  // ── Build save payload ────────────────────────────────────────────────────
+  const buildStatePayload = useCallback((cmd = 'none') => {
     const s = usePlayerStore.getState()
     return {
-      songId:    s.currentSong?.id    ?? null,
-      songData:  s.currentSong        ?? null,
-      queueIds:  s.queue.map((x) => x.id),
-      queueData: s.queue,
+      songId:     s.currentSong?.id   ?? null,
+      songData:   s.currentSong       ?? null,
+      queueIds:   s.queue.map((x) => x.id),
+      queueData:  s.queue,
       queueIndex: s.queueIndex,
-      position:  s.position,
-      playing:   s.playing,
-      command:   cmd,
-      shuffle:   s.shuffle,
-      repeat:    s.repeat,
+      position:   s.position,
+      playing:    s.playing,
+      command:    cmd,
+      shuffle:    s.shuffle,
+      repeat:     s.repeat,
     }
   }, [])
 
-  // ── Save playback state ───────────────────────────────────────────────────
-  const saveState = useCallback(async () => {
+  // ── Save playback state to Firestore ──────────────────────────────────────
+  const saveState = useCallback(async (cmd = 'none') => {
     if (!user) return
     try {
-      await savePlaybackState(user.uid, buildStatePayload("none"))
+      await savePlaybackState(user.uid, buildStatePayload(cmd))
     } catch (err) {
-      // Non-fatal — offline persistence will queue it
       console.warn('[useSyncSession] saveState failed:', err)
     }
   }, [user, buildStatePayload])
 
-  // ── Claim device as active ────────────────────────────────────────────────
+  // ── Claim this device as active ───────────────────────────────────────────
   const claimDevice = useCallback(async () => {
     if (!user) return
     try {
       await claimActiveDevice(user.uid, deviceId)
-      await saveState()
+      // Save our current state so other devices see the new active device's state
+      await saveState('none')
     } catch (err) {
       console.warn('[useSyncSession] claimDevice failed:', err)
     }
   }, [user, deviceId, saveState])
-  
 
-  // ── Init: register device, load state, subscribe to devices ──────────────
+  // ── Init ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!user || initializedRef.current) return
     initializedRef.current = true
 
     const uid = user.uid
 
-    // 1. Register / heartbeat this device
+    // 1. Register this device (writes lastActiveAt — Flutter filters on this field, < 75s)
     registerDevice(uid, deviceId, deviceName).catch(() => {})
 
-    // 2. Load last playback state and restore it (paused)
+    // 2. Heartbeat every 30s so Flutter doesn't prune us (75s stale threshold)
+    const heartbeatInterval = setInterval(() => {
+      registerDevice(uid, deviceId, deviceName).catch(() => {})
+    }, 30_000)
+
+    // 3. Load last playback state and restore it paused
     loadPlaybackState(uid).then((state) => {
-      if (!state || !state.songData) return
-      restoreSession(
+      if (!state?.songData) return
+      usePlayerStore.getState().restoreSession(
         state.songData,
         state.queueData ?? [state.songData],
         state.queueIndex ?? 0,
-        state.position  ?? 0
+        state.position ?? 0,
       )
     }).catch(() => {})
 
-    // 3. Subscribe to devices collection
+    // 4. Subscribe to devices + activeDevice doc (merged by subscribeToDevices)
     unsubDevicesRef.current = subscribeToDevices(uid, (devices) => {
       setAllDevices(devices)
       const active = devices.find((d) => d.isActive) ?? null
       setActiveDevice(active)
     })
 
-    // 4. Subscribe to playback state updates (for passive syncing)
+    // 4. Subscribe to playback state — passive devices mirror the active device
     unsubPlaybackRef.current = subscribeToPlaybackState(uid, (state) => {
-      const activeId = useSyncStore.getState().activeDevice?.id
-      // If we are NOT the active device, stay in sync with the active device
-      if (activeId && activeId !== deviceId && state && state.songData) {
-        restoreSession(
+      const syncState    = useSyncStore.getState()
+      const activeId     = syncState.activeDevice?.id
+      const isThisActive = activeId === deviceId
+
+      // Only mirror if we are NOT the active device and the update came from
+      // the active device (check deviceId in the state doc)
+      if (isThisActive) return
+      if (!state?.songData) return
+      // Only apply if the update is from the current active device
+      if (state.deviceId && activeId && state.deviceId !== activeId) return
+
+      const ps = usePlayerStore.getState()
+
+      // Update song/queue if it changed
+      const songChanged = state.songData.id !== ps.currentSong?.id
+      if (songChanged) {
+        usePlayerStore.getState().restoreSession(
           state.songData,
           state.queueData ?? [state.songData],
           state.queueIndex ?? 0,
-          state.position  ?? 0
+          state.position ?? 0,
         )
+        // Mirror playing state from active device
+        if (state.playing) {
+          usePlayerStore.setState({ playing: true })
+        }
+        return
+      }
+
+      // Same song — sync position if drift > 3 seconds
+      const drift = Math.abs(state.position - ps.position)
+      if (drift > 3) {
+        usePlayerStore.setState({ position: state.position })
+        // Imperatively seek the YouTube player
+        if (window.utifyPlayer?.seekTo) {
+          window.utifyPlayer.seekTo(state.position, true)
+        }
+      }
+
+      // Mirror play/pause state
+      if (state.playing !== ps.playing) {
+        usePlayerStore.setState({ playing: state.playing })
       }
     })
 
-    // 5. Start 10-second auto-save interval (only saves if we are active)
+    // 5. 10-second auto-save interval (active device only)
     intervalRef.current = setInterval(() => {
-      const activeId = useSyncStore.getState().activeDevice?.id
+      const syncState = useSyncStore.getState()
       const { playing: p } = usePlayerStore.getState()
-      if (p && activeId === deviceId) saveState()
+      if (p && syncState.activeDevice?.id === deviceId) {
+        saveState('none')
+      }
     }, 10_000)
 
     return () => {
-      // Cleanup on unmount (user signs out or component unmounts)
       initializedRef.current = false
+      clearInterval(heartbeatInterval)
+      unsubDevicesRef.current?.()
+      unsubDevicesRef.current = null
 
-      if (unsubDevicesRef.current) {
-        unsubDevicesRef.current()
-        unsubDevicesRef.current = null
-      }
+      unsubPlaybackRef.current?.()
+      unsubPlaybackRef.current = null
 
-      if (unsubPlaybackRef.current) {
-        unsubPlaybackRef.current()
-        unsubPlaybackRef.current = null
-      }
+      clearInterval(intervalRef.current)
+      intervalRef.current = null
 
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current)
-        intervalRef.current = null
-      }
-
-      // Final save + release device
-      if (useSyncStore.getState().activeDevice?.id === deviceId) {
-        saveState().finally(() => {
-          releaseDevice(uid, deviceId).catch(() => {})
-        })
+      const isActive = useSyncStore.getState().activeDevice?.id === deviceId
+      if (isActive) {
+        saveState('none').finally(() => releaseDevice(uid, deviceId).catch(() => {}))
       } else {
         releaseDevice(uid, deviceId).catch(() => {})
       }
     }
   }, [user?.uid]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Watch: save on pause ──────────────────────────────────────────────────
+  // ── Watch: save on pause/resume ───────────────────────────────────────────
+  const playing = usePlayerStore((s) => s.playing)
   useEffect(() => {
-    if (!user) return
-    if (prevPlayingRef.current === null) {
-      prevPlayingRef.current = playing
-      return
-    }
+    if (!user || !isThisDeviceActive) return
+    if (prevPlayingRef.current === null) { prevPlayingRef.current = playing; return }
     if (prevPlayingRef.current !== playing) {
       prevPlayingRef.current = playing
-      // Save when playback pauses
-      if (!playing) saveState()
+      saveState(playing ? 'play' : 'pause')
     }
-  }, [playing, user, saveState])
+  }, [playing, user, isThisDeviceActive, saveState])
 
   // ── Watch: save on track change ───────────────────────────────────────────
+  const currentSong = usePlayerStore((s) => s.currentSong)
   useEffect(() => {
-    if (!user || !currentSong) return
+    if (!user || !isThisDeviceActive || !currentSong) return
     if (prevSongIdRef.current && prevSongIdRef.current !== currentSong.id) {
-      saveState()
+      saveState('playSong')
     }
     prevSongIdRef.current = currentSong?.id ?? null
-  }, [currentSong?.id, user, saveState]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [currentSong?.id, user, isThisDeviceActive, saveState]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Watch: save on seek (position jump > 3 s) ─────────────────────────────
+  // ── Watch: save on seek ───────────────────────────────────────────────────
+  const position = usePlayerStore((s) => s.position)
   useEffect(() => {
-    if (!user) return
+    if (!user || !isThisDeviceActive) return
     if (prevPositionRef.current !== null) {
       const delta = Math.abs(position - prevPositionRef.current)
-      // A 500ms poll advances position ~0.5 s; treat jumps > 3 s as seeks
-      if (delta > 3) saveState()
+      if (delta > 3) saveState('seek')
     }
     prevPositionRef.current = position
-  }, [position, user, saveState])
+  }, [position, user, isThisDeviceActive, saveState])
 
   return { activeDevice, isThisDeviceActive, claimDevice }
 }
 
 // ── useRemotePlayback ─────────────────────────────────────────────────────────
 
-/**
- * useRemotePlayback()
- *
- * Lightweight hook for the RemotePlaybackBanner component.
- * Returns { remoteDevice, claimHere } where:
- *  - remoteDevice  Object | null — another device that is currently active
- *  - claimHere     async fn     — calls claimActiveDevice for this device
- */
 export function useRemotePlayback() {
   const user       = useAuthStore((s) => s.user)
   const allDevices = useSyncStore((s) => s.allDevices)
   const deviceId   = useSyncStore((s) => s.deviceId)
-  const isActive   = useSyncStore((s) => s.activeDevice?.id === deviceId)
 
   const remoteDevice = allDevices.find(
     (d) => d.isActive && d.id !== deviceId
@@ -309,25 +292,20 @@ export function useRemotePlayback() {
     if (!user) return
     try {
       await claimActiveDevice(user.uid, deviceId)
-      // Also save current state so the remote device sees we've taken over
+      // Save current player state so this device becomes the source of truth
       const s = usePlayerStore.getState()
       await savePlaybackState(user.uid, {
-        songId:    s.currentSong?.id   ?? null,
-        songData:  s.currentSong       ?? null,
-        queueIds:  s.queue.map((x) => x.id),
-        queueData: s.queue,
+        songData:   s.currentSong,
+        queueData:  s.queue,
         queueIndex: s.queueIndex,
-        position:  s.position,
-        shuffle:   s.shuffle,
-        repeat:    s.repeat,
+        position:   s.position,
+        playing:    s.playing,
+        command:    'none',
       })
     } catch (err) {
       console.warn('[useRemotePlayback] claimHere failed:', err)
     }
   }, [user, deviceId])
 
-  return { remoteDevice, claimHere, isActive }
+  return { remoteDevice, claimHere }
 }
-
-
-
