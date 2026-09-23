@@ -31,6 +31,33 @@ import {
   sendRemoteCommand,
 } from '../services/firestoreService'
 
+// ── Passive device check (synchronous, no React hooks) ───────────────────────
+
+export function isPassiveDevice() {
+  const { activeDevice, deviceId } = useSyncStore.getState()
+  return Boolean(activeDevice?.id && activeDevice.id !== deviceId)
+}
+
+// ── Bridge init — called once at module load ──────────────────────────────────
+// Wires up playerStore so it can check passive state and send commands
+// synchronously without dynamic imports or circular deps.
+
+import('../stores/playerStore').then(({ _initSyncBridge }) => {
+  _initSyncBridge(
+    // isPassiveFn
+    () => isPassiveDevice(),
+    // sendCmdFn — called with (action, extra?)
+    (action, extra) => {
+      const uid = useAuthStore.getState().user?.uid
+      if (!uid) return
+      const cmd = action === 'play_pause'
+        ? (extra ? 'play' : 'pause')
+        : action  // 'next' | 'prev' | 'playSong' | 'seek'
+      sendRemoteCommand(uid, cmd, extra || {}).catch(console.error)
+    }
+  )
+})
+
 // ── Device ID ─────────────────────────────────────────────────────────────────
 
 const DEVICE_ID_KEY = 'utify_device_id'

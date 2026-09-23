@@ -3,194 +3,195 @@
 /* ── Utify Theme CSS Variables ────────────────────────────────────────────── */
 /* Maps directly from app_theme.dart — all 10 themes                          */
 
-:root, [data-theme="green"] {
-  --color-main:               #0F0F0F;
-  --color-sidebar:            #121212;
-  --color-player:             #0F0F0F;
-  --color-card:               #282828;
-  --color-text:               #FFFFFF;
-  --color-subtext:            #B3B3B3;
-  --color-button:             #1DB954;
-  --color-button-active:      #1ED760;
-  --color-selected-row:       #1A2A1A;
-  --color-highlight:          #2A2A2A;
+:root,
+[data-theme="green"] {
+  --color-main: #0F0F0F;
+  --color-sidebar: #121212;
+  --color-player: #0F0F0F;
+  --color-card: #282828;
+  --color-text: #FFFFFF;
+  --color-subtext: #B3B3B3;
+  --color-button: #1DB954;
+  --color-button-active: #1ED760;
+  --color-selected-row: #1A2A1A;
+  --color-highlight: #2A2A2A;
   --color-highlight-elevated: #333333;
-  --color-shadow:             #333333;
-  --color-notification:       #1DB954;
-  --color-error:              #E8173A;
-  --color-tab-active:         #1A3321;
-  --color-misc:               #7B4FE9;
+  --color-shadow: #333333;
+  --color-notification: #1DB954;
+  --color-error: #E8173A;
+  --color-tab-active: #1A3321;
+  --color-misc: #7B4FE9;
 }
 
 [data-theme="red"] {
-  --color-main:               #0D0808;
-  --color-sidebar:            #130A0A;
-  --color-player:             #0D0808;
-  --color-card:               #2A1515;
-  --color-text:               #FFFFFF;
-  --color-subtext:            #B3A3A3;
-  --color-button:             #E8173A;
-  --color-button-active:      #FF3657;
-  --color-selected-row:       #32151A;
-  --color-highlight:          #3A2020;
+  --color-main: #0D0808;
+  --color-sidebar: #130A0A;
+  --color-player: #0D0808;
+  --color-card: #2A1515;
+  --color-text: #FFFFFF;
+  --color-subtext: #B3A3A3;
+  --color-button: #E8173A;
+  --color-button-active: #FF3657;
+  --color-selected-row: #32151A;
+  --color-highlight: #3A2020;
   --color-highlight-elevated: #4A2929;
-  --color-shadow:             #3D2020;
-  --color-notification:       #E8173A;
-  --color-error:              #FFA000;
-  --color-tab-active:         #4A1C27;
-  --color-misc:               #E08A3E;
+  --color-shadow: #3D2020;
+  --color-notification: #E8173A;
+  --color-error: #FFA000;
+  --color-tab-active: #4A1C27;
+  --color-misc: #E08A3E;
 }
 
 [data-theme="dribbblish-white"] {
-  --color-main:               #F5F7FA;
-  --color-sidebar:            #E9EDF2;
-  --color-player:             #FFFFFF;
-  --color-card:               #FFFFFF;
-  --color-text:               #17202A;
-  --color-subtext:            #5D6B78;
-  --color-button:             #2E7DDE;
-  --color-button-active:      #1F63B5;
-  --color-selected-row:       #DCEAFA;
-  --color-highlight:          #E8EEF5;
+  --color-main: #F5F7FA;
+  --color-sidebar: #E9EDF2;
+  --color-player: #FFFFFF;
+  --color-card: #FFFFFF;
+  --color-text: #17202A;
+  --color-subtext: #5D6B78;
+  --color-button: #2E7DDE;
+  --color-button-active: #1F63B5;
+  --color-selected-row: #DCEAFA;
+  --color-highlight: #E8EEF5;
   --color-highlight-elevated: #D7E0EA;
-  --color-shadow:             #B9C5D1;
-  --color-notification:       #2E7DDE;
-  --color-error:              #D64545;
-  --color-tab-active:         #D9E9FA;
-  --color-misc:               #7A56C2;
+  --color-shadow: #B9C5D1;
+  --color-notification: #2E7DDE;
+  --color-error: #D64545;
+  --color-tab-active: #D9E9FA;
+  --color-misc: #7A56C2;
 }
 
 [data-theme="catppuccin-latte"] {
-  --color-main:               #EFF1F5;
-  --color-sidebar:            #E6E9EF;
-  --color-player:             #DCE0E8;
-  --color-card:               #FFFFFF;
-  --color-text:               #4C4F69;
-  --color-subtext:            #6C6F85;
-  --color-button:             #1E66F5;
-  --color-button-active:      #1554D1;
-  --color-selected-row:       #D9E5FF;
-  --color-highlight:          #E1E5EC;
+  --color-main: #EFF1F5;
+  --color-sidebar: #E6E9EF;
+  --color-player: #DCE0E8;
+  --color-card: #FFFFFF;
+  --color-text: #4C4F69;
+  --color-subtext: #6C6F85;
+  --color-button: #1E66F5;
+  --color-button-active: #1554D1;
+  --color-selected-row: #D9E5FF;
+  --color-highlight: #E1E5EC;
   --color-highlight-elevated: #CCD2DC;
-  --color-shadow:             #BCC3D0;
-  --color-notification:       #1E66F5;
-  --color-error:              #D20F39;
-  --color-tab-active:         #DCE7FF;
-  --color-misc:               #8839EF;
+  --color-shadow: #BCC3D0;
+  --color-notification: #1E66F5;
+  --color-error: #D20F39;
+  --color-tab-active: #DCE7FF;
+  --color-misc: #8839EF;
 }
 
 [data-theme="nord"] {
-  --color-main:               #2E3440;
-  --color-sidebar:            #272C36;
-  --color-player:             #242933;
-  --color-card:               #3B4252;
-  --color-text:               #ECEFF4;
-  --color-subtext:            #D8DEE9;
-  --color-button:             #88C0D0;
-  --color-button-active:      #8FBCBB;
-  --color-selected-row:       #3D5664;
-  --color-highlight:          #434C5E;
+  --color-main: #2E3440;
+  --color-sidebar: #272C36;
+  --color-player: #242933;
+  --color-card: #3B4252;
+  --color-text: #ECEFF4;
+  --color-subtext: #D8DEE9;
+  --color-button: #88C0D0;
+  --color-button-active: #8FBCBB;
+  --color-selected-row: #3D5664;
+  --color-highlight: #434C5E;
   --color-highlight-elevated: #4C566A;
-  --color-shadow:             #596579;
-  --color-notification:       #88C0D0;
-  --color-error:              #BF616A;
-  --color-tab-active:         #3C5965;
-  --color-misc:               #B48EAD;
+  --color-shadow: #596579;
+  --color-notification: #88C0D0;
+  --color-error: #BF616A;
+  --color-tab-active: #3C5965;
+  --color-misc: #B48EAD;
 }
 
 [data-theme="dracula"] {
-  --color-main:               #282A36;
-  --color-sidebar:            #21222C;
-  --color-player:             #191A21;
-  --color-card:               #44475A;
-  --color-text:               #F8F8F2;
-  --color-subtext:            #BFBFB2;
-  --color-button:             #BD93F9;
-  --color-button-active:      #FF79C6;
-  --color-selected-row:       #493F62;
-  --color-highlight:          #3B3D4B;
+  --color-main: #282A36;
+  --color-sidebar: #21222C;
+  --color-player: #191A21;
+  --color-card: #44475A;
+  --color-text: #F8F8F2;
+  --color-subtext: #BFBFB2;
+  --color-button: #BD93F9;
+  --color-button-active: #FF79C6;
+  --color-selected-row: #493F62;
+  --color-highlight: #3B3D4B;
   --color-highlight-elevated: #505365;
-  --color-shadow:             #6272A4;
-  --color-notification:       #50FA7B;
-  --color-error:              #FF5555;
-  --color-tab-active:         #443C5B;
-  --color-misc:               #8BE9FD;
+  --color-shadow: #6272A4;
+  --color-notification: #50FA7B;
+  --color-error: #FF5555;
+  --color-tab-active: #443C5B;
+  --color-misc: #8BE9FD;
 }
 
 [data-theme="dreary-bib"] {
-  --color-main:               #202020;
-  --color-sidebar:            #202020;
-  --color-player:             #242424;
-  --color-card:               #242424;
-  --color-text:               #8BC34A;
-  --color-subtext:            #B4B4B4;
-  --color-button:             #537B25;
-  --color-button-active:      #98DA4B;
-  --color-selected-row:       #2A3C17;
-  --color-highlight:          #303030;
+  --color-main: #202020;
+  --color-sidebar: #202020;
+  --color-player: #242424;
+  --color-card: #242424;
+  --color-text: #8BC34A;
+  --color-subtext: #B4B4B4;
+  --color-button: #537B25;
+  --color-button-active: #98DA4B;
+  --color-selected-row: #2A3C17;
+  --color-highlight: #303030;
   --color-highlight-elevated: #353535;
-  --color-shadow:             #000000;
-  --color-notification:       #242424;
-  --color-error:              #242424;
-  --color-tab-active:         #303030;
-  --color-misc:               #8BC34A;
+  --color-shadow: #000000;
+  --color-notification: #242424;
+  --color-error: #242424;
+  --color-tab-active: #303030;
+  --color-misc: #8BC34A;
 }
 
 [data-theme="dreary-deeper"] {
-  --color-main:               #040614;
-  --color-sidebar:            #0F111A;
-  --color-player:             #0F111A;
-  --color-card:               #0F1118;
-  --color-text:               #4F9A87;
-  --color-subtext:            #406560;
-  --color-button:             #0D3A2E;
-  --color-button-active:      #106165;
-  --color-selected-row:       #040614;
-  --color-highlight:          #0A1527;
+  --color-main: #040614;
+  --color-sidebar: #0F111A;
+  --color-player: #0F111A;
+  --color-card: #0F1118;
+  --color-text: #4F9A87;
+  --color-subtext: #406560;
+  --color-button: #0D3A2E;
+  --color-button-active: #106165;
+  --color-selected-row: #040614;
+  --color-highlight: #0A1527;
   --color-highlight-elevated: #0F1118;
-  --color-shadow:             #406560;
-  --color-notification:       #051024;
-  --color-error:              #051024;
-  --color-tab-active:         #0A1527;
-  --color-misc:               #406560;
+  --color-shadow: #406560;
+  --color-notification: #051024;
+  --color-error: #051024;
+  --color-tab-active: #0A1527;
+  --color-misc: #406560;
 }
 
 [data-theme="gruvbox-material-dark"] {
-  --color-main:               #1D2021;
-  --color-sidebar:            #282828;
-  --color-player:             #282828;
-  --color-card:               #504945;
-  --color-text:               #FFDAB9;
-  --color-subtext:            #B8BBC2;
-  --color-button:             #98971A;
-  --color-button-active:      #B8BB26;
-  --color-selected-row:       #7C6F64;
-  --color-highlight:          #3C3836;
+  --color-main: #1D2021;
+  --color-sidebar: #282828;
+  --color-player: #282828;
+  --color-card: #504945;
+  --color-text: #FFDAB9;
+  --color-subtext: #B8BBC2;
+  --color-button: #98971A;
+  --color-button-active: #B8BB26;
+  --color-selected-row: #7C6F64;
+  --color-highlight: #3C3836;
   --color-highlight-elevated: #665C54;
-  --color-shadow:             #3C3836;
-  --color-notification:       #282828;
-  --color-error:              #CC241D;
-  --color-tab-active:         #504945;
-  --color-misc:               #D8A657;
+  --color-shadow: #3C3836;
+  --color-notification: #282828;
+  --color-error: #CC241D;
+  --color-tab-active: #504945;
+  --color-misc: #D8A657;
 }
 
 [data-theme="onepunch-dark"] {
-  --color-main:               #1D2021;
-  --color-sidebar:            #1D2021;
-  --color-player:             #1D2021;
-  --color-card:               #32302F;
-  --color-text:               #D5C4A1;
-  --color-subtext:            #B8BB26;
-  --color-button:             #8EC07C;
-  --color-button-active:      #8EC07C;
-  --color-selected-row:       #D3869B;
-  --color-highlight:          #32302F;
+  --color-main: #1D2021;
+  --color-sidebar: #1D2021;
+  --color-player: #1D2021;
+  --color-card: #32302F;
+  --color-text: #D5C4A1;
+  --color-subtext: #B8BB26;
+  --color-button: #8EC07C;
+  --color-button-active: #8EC07C;
+  --color-selected-row: #D3869B;
+  --color-highlight: #32302F;
   --color-highlight-elevated: #32302F;
-  --color-shadow:             #1D2021;
-  --color-notification:       #FB4934;
-  --color-error:              #CC2418;
-  --color-tab-active:         #FB4934;
-  --color-misc:               #83A598;
+  --color-shadow: #1D2021;
+  --color-notification: #FB4934;
+  --color-error: #CC2418;
+  --color-tab-active: #FB4934;
+  --color-misc: #83A598;
 }
 
 /* ── Utility classes using theme variables ────────────────────────────────── */
@@ -202,10 +203,23 @@ body {
 }
 
 /* Scrollbar styling */
-::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--color-highlight-elevated); border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: var(--color-subtext); }
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-highlight-elevated);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-subtext);
+}
 
 /* Range input (seek bar / volume) */
 input[type="range"] {
@@ -214,17 +228,23 @@ input[type="range"] {
   background: transparent;
   cursor: pointer;
 }
+
 input[type="range"]::-webkit-slider-runnable-track {
   height: 4px;
   border-radius: 2px;
   background: var(--color-highlight-elevated);
 }
+
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 12px; height: 12px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
   background: var(--color-text);
   margin-top: -4px;
   transition: transform 0.1s;
 }
-input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.3); }
+
+input[type="range"]:hover::-webkit-slider-thumb {
+  transform: scale(1.3);
+}

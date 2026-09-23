@@ -5,6 +5,16 @@
 
 import { create } from 'zustand'
 
+// Lazy passive-check to avoid circular imports.
+// isPassiveDevice() reads Zustand state synchronously — no async needed.
+let _isPassiveDevice = () => false
+let _sendCmd = null
+
+export function _initSyncBridge(isPassiveFn, sendCmdFn) {
+  _isPassiveDevice = isPassiveFn
+  _sendCmd = sendCmdFn
+}
+
 export const RepeatMode = {
   NONE: 'none',
   ONE: 'one',
@@ -44,30 +54,28 @@ export const usePlayerStore = create((set, get) => ({
   playSong(song, queue = null, index = 0) {
     const q = queue ?? [song]
     const i = queue ? index : 0
-
-    // If web is passive (another device is active), claim this device first,
-    // then play locally. The useSyncSession watcher will save state to Firestore
-    // so Flutter and other devices mirror us.
-    import("../hooks/useSyncSession").then(({ useSyncStore }) => {
-      const syncStore = useSyncStore.getState()
-      const isPassive = syncStore.activeDevice?.id &&
-                        syncStore.activeDevice.id !== syncStore.deviceId
-      if (isPassive) {
-        // Claim active, then play
-        import("../services/firestoreService").then(({ claimActiveDevice }) => {
-          import("./authStore").then(({ useAuthStore }) => {
-            const uid = useAuthStore.getState().user?.uid
-            if (uid) claimActiveDevice(uid, syncStore.deviceId).catch(console.error)
-          })
-        })
-      }
-      // Always play locally — we just made (or already are) active
-      set({ currentSong: song, queue: q, queueIndex: i, playing: true, position: 0 })
-    })
+    if (_isPassiveDevice()) {
+      // Send command to active device; don't touch local state
+      _sendCmd?.('playSong', { currentSong: song, queue: q, queueIndex: i, position: 0, playing: true })
+      return
+    }
+    // If this exact song is already playing, just ensure playing=true (don't restart)
+    const current = get()
+    if (current.currentSong?.id === song.id && current.playing) return
+    set({ currentSong: song, queue: q, queueIndex: i, playing: true, position: 0 })
   },
 
   playQueue(songs, startIndex = 0) {
     if (!songs.length) return
+    if (_isPassiveDevice()) {
+      const song = songs[startIndex]
+      _sendCmd?.('playSong', { currentSong: song, queue: songs, queueIndex: startIndex, position: 0, playing: true })
+      return
+    }
+    // If clicking the same song that's already playing, don't restart
+    const current = get()
+    const targetSong = songs[startIndex]
+    if (current.currentSong?.id === targetSong?.id && current.playing) return
     set({
       queue: songs,
       queueIndex: startIndex,
@@ -78,23 +86,11 @@ export const usePlayerStore = create((set, get) => ({
   },
 
   setPlaying(playing) {
-    // If passive, send command to active device instead of changing local state
-    import("../hooks/useSyncSession").then(({ useSyncStore }) => {
-      const { activeDevice, deviceId } = useSyncStore.getState()
-      const isPassive = activeDevice?.id && activeDevice.id !== deviceId
-      if (isPassive) {
-        import("../stores/authStore").then(({ useAuthStore }) => {
-          const uid = useAuthStore.getState().user?.uid
-          if (uid) {
-            import("../services/firestoreService").then(({ sendRemoteCommand }) => {
-              sendRemoteCommand(uid, playing ? 'play' : 'pause').catch(console.error)
-            })
-          }
-        })
-      } else {
-        set({ playing })
-      }
-    })
+    if (_isPassiveDevice()) {
+      _sendCmd?.('play_pause', playing)
+    } else {
+      set({ playing })
+    }
   },
 
   setPosition(position) { set({ position }) },
@@ -120,69 +116,35 @@ export const usePlayerStore = create((set, get) => ({
   },
 
   skipNext() {
-    // If passive, send next command to active device
-    import("../hooks/useSyncSession").then(({ useSyncStore }) => {
-      const { activeDevice, deviceId } = useSyncStore.getState()
-      const isPassive = activeDevice?.id && activeDevice.id !== deviceId
-      if (isPassive) {
-        import("../stores/authStore").then(({ useAuthStore }) => {
-          const uid = useAuthStore.getState().user?.uid
-          if (uid) {
-            import("../services/firestoreService").then(({ sendRemoteCommand }) => {
-              sendRemoteCommand(uid, 'next').catch(console.error)
-            })
-          }
-        })
-        return
+    if (_isPassiveDevice()) {
+      _sendCmd?.('next')
+      return
+    }
+    const { queue, queueIndex, shuffle, repeat } = get()
+    if (!queue.length) return
+    if (repeat === RepeatMode.ONE) { set({ position: 0, playing: true }); return }
+    let next
+    if (shuffle) {
+      next = Math.floor(Math.random() * queue.length)
+    } else {
+      next = queueIndex + 1
+      if (next >= queue.length) {
+        if (repeat === RepeatMode.ALL) next = 0
+        else { set({ playing: false }); return }
       }
-      // Active device: execute locally
-      const { queue, queueIndex, shuffle, repeat } = get()
-      if (!queue.length) return
-
-      if (repeat === RepeatMode.ONE) {
-        set({ position: 0, playing: true })
-        return
-      }
-
-      let next
-      if (shuffle) {
-        next = Math.floor(Math.random() * queue.length)
-      } else {
-        next = queueIndex + 1
-        if (next >= queue.length) {
-          if (repeat === RepeatMode.ALL) next = 0
-          else { set({ playing: false }); return }
-        }
-      }
-      set({ queueIndex: next, currentSong: queue[next], position: 0, playing: true })
-    })
+    }
+    set({ queueIndex: next, currentSong: queue[next], position: 0, playing: true })
   },
 
   skipPrev() {
-    // If passive, send prev command to active device
-    import("../hooks/useSyncSession").then(({ useSyncStore }) => {
-      const { activeDevice, deviceId } = useSyncStore.getState()
-      const isPassive = activeDevice?.id && activeDevice.id !== deviceId
-      if (isPassive) {
-        import("../stores/authStore").then(({ useAuthStore }) => {
-          const uid = useAuthStore.getState().user?.uid
-          if (uid) {
-            import("../services/firestoreService").then(({ sendRemoteCommand }) => {
-              sendRemoteCommand(uid, 'prev').catch(console.error)
-            })
-          }
-        })
-        return
-      }
-      // Active device: execute locally
-      const { queue, queueIndex, position } = get()
-      if (position > 3) {
-        set({ position: 0 })
-        return
-      }
-      const prev = Math.max(0, queueIndex - 1)
-      set({ queueIndex: prev, currentSong: queue[prev], position: 0, playing: true })
-    })
+    if (_isPassiveDevice()) {
+      _sendCmd?.('prev')
+      return
+    }
+    const { queue, queueIndex, position } = get()
+    if (position > 3) { set({ position: 0 }); return }
+    const prev = Math.max(0, queueIndex - 1)
+    set({ queueIndex: prev, currentSong: queue[prev], position: 0, playing: true })
   },
 
   addToQueue(song) {

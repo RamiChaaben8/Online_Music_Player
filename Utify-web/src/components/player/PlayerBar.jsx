@@ -32,7 +32,6 @@ import {
 import { usePlayerStore, PanelMode, RepeatMode } from "../../stores/playerStore"
 import { useAuthStore } from "../../stores/authStore"
 import { useSyncStore } from "../../hooks/useSyncSession"
-import { publishRemoteCommand } from "../../services/firestoreService"
 import { useLibraryStore } from '../../stores/libraryStore'
 
 
@@ -104,24 +103,24 @@ function ensureSliderStyles() {
     .utify-range {
       -webkit-appearance: none;
       appearance: none;
-      background: transparent;
       cursor: pointer;
       height: 4px;
       border-radius: 2px;
+      /* background is set via inline style (gradient fill) */
     }
     .utify-range:focus {
       outline: none;
     }
-    /* Track */
+    /* Track — must be transparent so inline background gradient shows through */
     .utify-range::-webkit-slider-runnable-track {
       height: 4px;
       border-radius: 2px;
-      background: var(--color-highlight);
+      background: transparent !important;
     }
     .utify-range::-moz-range-track {
       height: 4px;
       border-radius: 2px;
-      background: var(--color-highlight);
+      background: transparent !important;
     }
     /* Thumb */
     .utify-range::-webkit-slider-thumb {
@@ -130,26 +129,25 @@ function ensureSliderStyles() {
       width: 12px;
       height: 12px;
       border-radius: 50%;
-      background: var(--color-text);
+      background: #fff;
       margin-top: -4px;
-      transition: transform 0.1s;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
     }
     .utify-range::-moz-range-thumb {
       width: 12px;
       height: 12px;
       border-radius: 50%;
-      background: var(--color-text);
+      background: #fff;
       border: none;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
     }
     .utify-range:hover::-webkit-slider-thumb {
       transform: scale(1.3);
+      box-shadow: 0 0 10px rgba(255, 255, 255, 0.8), 0 0 4px rgba(29, 185, 84, 0.5);
     }
     .utify-range:hover::-moz-range-thumb {
       transform: scale(1.3);
-    }
-    /* Progress fill via background-gradient trick */
-    .utify-seek-range {
-      /* filled portion painted dynamically in the component via inline style */
+      box-shadow: 0 0 10px rgba(255, 255, 255, 0.8), 0 0 4px rgba(29, 185, 84, 0.5);
     }
     .utify-vol-range {
       width: 80px;
@@ -169,6 +167,11 @@ function LeftSection({ currentSong, onOpenNowPlaying }) {
   )
   const toggleLike = useLibraryStore((s) => s.toggleLike)
 
+  // Next song in queue
+  const queue      = usePlayerStore((s) => s.queue)
+  const queueIndex = usePlayerStore((s) => s.queueIndex)
+  const nextSong   = queue[queueIndex + 1] ?? null
+
   const handleLike = useCallback(() => {
     if (!uid || !currentSong) return
     toggleLike(uid, currentSong)
@@ -181,6 +184,10 @@ function LeftSection({ currentSong, onOpenNowPlaying }) {
   const thumbnailUrl =
     currentSong.thumbnail ||
     `https://i.ytimg.com/vi/${currentSong.id}/default.jpg`
+
+  const nextThumbUrl = nextSong
+    ? (nextSong.thumbnail || `https://i.ytimg.com/vi/${nextSong.id}/default.jpg`)
+    : null
 
   return (
     <div
@@ -263,6 +270,67 @@ function LeftSection({ currentSong, onOpenNowPlaying }) {
           strokeWidth={isLiked ? 0 : 2}
         />
       </IconBtn>
+
+      {/* Next song — shown when queue has a next track */}
+      {nextSong && (
+        <div style={{
+          display:      'flex',
+          alignItems:   'center',
+          gap:          8,
+          paddingLeft:  12,
+          borderLeft:   '1px solid var(--color-highlight)',
+          minWidth:     0,
+          overflow:     'hidden',
+          flexShrink:   0,
+          maxWidth:     160,
+        }}>
+          <div style={{ minWidth: 0, overflow: 'hidden' }}>
+            <div style={{
+              fontSize:     10,
+              fontWeight:   700,
+              color:        'var(--color-button)',
+              letterSpacing: 0.5,
+              textTransform: 'uppercase',
+              marginBottom: 2,
+            }}>
+              Next
+            </div>
+            <div style={{
+              fontSize:     12,
+              fontWeight:   600,
+              color:        'var(--color-text)',
+              whiteSpace:   'nowrap',
+              overflow:     'hidden',
+              textOverflow: 'ellipsis',
+            }}>
+              {nextSong.title}
+            </div>
+            <div style={{
+              fontSize:     11,
+              color:        'var(--color-subtext)',
+              whiteSpace:   'nowrap',
+              overflow:     'hidden',
+              textOverflow: 'ellipsis',
+              marginTop:    1,
+            }}>
+              {nextSong.channelName || nextSong.channel || nextSong.channelTitle || ''}
+            </div>
+          </div>
+          {nextThumbUrl && (
+            <img
+              src={nextThumbUrl}
+              alt=""
+              style={{
+                width:        36,
+                height:       36,
+                borderRadius: 4,
+                objectFit:    'cover',
+                flexShrink:   0,
+              }}
+            />
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -296,9 +364,9 @@ function CenterSection({ seekTo }) {
   const displayPosition = seeking ? seekValue : position
   const progress = duration > 0 ? (displayPosition / duration) * 100 : 0
 
-  // Build the two-colour gradient for the seek track
+  // Build colorful multi-highlight gradient for the passed seek timeline track
   const seekTrackStyle = {
-    background: `linear-gradient(to right, var(--color-button) ${progress}%, var(--color-highlight) ${progress}%)`,
+    background: `linear-gradient(to right, transparent ${progress}%, var(--color-highlight) ${progress}%), linear-gradient(to right, #FF007F 0%, #FF5E36 20%, #FFAE00 40%, #1DB954 60%, #00F2FE 80%, #9D4EDD 100%)`,
   }
 
   const handleSeekMouseDown = () => {
@@ -497,7 +565,7 @@ function RightSection() {
   const volProgress = muted ? 0 : volPct
 
   const volTrackStyle = {
-    background: `linear-gradient(to right, var(--color-button) ${volProgress}%, var(--color-highlight) ${volProgress}%)`,
+    background: `linear-gradient(to right, #1DB954 0%, #1ED760 ${volProgress}%, var(--color-highlight) ${volProgress}%)`,
   }
 
   const handleVolumeChange = (e) => {
@@ -625,7 +693,6 @@ export default function PlayerBar() {
       setPosition(seconds)
     }
   }, [setPosition, user?.uid])
-
   const openNowPlaying = useCallback(() => {
     setPanelMode(PanelMode.NOW_PLAYING)
   }, [setPanelMode])

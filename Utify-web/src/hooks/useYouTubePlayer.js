@@ -51,6 +51,7 @@ export function useYouTubePlayer() {
   const playerRef = useRef(null)          // YT.Player instance
   const playerReadyRef = useRef(false)    // true once onReady fires
   const positionPollRef = useRef(null)    // setInterval id
+  const loadingNewSongRef = useRef(false) // suppress spurious PAUSED during loadVideoById
 
   // Snapshot only the primitives / stable actions we need to avoid re-running
   // effects on every position tick.
@@ -136,7 +137,9 @@ export function useYouTubePlayer() {
             const { currentSong: song, playing: isPlaying } =
               usePlayerStore.getState()
             if (song?.id) {
+              loadingNewSongRef.current = true
               event.target.loadVideoById(song.id)
+              setTimeout(() => { loadingNewSongRef.current = false }, 1500)
               if (!isPlaying) event.target.pauseVideo()
             }
           },
@@ -157,10 +160,10 @@ export function useYouTubePlayer() {
 
               case YT.PAUSED:
                 setBuffering(false)
-                setPlaying(false)
-                stopPoll()
-                // Capture final position
-                {
+                // Ignore PAUSED fired during loadVideoById — it's transient
+                if (!loadingNewSongRef.current) {
+                  setPlaying(false)
+                  stopPoll()
                   const pos = playerRef.current?.getCurrentTime?.()
                   if (pos != null) setPosition(pos)
                 }
@@ -221,7 +224,10 @@ export function useYouTubePlayer() {
     }
 
     if (currentSong?.id) {
+      // Suppress the transient PAUSED event that fires during loadVideoById
+      loadingNewSongRef.current = true
       p.loadVideoById(currentSong.id)
+      setTimeout(() => { loadingNewSongRef.current = false }, 1500)
       if (!playing) {
         setTimeout(() => p.pauseVideo?.(), 200)
       }
@@ -295,7 +301,9 @@ export function useYouTubePlayer() {
     const p = playerRef.current
     if (!p) return
     if (videoId) {
+      loadingNewSongRef.current = true
       p.loadVideoById(videoId)
+      setTimeout(() => { loadingNewSongRef.current = false }, 1500)
     } else {
       p.playVideo?.()
     }
