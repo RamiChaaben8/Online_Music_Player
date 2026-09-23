@@ -1,0 +1,10 @@
+name = "utify-youtube-proxy"
+main = "worker/index.js"
+compatibility_date = "2024-01-01"
+
+[build]
+command = ""
+
+# No routes needed — we'll use the workers.dev subdomain
+# Your worker will be available at:
+#   https://utify-youtube-proxy.<your-cf-subdomain>.workers.dev

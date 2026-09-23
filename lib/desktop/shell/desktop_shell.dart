@@ -31,6 +31,7 @@ import '../../widgets/remote_playback_banner.dart';
 import '../../widgets/offline_indicator.dart';
 import '../../screens/privacy_settings_screen.dart';
 import '../../screens/friends_screen.dart';
+import '../../widgets/update_dialog.dart';
 
 class DesktopShell extends ConsumerStatefulWidget {
   const DesktopShell({super.key});
@@ -208,6 +209,14 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
                     Navigator.pop(dialogContext, _AccountAction.settings),
               ),
               ListTile(
+                leading: Icon(Icons.system_update_alt,
+                    color: currentTheme.button),
+                title: Text('Check for Updates',
+                    style: TextStyle(color: currentTheme.text)),
+                onTap: () => Navigator.pop(
+                    dialogContext, _AccountAction.checkForUpdates),
+              ),
+              ListTile(
                 leading:
                     Icon(Icons.logout, color: currentTheme.notificationError),
                 title: Text('Sign out',
@@ -228,6 +237,8 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
     } else if (action == _AccountAction.profile) {
       _showInfoDialog(
           'Profile', user?.email ?? 'No profile details available.');
+    } else if (action == _AccountAction.checkForUpdates) {
+      if (mounted) await showUpdateDialog(context, ref);
     } else {
       if (user != null) {
         await Navigator.of(context).push(
@@ -408,4 +419,4 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
   }
 }
 
-enum _AccountAction { profile, settings, signOut }
+enum _AccountAction { profile, settings, signOut, checkForUpdates }

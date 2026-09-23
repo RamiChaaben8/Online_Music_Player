@@ -14,7 +14,11 @@ class HttpsError extends Error { constructor(code, message) { super(message); th
 
 // ── InnerTube constants ───────────────────────────────────────────────────────
 
-const INNERTUBE_BASE   = '/youtubei/v1'
+// In development: Vite proxies /youtubei → youtube.com
+// In production:  requests go through the Cloudflare Worker proxy
+// VITE_YT_PROXY is set in .env.production to the worker URL
+const PROXY_BASE = import.meta.env.VITE_YT_PROXY || ''
+const INNERTUBE_BASE = `${PROXY_BASE}/youtubei/v1`
 const INNERTUBE_CLIENT = {
   hl:            'en',
   gl:            'US',
@@ -274,7 +278,9 @@ export async function getCaptionTrackParser(req) {
 
 async function fetchAndParseCaption(baseUrl, languageCode) {
   // Request JSON3 format (easier to parse than XML)
-  const url = `${baseUrl.replace("https://www.youtube.com", "")}&fmt=json3&xorb=2&xobt=3&xovt=3`
+  // Route through proxy in production — replace youtube.com origin with proxy base
+  const path = baseUrl.replace('https://www.youtube.com', '')
+  const url = `${PROXY_BASE}${path}&fmt=json3&xorb=2&xobt=3&xovt=3`
   const res = await fetch(url, {
     headers: { 'User-Agent': INNERTUBE_HEADERS['User-Agent'] },
   })
