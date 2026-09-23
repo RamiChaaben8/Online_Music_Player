@@ -239,6 +239,30 @@ export async function unlikeSong(uid, songId) {
 
 // ── Playback State ────────────────────────────────────────────────────────────
 
+
+// ── Remote command (passive → active) ─────────────────────────────────────────
+// Writes a command to the remoteCommand doc.
+// The active device (Flutter or web) reads this and executes it.
+
+export async function sendRemoteCommand(uid, command, extra = {}) {
+  const deviceId = localStorage.getItem("utify_device_id") || "web-unknown"
+  const { usePlayerStore } = await import("../stores/playerStore")
+  const s = usePlayerStore.getState()
+  const song = extra.currentSong ?? s.currentSong
+  await setDoc(stateDoc(uid, "remoteCommand"), {
+    command,
+    currentTrack: song ? songToMap(song) : null,
+    queue:        (extra.queue ?? s.queue ?? []).map(songToMap),
+    queueIndex:   extra.queueIndex ?? s.queueIndex ?? 0,
+    positionMs:   Math.round(((extra.position ?? s.position) ?? 0) * 1000),
+    isPlaying:    extra.playing ?? s.playing ?? false,
+    deviceId,
+    deviceName:   "Utify Web",
+    updatedAt:    serverTimestamp(),
+  })
+}
+
+
 export async function savePlaybackState(uid, state) {
   const deviceId = localStorage.getItem("utify_device_id") || "web-unknown"
   await setDoc(stateDoc(uid, "remoteCommand"), {
@@ -311,10 +335,13 @@ export function subscribeToPlaybackState(uid, callback) {
 export async function registerDevice(uid, deviceId, deviceName) {
   // Flutter schema: devices/{deviceId} has name, platform, lastActiveAt
   // (no isActive field — active state is in state/activeDevice doc)
+  // Also write lastSeen for backward compat, clear old isActive field
   await setDoc(userDoc(uid, 'devices', deviceId), {
     name:         deviceName,
     platform:     'web',
-    lastActiveAt: serverTimestamp(),   // Flutter filters on this field (< 75s)
+    lastActiveAt: serverTimestamp(),
+    lastSeen:     serverTimestamp(),   // backward compat
+    isActive:     false,               // clear old field so it doesn't confuse things
   }, { merge: true })
 }
 
@@ -354,19 +381,21 @@ export function subscribeToDevices(uid, callback) {
 
   function emit() {
     const now = Date.now()
+
+    const getMs = (ts) => {
+      if (!ts) return null
+      if (typeof ts.toMillis === 'function') return ts.toMillis()
+      if (typeof ts.seconds === 'number') return ts.seconds * 1000
+      if (typeof ts === 'number') return ts
+      return null
+    }
+
     const active = devicesList
       .filter((d) => {
-        // Flutter filters: lastActiveAt < 75s old
-        // Firestore Timestamp has .toMillis(), server timestamps may arrive as null briefly
-        const ts = d.lastActiveAt
-        if (!ts) return true  // just registered, include it (server timestamp pending)
-        const ms = typeof ts.toMillis === 'function'
-          ? ts.toMillis()
-          : typeof ts === 'number'
-            ? ts
-            : ts?.seconds * 1000 ?? null
-        if (!ms) return true  // can't determine age, include it
-        return (now - ms) < 75_000
+        // Use lastActiveAt first, fall back to lastSeen (old web field)
+        const ms = getMs(d.lastActiveAt) ?? getMs(d.lastSeen)
+        if (ms == null) return true   // timestamp pending, include it
+        return (now - ms) < 5 * 60 * 1000  // 5 min window (generous for cross-device)
       })
       .map((d) => ({
         ...d,

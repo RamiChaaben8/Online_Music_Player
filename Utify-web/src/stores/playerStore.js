@@ -77,7 +77,26 @@ export const usePlayerStore = create((set, get) => ({
     })
   },
 
-  setPlaying(playing) { set({ playing }) },
+  setPlaying(playing) {
+    // If passive, send command to active device instead of changing local state
+    import("../hooks/useSyncSession").then(({ useSyncStore }) => {
+      const { activeDevice, deviceId } = useSyncStore.getState()
+      const isPassive = activeDevice?.id && activeDevice.id !== deviceId
+      if (isPassive) {
+        import("../stores/authStore").then(({ useAuthStore }) => {
+          const uid = useAuthStore.getState().user?.uid
+          if (uid) {
+            import("../services/firestoreService").then(({ sendRemoteCommand }) => {
+              sendRemoteCommand(uid, playing ? 'play' : 'pause').catch(console.error)
+            })
+          }
+        })
+      } else {
+        set({ playing })
+      }
+    })
+  },
+
   setPosition(position) { set({ position }) },
   setDuration(duration) { set({ duration }) },
   setBuffering(buffering) { set({ buffering }) },
@@ -101,37 +120,69 @@ export const usePlayerStore = create((set, get) => ({
   },
 
   skipNext() {
-    const { queue, queueIndex, shuffle, repeat } = get()
-    if (!queue.length) return
-
-    if (repeat === RepeatMode.ONE) {
-      // signal player to seek to 0 — handled by useYouTubePlayer
-      set({ position: 0, playing: true })
-      return
-    }
-
-    let next
-    if (shuffle) {
-      next = Math.floor(Math.random() * queue.length)
-    } else {
-      next = queueIndex + 1
-      if (next >= queue.length) {
-        if (repeat === RepeatMode.ALL) next = 0
-        else { set({ playing: false }); return }
+    // If passive, send next command to active device
+    import("../hooks/useSyncSession").then(({ useSyncStore }) => {
+      const { activeDevice, deviceId } = useSyncStore.getState()
+      const isPassive = activeDevice?.id && activeDevice.id !== deviceId
+      if (isPassive) {
+        import("../stores/authStore").then(({ useAuthStore }) => {
+          const uid = useAuthStore.getState().user?.uid
+          if (uid) {
+            import("../services/firestoreService").then(({ sendRemoteCommand }) => {
+              sendRemoteCommand(uid, 'next').catch(console.error)
+            })
+          }
+        })
+        return
       }
-    }
-    set({ queueIndex: next, currentSong: queue[next], position: 0, playing: true })
+      // Active device: execute locally
+      const { queue, queueIndex, shuffle, repeat } = get()
+      if (!queue.length) return
+
+      if (repeat === RepeatMode.ONE) {
+        set({ position: 0, playing: true })
+        return
+      }
+
+      let next
+      if (shuffle) {
+        next = Math.floor(Math.random() * queue.length)
+      } else {
+        next = queueIndex + 1
+        if (next >= queue.length) {
+          if (repeat === RepeatMode.ALL) next = 0
+          else { set({ playing: false }); return }
+        }
+      }
+      set({ queueIndex: next, currentSong: queue[next], position: 0, playing: true })
+    })
   },
 
   skipPrev() {
-    const { queue, queueIndex, position } = get()
-    if (position > 3) {
-      // seek to beginning
-      set({ position: 0 })
-      return
-    }
-    const prev = Math.max(0, queueIndex - 1)
-    set({ queueIndex: prev, currentSong: queue[prev], position: 0, playing: true })
+    // If passive, send prev command to active device
+    import("../hooks/useSyncSession").then(({ useSyncStore }) => {
+      const { activeDevice, deviceId } = useSyncStore.getState()
+      const isPassive = activeDevice?.id && activeDevice.id !== deviceId
+      if (isPassive) {
+        import("../stores/authStore").then(({ useAuthStore }) => {
+          const uid = useAuthStore.getState().user?.uid
+          if (uid) {
+            import("../services/firestoreService").then(({ sendRemoteCommand }) => {
+              sendRemoteCommand(uid, 'prev').catch(console.error)
+            })
+          }
+        })
+        return
+      }
+      // Active device: execute locally
+      const { queue, queueIndex, position } = get()
+      if (position > 3) {
+        set({ position: 0 })
+        return
+      }
+      const prev = Math.max(0, queueIndex - 1)
+      set({ queueIndex: prev, currentSong: queue[prev], position: 0, playing: true })
+    })
   },
 
   addToQueue(song) {

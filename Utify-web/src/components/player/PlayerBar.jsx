@@ -488,6 +488,7 @@ import DevicePicker from "../sync/DevicePicker"
 
 function RightSection() {
   const [devicePickerOpen, setDevicePickerOpen] = useState(false)
+  const deviceBtnRef = useRef(null)
   const panelMode = usePlayerStore((s) => s.panelMode)
   const setPanelMode = usePlayerStore((s) => s.setPanelMode)
   const volume = usePlayerStore((s) => s.volume)
@@ -534,11 +535,11 @@ function RightSection() {
         justifyContent: 'flex-end',
         gap: 4,
         paddingRight: 16,
-        overflow: 'hidden',
+        position: 'relative',
       }}
     >
       {/* Device Picker */}
-        <div style={{ position: "relative" }}>
+        <div ref={deviceBtnRef} style={{ position: "relative" }}>
           <IconBtn
             onClick={() => setDevicePickerOpen(!devicePickerOpen)}
             title={remoteIsActive ? `Playing on ${activeDevice?.name}` : "Connect to a device"}
@@ -546,7 +547,7 @@ function RightSection() {
           >
             <MonitorSpeaker size={18} />
           </IconBtn>
-          {devicePickerOpen && <DevicePicker onClose={() => setDevicePickerOpen(false)} />}
+          {devicePickerOpen && <DevicePicker anchorRef={deviceBtnRef} onClose={() => setDevicePickerOpen(false)} />}
         </div>
         {/* Now Playing panel toggle */}
       <IconBtn
@@ -617,13 +618,22 @@ export default function PlayerBar() {
   const currentSong = usePlayerStore((s) => s.currentSong)
   const setPanelMode = usePlayerStore((s) => s.setPanelMode)
   const setPosition = usePlayerStore((s) => s.setPosition)
+  const user = useAuthStore((s) => s.user)
 
-  // seekTo delegates to the YT player via window.utifyPlayer, then syncs
-  // the store position.
+  // seekTo: if passive → send seek command to active device
+  //          if active  → seek local YT player
   const seekTo = useCallback((seconds) => {
-    window.utifyPlayer?.seekTo?.(seconds)
-    setPosition(seconds)
-  }, [setPosition])
+    const { activeDevice, deviceId } = useSyncStore.getState()
+    const isPassive = activeDevice?.id && activeDevice.id !== deviceId
+    if (isPassive && user?.uid) {
+      import('../../services/firestoreService').then(({ sendRemoteCommand }) => {
+        sendRemoteCommand(user.uid, 'seek', { position: seconds }).catch(console.error)
+      })
+    } else {
+      window.utifyPlayer?.seekTo?.(seconds)
+      setPosition(seconds)
+    }
+  }, [setPosition, user?.uid])
 
   const openNowPlaying = useCallback(() => {
     setPanelMode(PanelMode.NOW_PLAYING)

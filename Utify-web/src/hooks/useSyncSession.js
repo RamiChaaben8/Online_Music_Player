@@ -28,7 +28,7 @@ import {
   savePlaybackState,
   loadPlaybackState,
   subscribeToPlaybackState,
-  publishRemoteCommand,
+  sendRemoteCommand,
 } from '../services/firestoreService'
 
 // ── Device ID ─────────────────────────────────────────────────────────────────
@@ -242,6 +242,26 @@ export function useSyncSession() {
     }
   }, [user?.uid]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Watch: auto-start when THIS device becomes active ────────────────────
+  // When activeDevice changes from someone-else to THIS device, start playing
+  // (handles the case where another device transfers playback to us)
+  const activeDeviceId = useSyncStore((s) => s.activeDevice?.id)
+  const prevActiveRef  = useRef(null)
+  useEffect(() => {
+    const prev    = prevActiveRef.current
+    const isNowMe = activeDeviceId === deviceId
+    const wasSomeoneElse = prev !== null && prev !== deviceId
+    // Just became active (transitioned from another device or null to this device)
+    if (isNowMe && wasSomeoneElse && user) {
+      // Resume playback — position was already synced by subscribeToPlaybackState
+      const ps = usePlayerStore.getState()
+      if (ps.currentSong) {
+        usePlayerStore.setState({ playing: true })
+      }
+    }
+    prevActiveRef.current = activeDeviceId
+  }, [activeDeviceId, deviceId, user])
+
   // ── Watch: save on pause/resume ───────────────────────────────────────────
   const playing = usePlayerStore((s) => s.playing)
   useEffect(() => {
@@ -291,17 +311,47 @@ export function useRemotePlayback() {
   const claimHere = useCallback(async () => {
     if (!user) return
     try {
+      // 1. Read current synced position from Firestore so we resume at the right place
+      const currentState = await loadPlaybackState(user.uid)
+
+      // 2. Tell the currently active device to pause
+      await sendRemoteCommand(user.uid, 'pause')
+
+      // 3. Small delay so the active device receives the pause
+      await new Promise((r) => setTimeout(r, 300))
+
+      // 4. Claim this device as active
       await claimActiveDevice(user.uid, deviceId)
-      // Save current player state so this device becomes the source of truth
+
+      // 5. Restore the position from Firestore into our local store
+      if (currentState?.songData) {
+        usePlayerStore.setState({
+          currentSong: currentState.songData,
+          queue:       currentState.queueData ?? [currentState.songData],
+          queueIndex:  currentState.queueIndex ?? 0,
+          position:    currentState.position ?? 0,
+          playing:     false, // start paused, then resume below
+        })
+        // Seek YT player to the correct position
+        if (window.utifyPlayer?.seekTo) {
+          window.utifyPlayer.seekTo(currentState.position ?? 0, true)
+        }
+      }
+
+      // 6. Save our state as active and start playing
       const s = usePlayerStore.getState()
       await savePlaybackState(user.uid, {
         songData:   s.currentSong,
         queueData:  s.queue,
         queueIndex: s.queueIndex,
         position:   s.position,
-        playing:    s.playing,
-        command:    'none',
+        playing:    true,
+        command:    'play',
       })
+
+      // 7. Start playing
+      usePlayerStore.setState({ playing: true })
+
     } catch (err) {
       console.warn('[useRemotePlayback] claimHere failed:', err)
     }
