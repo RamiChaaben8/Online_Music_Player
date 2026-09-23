@@ -42,7 +42,7 @@ CloseApplications=yes
 CloseApplicationsFilter=*.exe
 
 ; Output
-OutputDir=installer\Output
+OutputDir={#SourcePath}\Output
 OutputBaseFilename=utify-setup
 ; Compress well but keep reasonable build time
 Compression=lzma2/max
@@ -50,7 +50,7 @@ SolidCompression=yes
 
 ; Visuals
 WizardStyle=modern
-SetupIconFile=windows\runner\resources\app_icon.ico
+SetupIconFile={#SourcePath}\..\windows\runner\resources\app_icon.ico
 
 ; Minimum Windows version: Windows 10
 MinVersion=10.0.17763
@@ -63,7 +63,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 ; Copy the entire Flutter Windows build output
-Source: "build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#SourcePath}\..\build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#MyAppName}";        Filename: "{app}\{#MyAppExeName}"
