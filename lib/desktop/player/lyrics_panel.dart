@@ -101,7 +101,7 @@ class _LyricsPanelState extends ConsumerState<LyricsPanel> {
       _lastVideoId = song.id;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_scroll.hasClients) _scroll.jumpTo(0);
-        ref.read(lyricsProvider.notifier).fetchFor(song.id);
+        ref.read(lyricsProvider.notifier).fetchFor(song.id, song: song);
       });
     }
 
@@ -299,7 +299,10 @@ class _LyricsPanelState extends ConsumerState<LyricsPanel> {
               return Padding(
                 padding: EdgeInsets.only(top: 28),
                 child: Text(
-                  'Lyrics provided by YouTube',
+                  lyrics.source == LyricsSource.lrclib ||
+                          lyrics.source == LyricsSource.lrclibPlain
+                      ? 'Lyrics provided by LRCLIB'
+                      : 'Lyrics provided by YouTube',
                   style:
                       TextStyle(color: context.appTheme.shadow, fontSize: 12),
                 ),
@@ -422,7 +425,7 @@ class _Placeholder extends StatelessWidget {
 
 // ─── Single lyric line ────────────────────────────────────────────────────────
 
-class _LyricLine extends StatelessWidget {
+class _LyricLine extends StatefulWidget {
   final LyricLine line;
   final bool isActive;
   final bool isPast;
@@ -437,59 +440,92 @@ class _LyricLine extends StatelessWidget {
   });
 
   @override
+  State<_LyricLine> createState() => _LyricLineState();
+}
+
+class _LyricLineState extends State<_LyricLine> {
+  bool _hovered = false;
+
+  void _seek(BuildContext context) {
+    if (widget.line.start == Duration.zero) return; // plain/unsynced lyrics
+    // Walk up to find the nearest WidgetRef via the provider scope
+    final container = ProviderScope.containerOf(context, listen: false);
+    container.read(playerProvider.notifier).seek(widget.line.start);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final isRtl = Directionality.of(context) == TextDirection.rtl;
+    final isSynced = widget.line.start != Duration.zero;
 
     // ── Karaoke word-by-word when active and timing available ───────
-    if (isActive && line.hasWordTiming) {
-      return Padding(
-        padding: EdgeInsets.only(bottom: 16),
-        child: Align(
-          alignment: isRtl ? Alignment.centerRight : Alignment.centerLeft,
-          child: Wrap(
-            textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
-            spacing: 0,
-            runSpacing: 2,
-            children: line.words.map((word) {
-              final lit = position >= word.start;
-              return AnimatedDefaultTextStyle(
-                duration: const Duration(milliseconds: 120),
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w800,
-                  height: 1.3,
-                  color: lit
-                      ? context.appTheme.button
-                      : context.appTheme.text.withValues(alpha: 0.45),
-                ),
-                child: Text('${word.text} '),
-              );
-            }).toList(),
+    if (widget.isActive && widget.line.hasWordTiming) {
+      return MouseRegion(
+        cursor: isSynced ? SystemMouseCursors.click : MouseCursor.defer,
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: GestureDetector(
+          onTap: () => _seek(context),
+          child: Padding(
+            padding: EdgeInsets.only(bottom: 16),
+            child: Align(
+              alignment: isRtl ? Alignment.centerRight : Alignment.centerLeft,
+              child: Wrap(
+                textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
+                spacing: 0,
+                runSpacing: 2,
+                children: widget.line.words.map((word) {
+                  final lit = widget.position >= word.start;
+                  return AnimatedDefaultTextStyle(
+                    duration: const Duration(milliseconds: 120),
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      height: 1.3,
+                      color: lit
+                          ? context.appTheme.button
+                          : context.appTheme.text.withValues(alpha: 0.45),
+                    ),
+                    child: Text('${word.text} '),
+                  );
+                }).toList(),
+              ),
+            ),
           ),
         ),
       );
     }
 
     // ── Plain line ──────────────────────────────────────────────────
-    return Padding(
-      padding: EdgeInsets.only(bottom: 16),
-      child: AnimatedDefaultTextStyle(
-        duration: const Duration(milliseconds: 220),
-        style: TextStyle(
-          color: isActive
-              ? context.appTheme.text
-              : isPast
-                  ? context.appTheme.shadow
-                  : context.appTheme.subtext,
-          fontSize: isActive ? 22 : 18,
-          fontWeight: isActive ? FontWeight.w800 : FontWeight.w500,
-          height: 1.3,
-        ),
-        child: Align(
-          alignment: isRtl ? Alignment.centerRight : Alignment.centerLeft,
-          child: Text(
-            line.text,
-            textAlign: isRtl ? TextAlign.right : TextAlign.left,
+    return MouseRegion(
+      cursor: isSynced ? SystemMouseCursors.click : MouseCursor.defer,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTap: () => _seek(context),
+        child: Padding(
+          padding: EdgeInsets.only(bottom: 16),
+          child: AnimatedDefaultTextStyle(
+            duration: const Duration(milliseconds: 220),
+            style: TextStyle(
+              color: _hovered && isSynced
+                  ? context.appTheme.text
+                  : widget.isActive
+                      ? context.appTheme.text
+                      : widget.isPast
+                          ? context.appTheme.shadow
+                          : context.appTheme.subtext,
+              fontSize: widget.isActive ? 22 : 18,
+              fontWeight: widget.isActive ? FontWeight.w800 : FontWeight.w500,
+              height: 1.3,
+            ),
+            child: Align(
+              alignment: isRtl ? Alignment.centerRight : Alignment.centerLeft,
+              child: Text(
+                widget.line.text,
+                textAlign: isRtl ? TextAlign.right : TextAlign.left,
+              ),
+            ),
           ),
         ),
       ),

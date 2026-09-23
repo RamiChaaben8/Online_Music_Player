@@ -67,7 +67,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
     if (!song.isLocal && song.id != _lastVideoId) {
       _lastVideoId = song.id;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        ref.read(lyricsProvider.notifier).fetchFor(song.id);
+        ref.read(lyricsProvider.notifier).fetchFor(song.id, song: song);
       });
     }
 
@@ -842,7 +842,7 @@ int _activeLineIndex(LyricsState lyrics, Duration position) {
   return active;
 }
 
-class _MobileLyricLine extends StatelessWidget {
+class _MobileLyricLine extends ConsumerWidget {
   final LyricLine line;
   final bool isActive;
   final bool isPast;
@@ -857,57 +857,69 @@ class _MobileLyricLine extends StatelessWidget {
     this.compact = false,
   });
 
+  void _seek(WidgetRef ref) {
+    if (line.start == Duration.zero) return;
+    ref.read(playerProvider.notifier).seek(line.start);
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final rtl = Directionality.of(context) == TextDirection.rtl;
     final fontSize = compact ? (isActive ? 17.0 : 15.0) : 18.0;
+    final isSynced = line.start != Duration.zero;
 
     if (isActive && line.hasWordTiming) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 16),
-        child: Align(
-          alignment: rtl ? Alignment.centerRight : Alignment.centerLeft,
-          child: Wrap(
-            textDirection: rtl ? TextDirection.rtl : TextDirection.ltr,
-            spacing: 0,
-            runSpacing: 2,
-            children: line.words.map((word) {
-              final lit = position >= word.start;
-              return AnimatedDefaultTextStyle(
-                duration: const Duration(milliseconds: 120),
-                style: TextStyle(
-                  color: lit ? const Color(0xFF1DB954) : Colors.white54,
-                  fontSize: fontSize,
-                  fontWeight: FontWeight.bold,
-                  height: 1.4,
-                ),
-                child: Text('${word.text} '),
-              );
-            }).toList(),
+      return GestureDetector(
+        onTap: () => _seek(ref),
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: Align(
+            alignment: rtl ? Alignment.centerRight : Alignment.centerLeft,
+            child: Wrap(
+              textDirection: rtl ? TextDirection.rtl : TextDirection.ltr,
+              spacing: 0,
+              runSpacing: 2,
+              children: line.words.map((word) {
+                final lit = position >= word.start;
+                return AnimatedDefaultTextStyle(
+                  duration: const Duration(milliseconds: 120),
+                  style: TextStyle(
+                    color: lit ? const Color(0xFF1DB954) : Colors.white54,
+                    fontSize: fontSize,
+                    fontWeight: FontWeight.bold,
+                    height: 1.4,
+                  ),
+                  child: Text('${word.text} '),
+                );
+              }).toList(),
+            ),
           ),
         ),
       );
     }
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Align(
-        alignment: rtl ? Alignment.centerRight : Alignment.centerLeft,
-        child: AnimatedDefaultTextStyle(
-          duration: const Duration(milliseconds: 220),
-          style: TextStyle(
-            color: isActive
-                ? Colors.white
-                : isPast
-                    ? Colors.white38
-                    : Colors.white60,
-            fontSize: fontSize,
-            fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-            height: 1.4,
-          ),
-          child: Text(
-            line.text,
-            textAlign: rtl ? TextAlign.right : TextAlign.left,
+    return GestureDetector(
+      onTap: isSynced ? () => _seek(ref) : null,
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: Align(
+          alignment: rtl ? Alignment.centerRight : Alignment.centerLeft,
+          child: AnimatedDefaultTextStyle(
+            duration: const Duration(milliseconds: 220),
+            style: TextStyle(
+              color: isActive
+                  ? Colors.white
+                  : isPast
+                      ? Colors.white38
+                      : Colors.white60,
+              fontSize: fontSize,
+              fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+              height: 1.4,
+            ),
+            child: Text(
+              line.text,
+              textAlign: rtl ? TextAlign.right : TextAlign.left,
+            ),
           ),
         ),
       ),

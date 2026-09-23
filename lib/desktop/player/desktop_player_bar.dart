@@ -70,7 +70,7 @@ class _DesktopPlayerBarState extends ConsumerState<DesktopPlayerBar> {
     if (next == PanelMode.lyrics) {
       final song = ref.read(playerProvider).currentSong;
       if (song != null) {
-        ref.read(lyricsProvider.notifier).fetchFor(song.id);
+        ref.read(lyricsProvider.notifier).fetchFor(song.id, song: song);
       }
     }
   }

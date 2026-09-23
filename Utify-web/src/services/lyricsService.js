@@ -99,9 +99,18 @@ export async function fetchLyrics(title, artist, durationSeconds) {
 
     const data = await res.json()
 
-    const syncedLyrics = data.syncedLyrics ?? null
-    const plainLyrics  = data.plainLyrics  ?? null
-    const parsed       = parseLRC(syncedLyrics ?? '')
+    const syncedLyrics = data.syncedLyrics || null
+    const plainLyrics  = data.plainLyrics  || null
+
+    // Prefer synced LRC; fall back to plain lines (unsynced, time=0)
+    let parsed = parseLRC(syncedLyrics ?? '')
+    if (!parsed.length && plainLyrics) {
+      parsed = plainLyrics
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean)
+        .map((text) => ({ time: 0, text }))
+    }
 
     return { syncedLyrics, plainLyrics, parsed }
   } catch (err) {
@@ -175,7 +184,11 @@ export async function searchLyrics(query) {
 
 /**
  * Convenience: fetch lyrics for a Song object from the player store.
- * Automatically strips common YouTube title noise (e.g. "(Official Video)").
+ *
+ * Attempts (in order):
+ *   1. /get  with title + cleaned artist + duration
+ *   2. /get  with title + cleaned artist (no duration — duration mismatch is common)
+ *   3. /search fallback with "title artist" free-text query
  *
  * @param {{ title: string, channelName: string, durationSeconds: number }} song
  * @returns Same shape as fetchLyrics
@@ -184,9 +197,22 @@ export async function fetchLyricsForSong(song) {
   if (!song) return { syncedLyrics: null, plainLyrics: null, parsed: [] }
 
   const cleanTitle = cleanYouTubeTitle(song.title)
-  const artist     = song.channelName ?? ''
+  const artist     = cleanArtistName(song.channelName ?? '')
+  const duration   = song.durationSeconds
 
-  return fetchLyrics(cleanTitle, artist, song.durationSeconds)
+  // ── Attempt 1: title + artist + duration ─────────────────────────────────
+  const result1 = await fetchLyrics(cleanTitle, artist, duration)
+  if (result1.parsed.length || result1.plainLyrics) return result1
+
+  // ── Attempt 2: title + artist WITHOUT duration ────────────────────────────
+  // LRCLIB uses duration for strict matching; omitting it is more lenient.
+  if (duration > 0) {
+    const result2 = await fetchLyrics(cleanTitle, artist, undefined)
+    if (result2.parsed.length || result2.plainLyrics) return result2
+  }
+
+  // ── Attempt 3: /search fallback ───────────────────────────────────────────
+  return searchFallback(cleanTitle, artist)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -205,6 +231,52 @@ function cleanYouTubeTitle(title = '') {
     .replace(/[「」『』]/g, ' ')
     .replace(/\s{2,}/g, ' ')
     .trim()
+}
+
+/**
+ * Strip YouTube channel name noise so LRCLIB can match the real artist name.
+ * e.g. "The Weeknd - Topic" → "The Weeknd"
+ *      "ArianaGrandeVEVO"   → "ArianaGrande"
+ */
+function cleanArtistName(name = '') {
+  return name
+    .replace(/\s*-\s*Topic\s*$/i, '')
+    .replace(/\s*VEVO\s*$/i, '')
+    .replace(/\s*Official\s*$/i, '')
+    .trim()
+}
+
+/**
+ * Search LRCLIB for the best match using a free-text query.
+ * Prefers synced lyrics, falls back to plain lyrics.
+ * Returns the same shape as fetchLyrics.
+ *
+ * @param {string} title
+ * @param {string} artist
+ */
+async function searchFallback(title, artist) {
+  const empty = { syncedLyrics: null, plainLyrics: null, parsed: [] }
+  try {
+    const results = await searchLyrics(`${title} ${artist}`)
+    if (!results.length) return empty
+
+    // Prefer synced lyrics first
+    for (const item of results) {
+      if (item.syncedLyrics) {
+        const parsed = parseLRC(item.syncedLyrics)
+        if (parsed.length) return { syncedLyrics: item.syncedLyrics, plainLyrics: item.plainLyrics ?? null, parsed }
+      }
+    }
+    // Fall back to plain lyrics
+    for (const item of results) {
+      if (item.plainLyrics) {
+        return { syncedLyrics: null, plainLyrics: item.plainLyrics, parsed: [] }
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return empty
 }
 
 /**

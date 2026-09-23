@@ -86,29 +86,76 @@ class PlaylistImportService {
       throw YoutubeServiceException(
           'YouTube could not read this playlist. Make sure it is public.');
     }
+
     var songs = <Song>[];
-    var current = 0;
-    try {
-      await for (final video
-          in _youtube.yt.playlists.getVideos(playlistSource)) {
-        songs.add(Song(
-          id: video.id.value,
-          title: video.title,
-          channelName: video.author,
-          thumbnailUrl: video.thumbnails.highResUrl,
-          duration: video.duration ?? Duration.zero,
-        ));
-        current++;
-        onProgress?.call(PlaylistImportProgress(
-          source: 'YouTube',
-          current: current,
+
+    // ── Strategy 1: YouTube Data API v3 (primary) ────────────────────────────
+    // No per-session limit. Returns all songs paginated at 50 per page.
+    if (playlistId != null) {
+      try {
+        final result = await _importYoutubeDataApi(
+          playlistId,
+          nameHint: playlistName,
           total: playlistTotal,
-        ));
+          onProgress: onProgress,
+        );
+        if (result.songs.isNotEmpty) {
+          songs = result.songs;
+        }
+      } catch (_) {
+        // Data API failed — fall through to InnerTube.
       }
-    } catch (_) {
-      // YouTube occasionally returns a playlist page whose video entries
-      // cannot be parsed by youtube_explode_dart. Try the public feed below.
     }
+
+    // ── Strategy 2: InnerTube (fallback) ─────────────────────────────────────
+    // Used when Data API fails. Limited to ~200 songs by bot-detection.
+    if (songs.isEmpty && playlistId != null) {
+      try {
+        final innertube = await _importYoutubeInnerTube(
+          playlistId,
+          nameHint: playlistName,
+          total: playlistTotal,
+          onProgress: onProgress,
+        );
+        if (innertube.songs.isNotEmpty) {
+          songs = innertube.songs;
+        }
+      } catch (_) {
+        // InnerTube failed — fall through to youtube_explode_dart.
+      }
+    }
+
+    // ── Strategy 3: youtube_explode_dart (fallback) ───────────────────────────
+    // Only used when InnerTube returns nothing (e.g. bot-detection on InnerTube
+    // side). Accepts whatever partial result it produces.
+    if (songs.isEmpty) {
+      var current = 0;
+      try {
+        await for (final video
+            in _youtube.yt.playlists.getVideos(playlistSource)) {
+          songs.add(Song(
+            id: video.id.value,
+            title: video.title,
+            channelName: video.author,
+            thumbnailUrl: video.thumbnails.highResUrl,
+            duration: video.duration ?? Duration.zero,
+          ));
+          current++;
+          onProgress?.call(PlaylistImportProgress(
+            source: 'YouTube',
+            current: current,
+            total: playlistTotal,
+          ));
+        }
+      } catch (_) {
+        // youtube_explode_dart occasionally cannot parse a playlist page.
+        // The RSS last-resort below will handle it.
+      }
+    }
+
+    // ── Strategy 3: RSS feed (last resort) ───────────────────────────────────
+    // Capped at ~15 entries by YouTube, but handles edge cases where both
+    // InnerTube and youtube_explode_dart fail (e.g. very new playlists).
     if (songs.isEmpty && playlistId != null) {
       songs = await _importYoutubeRss(
         playlistId,
@@ -116,10 +163,571 @@ class PlaylistImportService {
         onProgress: onProgress,
       );
     }
-    if (songs.isEmpty)
+
+    if (songs.isEmpty) {
       throw YoutubeServiceException(
-          'This YouTube playlist has no importable videos.');
+          'Could not import this YouTube playlist.\n'
+          'Make sure the playlist is public and the link is correct.\n'
+          'Tip: open the playlist on YouTube, tap Share → Copy link, and paste that link here.');
+    }
     return PlaylistImportResult(name: playlistName, songs: songs);
+  }
+
+  /// Fetches a YouTube playlist via the YouTube Data API v3.
+  /// No per-session limit — returns all songs paginated at 50 per page.
+  Future<PlaylistImportResult> _importYoutubeDataApi(
+    String playlistId, {
+    required String nameHint,
+    int? total,
+    void Function(PlaylistImportProgress progress)? onProgress,
+  }) async {
+    const apiKey = 'AIzaSyCPvjYBWStqSLajx9jHjLCZMe7yIMaJ1D8';
+    const baseUrl = 'https://www.googleapis.com/youtube/v3/playlistItems';
+    final client = HttpClient();
+    try {
+      final songs = <Song>[];
+      String? pageToken;
+
+      do {
+        final uri = Uri.parse(baseUrl).replace(queryParameters: {
+          'part': 'snippet',
+          'playlistId': playlistId,
+          'maxResults': '50',
+          'key': apiKey,
+          if (pageToken != null) 'pageToken': pageToken,
+        });
+
+        final request = await client.getUrl(uri);
+        request.headers.set(HttpHeaders.userAgentHeader, 'Mozilla/5.0');
+        final response = await request.close()
+            .timeout(const Duration(seconds: 30));
+
+        if (response.statusCode == 403) {
+          throw YoutubeServiceException(
+              'YouTube Data API quota exceeded or key is invalid.');
+        }
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          throw YoutubeServiceException(
+              'YouTube Data API error: ${response.statusCode}');
+        }
+
+        final Map<String, dynamic> data =
+            jsonDecode(await utf8.decoder.bind(response).join());
+
+        // Check for API error in response body
+        if (data.containsKey('error')) {
+          final msg = data['error']?['message'] as String? ?? 'Unknown error';
+          throw YoutubeServiceException('YouTube Data API: $msg');
+        }
+
+        final items = data['items'] as List? ?? [];
+        for (final item in items) {
+          final snippet = item['snippet'] as Map?;
+          if (snippet == null) continue;
+
+          // Skip deleted/private videos
+          final title = snippet['title'] as String? ?? '';
+          if (title == 'Deleted video' || title == 'Private video') continue;
+
+          final videoId =
+              snippet['resourceId']?['videoId'] as String?;
+          if (videoId == null || videoId.isEmpty) continue;
+
+          final channelName =
+              snippet['videoOwnerChannelTitle'] as String? ??
+              snippet['channelTitle'] as String? ??
+              'YouTube';
+          final thumbnails = snippet['thumbnails'] as Map?;
+          final thumbnailUrl =
+              (thumbnails?['high'] ?? thumbnails?['medium'] ??
+                      thumbnails?['default'])
+                  ?['url'] as String? ??
+              'https://i.ytimg.com/vi/$videoId/hqdefault.jpg';
+
+          songs.add(Song(
+            id: videoId,
+            title: title,
+            channelName: channelName,
+            thumbnailUrl: thumbnailUrl,
+            duration: Duration.zero, // Data API v3 needs a separate call for duration
+          ));
+          onProgress?.call(PlaylistImportProgress(
+            source: 'YouTube',
+            current: songs.length,
+            total: total,
+          ));
+        }
+
+        pageToken = data['nextPageToken'] as String?;
+        // ignore: avoid_print
+        print('[DataAPI] fetched ${songs.length} songs, nextPage=${pageToken != null}');
+      } while (pageToken != null);
+
+      if (songs.isEmpty) {
+        throw YoutubeServiceException('Data API returned no songs.');
+      }
+      return PlaylistImportResult(name: nameHint, songs: songs);
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  /// Fetches a YouTube playlist via the InnerTube browse API (no key needed).
+  /// This is the same endpoint used by youtube.com itself and handles playlists
+  /// that [youtube_explode_dart] and the RSS feed cannot parse.
+  Future<PlaylistImportResult> _importYoutubeInnerTube(
+    String playlistId, {
+    required String nameHint,
+    int? total,
+    void Function(PlaylistImportProgress progress)? onProgress,
+  }) async {
+    // WEB client gets bot-detected after ~200 songs, but works reliably up to that limit.
+    const innerTubeUrl =
+        'https://www.youtube.com/youtubei/v1/browse?prettyPrint=false';
+    const clientName = 'WEB';
+    const clientId = '1';
+    const clientVersion = '2.20240726.00.00';
+    final client = HttpClient();
+    try {
+      final songs = <Song>[];
+      String? continuationToken;
+      String? playlistName;
+      const maxPages = 50;
+      var pageCount = 0;
+      var consecutiveEmptyPages = 0;
+
+      do {
+        pageCount++;
+        if (pageCount > 1) {
+          await Future<void>.delayed(const Duration(milliseconds: 300));
+        }
+
+        final body = continuationToken == null
+            ? jsonEncode({
+                'context': {
+                  'client': {
+                    'clientName': clientName,
+                    'clientVersion': clientVersion,
+                  },
+                },
+                'browseId': 'VL$playlistId',
+              })
+            : jsonEncode({
+                'context': {
+                  'client': {
+                    'clientName': clientName,
+                    'clientVersion': clientVersion,
+                  },
+                },
+                'continuation': continuationToken,
+              });
+
+        final request = await client.postUrl(Uri.parse(innerTubeUrl));
+        request.headers
+          ..set(HttpHeaders.contentTypeHeader, 'application/json')
+          ..set(HttpHeaders.userAgentHeader,
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
+          ..set('X-YouTube-Client-Name', clientId)
+          ..set('X-YouTube-Client-Version', clientVersion)
+          ..set('Origin', 'https://www.youtube.com')
+          ..set(HttpHeaders.refererHeader,
+              'https://www.youtube.com/playlist?list=$playlistId');
+        request.add(utf8.encode(body));
+        final response = await request.close()
+            .timeout(const Duration(seconds: 30));
+        if (response.statusCode < 200 || response.statusCode >= 300) break;
+
+        final Map<String, dynamic> data =
+            jsonDecode(await utf8.decoder.bind(response).join());
+
+        // Parse name from initial response
+        if (playlistName == null) {
+          playlistName = _innerTubePlaylistName(data);
+        }
+
+        // Extract video items AND the next continuation token from the same
+        // list — keeps them in sync regardless of response shape.
+        final extracted = _innerTubeExtract(data);
+        final List<dynamic> items = extracted.items;
+        continuationToken = extracted.token;
+        final int songsBefore = songs.length;
+
+        for (final item in items) {
+          if (item is! Map) continue;
+
+          // ── New format: lockupViewModel (YouTube 2024+) ──────────────────
+          final lockup = item['lockupViewModel'] as Map?;
+          if (lockup != null) {
+            final videoId = lockup['contentId'] as String?;
+            if (videoId == null || videoId.isEmpty) continue;
+
+            final meta =
+                lockup['metadata']?['lockupMetadataViewModel'] as Map?;
+            final title = (meta?['title'] as Map?)?['content'] as String? ??
+                'Unknown';
+
+            // Author is in metadataRows[0].metadataParts[0].text.content
+            final metaRows = meta?['metadata']?['contentMetadataViewModel']
+                ?['metadataRows'] as List?;
+            String author = 'YouTube';
+            if (metaRows != null && metaRows.isNotEmpty) {
+              final parts =
+                  (metaRows.first as Map?)?['metadataParts'] as List?;
+              if (parts != null && parts.isNotEmpty) {
+                final text = (parts.first as Map?)?['text'] as Map?;
+                author = text?['content'] as String? ?? 'YouTube';
+              }
+            }
+
+            // Duration from thumbnail badge text (e.g. "3:36")
+            Duration duration = Duration.zero;
+            try {
+              final sources = lockup['contentImage']?['thumbnailViewModel']
+                  ?['overlays'] as List?;
+              if (sources != null) {
+                for (final overlay in sources) {
+                  final badges = (overlay as Map?)?[
+                          'thumbnailBottomOverlayViewModel']?['badges']
+                      as List?;
+                  if (badges == null) continue;
+                  for (final badge in badges) {
+                    final text = (badge as Map?)?['thumbnailBadgeViewModel']
+                        ?['text'] as String?;
+                    if (text != null) {
+                      duration = _parseDurationText(text);
+                    }
+                  }
+                }
+              }
+            } catch (_) {}
+
+            songs.add(Song(
+              id: videoId,
+              title: title,
+              channelName: author,
+              thumbnailUrl: 'https://i.ytimg.com/vi/$videoId/hqdefault.jpg',
+              duration: duration,
+            ));
+            onProgress?.call(PlaylistImportProgress(
+              source: 'YouTube',
+              current: songs.length,
+              total: total,
+            ));
+            continue;
+          }
+
+          // ── Old format: playlistVideoRenderer ───────────────────────────
+          final renderer = item['playlistVideoRenderer'] as Map?;
+          if (renderer == null) continue;
+
+          final videoId = renderer['videoId'] as String?;
+          if (videoId == null || videoId.isEmpty) continue;
+
+          // Skip unavailable / private / deleted videos
+          final isPlayable = (renderer['isPlayable'] as bool?) ?? true;
+          if (!isPlayable) continue;
+
+          final title = _innerTubeText(renderer['title']) ?? 'Unknown';
+          final author = _innerTubeText(renderer['shortBylineText']) ??
+              _innerTubeText(renderer['longBylineText']) ??
+              'YouTube';
+
+          // Duration: prefer lengthSeconds, fallback to lengthText parse
+          Duration duration = Duration.zero;
+          final lengthSeconds = renderer['lengthSeconds'];
+          if (lengthSeconds is String) {
+            duration = Duration(seconds: int.tryParse(lengthSeconds) ?? 0);
+          } else if (lengthSeconds is int) {
+            duration = Duration(seconds: lengthSeconds);
+          }
+
+          songs.add(Song(
+            id: videoId,
+            title: title,
+            channelName: author,
+            thumbnailUrl:
+                'https://i.ytimg.com/vi/$videoId/hqdefault.jpg',
+            duration: duration,
+          ));
+          onProgress?.call(PlaylistImportProgress(
+            source: 'YouTube',
+            current: songs.length,
+            total: total,
+          ));
+        }
+
+        final newSongs = songs.length - songsBefore;
+        // ignore: avoid_print
+        print('[InnerTube] page=$pageCount items=${items.length} '
+            'newSongs=$newSongs '
+            'total=${songs.length} '
+            'nextToken=${continuationToken != null}');
+
+        // Guard: if a page yields no new songs, we've likely hit a dead-end
+        // token (e.g. TOKEN_B pointing to "related playlists"). Stop after
+        // two consecutive empty pages to avoid an infinite loop.
+        if (newSongs == 0) {
+          consecutiveEmptyPages++;
+          if (consecutiveEmptyPages >= 2) {
+            // ignore: avoid_print
+            print('[InnerTube] 2 consecutive empty pages — stopping early.');
+            break;
+          }
+        } else {
+          consecutiveEmptyPages = 0;
+        }
+      } while (continuationToken != null && pageCount < maxPages);
+
+
+      return PlaylistImportResult(
+        name: playlistName ?? nameHint,
+        songs: songs,
+      );
+    } catch (e) {
+      // Surface the error as a service exception so the UI can show it.
+      // If the caller prefers a silent fallback it can catch this itself.
+      throw YoutubeServiceException(
+          'InnerTube playlist fetch failed: $e');
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  /// Parses a duration string like "3:36" or "1:02:45" into a [Duration].
+  Duration _parseDurationText(String text) {
+    try {
+      final parts = text.trim().split(':').map(int.parse).toList();
+      if (parts.length == 2) {
+        return Duration(minutes: parts[0], seconds: parts[1]);
+      } else if (parts.length == 3) {
+        return Duration(hours: parts[0], minutes: parts[1], seconds: parts[2]);
+      }
+    } catch (_) {}
+    return Duration.zero;
+  }
+
+  /// Extracts the playlist title from an InnerTube browse response.
+  String? _innerTubePlaylistName(Map<String, dynamic> data) {
+    try {
+      // New format: pageHeaderRenderer
+      final pageHeader = data['header']?['pageHeaderRenderer'] as Map?;
+      if (pageHeader != null) {
+        final content = pageHeader['content'] as Map?;
+        // pageHeaderViewModel
+        final pvm = content?['pageHeaderViewModel'] as Map?;
+        if (pvm != null) {
+          final title = pvm['title']?['dynamicTextViewModel']?['text']
+                  ?['content'] as String? ??
+              pvm['title']?['dynamicTextViewModel']?['text']
+                  ?['runs']?[0]?['text'] as String?;
+          if (title != null && title.isNotEmpty) return title;
+        }
+      }
+
+      // Old format: playlistHeaderRenderer
+      final header = data['header']?['playlistHeaderRenderer'] as Map?;
+      if (header != null) return _innerTubeText(header['title']);
+
+      // sidebar renderer (older response shape)
+      final sidebar =
+          data['sidebar']?['playlistSidebarRenderer']?['items'] as List?;
+      if (sidebar != null && sidebar.isNotEmpty) {
+        final primary =
+            sidebar.first['playlistSidebarPrimaryInfoRenderer'] as Map?;
+        if (primary != null) return _innerTubeText(primary['title']);
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Navigates the InnerTube response JSON to locate the list of video items
+  /// AND the continuation token for the next page, returning both together.
+  ///
+  /// Keeping them together ensures the token is always extracted from the same
+  /// list as the items — avoiding the mismatch where items come from an inner
+  /// ISR list but the token was searched in the outer continuationItems list.
+  ///
+  /// Observed response shapes:
+  ///
+  /// Initial browse (page 1):
+  ///   contents → twoColumnBrowseResultsRenderer → tabs[0] → tabRenderer
+  ///   → content → sectionListRenderer → contents[n]
+  ///   → itemSectionRenderer → contents[]   ← items + continuationItemRenderer
+  ///   OR → playlistVideoListRenderer → contents[]  (old format)
+  ///
+  /// Continuation pages (page 2, 3, … — using TOKEN_A):
+  ///   onResponseReceivedActions[n].appendContinuationItemsAction
+  ///   → continuationItems[]
+  ///     Direct lockupViewModel / playlistVideoRenderer items,
+  ///     ending with a continuationItemRenderer for the next page.
+  ///   OR continuationItems[n].itemSectionRenderer.contents[]  (some shapes)
+  ({List<dynamic> items, String? token}) _innerTubeExtract(
+      Map<String, dynamic> data) {
+    String? tokenFromList(List list) {
+      for (final item in list.reversed) {
+        if (item is! Map) continue;
+        final t = item['continuationItemRenderer']
+            ?['continuationEndpoint']
+            ?['continuationCommand']
+            ?['token'] as String?;
+        if (t != null && t.isNotEmpty) return t;
+      }
+      return null;
+    }
+
+    List<dynamic> stripContinuation(List list) =>
+        list.where((x) => x is! Map || !x.containsKey('continuationItemRenderer')).toList();
+
+    try {
+      // ── Initial browse response ─────────────────────────────────────────
+      // WEB: twoColumnBrowseResultsRenderer → tabs → tabRenderer
+      // Android: singleColumnBrowseResultsRenderer → tabs → tabRenderer
+      final twoCol = data['contents']
+          ?['twoColumnBrowseResultsRenderer']
+          ?['tabs'] as List?;
+      final oneCol = data['contents']
+          ?['singleColumnBrowseResultsRenderer']
+          ?['tabs'] as List?;
+      final tabs = twoCol ?? oneCol;
+      if (tabs != null) {
+        for (final tab in tabs) {
+          if (tab is! Map) continue;
+          final sectionContents = tab['tabRenderer']?['content']
+              ?['sectionListRenderer']?['contents'] as List?;
+          if (sectionContents == null) continue;
+          for (final section in sectionContents) {
+            if (section is! Map) continue;
+            // Old/Android format: playlistVideoListRenderer
+            final pvlr =
+                section['playlistVideoListRenderer']?['contents'] as List?;
+            if (pvlr != null) {
+              return (items: stripContinuation(pvlr), token: tokenFromList(pvlr));
+            }
+            // WEB new format: itemSectionRenderer
+            final isr = section['itemSectionRenderer']?['contents'] as List?;
+            if (isr != null && isr.isNotEmpty) {
+              if (isr.any((x) => x is Map && x.containsKey('lockupViewModel'))) {
+                return (items: stripContinuation(isr), token: tokenFromList(isr));
+              }
+              // Old format nested inside ISR
+              for (final item in isr) {
+                if (item is! Map) continue;
+                final nested =
+                    item['playlistVideoListRenderer']?['contents'] as List?;
+                if (nested != null) {
+                  return (items: stripContinuation(nested), token: tokenFromList(nested));
+                }
+              }
+            }
+          }
+        }
+      }
+
+    // Scans contents → twoColumnBrowseResultsRenderer for any
+    // continuationItemRenderer token (used on mixed page 2+ responses where
+    // the videos come from onResponseReceivedActions but the next-page token
+    // is stored in the contents tree).
+    String? tokenFromContents(Map<String, dynamic> data) {
+      try {
+        final twoCol = data['contents']
+            ?['twoColumnBrowseResultsRenderer']
+            ?['tabs'] as List?;
+        final oneCol = data['contents']
+            ?['singleColumnBrowseResultsRenderer']
+            ?['tabs'] as List?;
+        final tabs = twoCol ?? oneCol;
+        if (tabs == null) return null;
+        for (final tab in tabs) {
+          if (tab is! Map) continue;
+          final sectionContents = tab['tabRenderer']?['content']
+              ?['sectionListRenderer']?['contents'] as List?;
+          if (sectionContents == null) continue;
+          for (final section in sectionContents) {
+            if (section is! Map) continue;
+            // Token directly on the section
+            final t = section['continuationItemRenderer']
+                ?['continuationEndpoint']
+                ?['continuationCommand']
+                ?['token'] as String?;
+            if (t != null && t.isNotEmpty) return t;
+            // Token inside an ISR
+            final isr = section['itemSectionRenderer']?['contents'] as List?;
+            if (isr != null) {
+              final t2 = tokenFromList(isr);
+              if (t2 != null) return t2;
+            }
+            // Token inside a playlistVideoListRenderer
+            final pvlr =
+                section['playlistVideoListRenderer']?['contents'] as List?;
+            if (pvlr != null) {
+              final t3 = tokenFromList(pvlr);
+              if (t3 != null) return t3;
+            }
+          }
+        }
+      } catch (_) {}
+      return null;
+    }
+
+      // ── Continuation response (page 2+) ────────────────────────────────
+      final actions = data['onResponseReceivedActions'] as List?;
+      if (actions != null) {
+        for (final action in actions) {
+          if (action is! Map) continue;
+          final contItems = action['appendContinuationItemsAction']
+              ?['continuationItems'] as List?;
+          if (contItems == null) continue;
+
+          // Direct lockupViewModel items
+          if (contItems.any((x) => x is Map && x.containsKey('lockupViewModel'))) {
+            final token = tokenFromList(contItems) ?? tokenFromContents(data);
+            return (items: stripContinuation(contItems), token: token);
+          }
+          // Direct playlistVideoRenderer items (old format)
+          if (contItems.any((x) => x is Map && x.containsKey('playlistVideoRenderer'))) {
+            final token = tokenFromList(contItems) ?? tokenFromContents(data);
+            return (items: stripContinuation(contItems), token: token);
+          }
+          // Items wrapped inside an itemSectionRenderer
+          for (final ci in contItems) {
+            if (ci is! Map) continue;
+            final isr = ci['itemSectionRenderer']?['contents'] as List?;
+            if (isr == null) continue;
+            if (isr.any((x) => x is Map &&
+                (x.containsKey('lockupViewModel') ||
+                    x.containsKey('playlistVideoRenderer')))) {
+              final token = tokenFromList(isr)
+                  ?? tokenFromList(contItems)
+                  ?? tokenFromContents(data);
+              return (items: stripContinuation(isr), token: token);
+            }
+          }
+        }
+      }
+      return (items: <dynamic>[], token: null);
+    } catch (_) {
+      return (items: <dynamic>[], token: null);
+    }
+  }
+
+  /// Reads a YouTube text run object: `{"runs":[{"text":"..."}]}` or
+  /// `{"simpleText":"..."}`.
+  String? _innerTubeText(dynamic obj) {
+    if (obj == null) return null;
+    if (obj is Map) {
+      final simple = obj['simpleText'];
+      if (simple is String && simple.isNotEmpty) return simple;
+      final runs = obj['runs'];
+      if (runs is List && runs.isNotEmpty) {
+        return runs
+            .whereType<Map>()
+            .map((r) => r['text'] as String? ?? '')
+            .join();
+      }
+    }
+    return null;
   }
 
   Future<List<Song>> _importYoutubeRss(

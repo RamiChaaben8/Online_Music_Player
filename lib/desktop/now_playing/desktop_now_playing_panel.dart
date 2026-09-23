@@ -230,7 +230,7 @@ class _DesktopNowPlayingPanelState
       if (song.id != _lastVideoId || lyrics.videoId != song.id) {
         _lastVideoId = song.id;
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          ref.read(lyricsProvider.notifier).fetchFor(song.id);
+          ref.read(lyricsProvider.notifier).fetchFor(song.id, song: song);
         });
       }
     }
@@ -418,7 +418,10 @@ class _DesktopNowPlayingPanelState
             return Padding(
               padding: EdgeInsets.only(top: 8),
               child: Text(
-                'Lyrics provided by YouTube',
+                lyrics.source == LyricsSource.lrclib ||
+                        lyrics.source == LyricsSource.lrclibPlain
+                    ? 'Lyrics provided by LRCLIB'
+                    : 'Lyrics provided by YouTube',
                 textAlign: isRtl ? TextAlign.right : TextAlign.left,
                 style: TextStyle(color: context.appTheme.shadow, fontSize: 11),
               ),
@@ -979,10 +982,10 @@ class _VideoCard extends StatelessWidget {
 
 // ─── Single lyric line ────────────────────────────────────────────────────────
 
-class _LyricLine extends StatelessWidget {
+class _LyricLine extends StatefulWidget {
   final LyricLine line;
   final bool isActive;
-  final Duration position; // current playback position for word highlighting
+  final Duration position;
   final bool isRtl;
 
   const _LyricLine({
@@ -993,6 +996,13 @@ class _LyricLine extends StatelessWidget {
     required this.isRtl,
   });
 
+  @override
+  State<_LyricLine> createState() => _LyricLineState();
+}
+
+class _LyricLineState extends State<_LyricLine> {
+  bool _hovered = false;
+
   static const _fallbackFonts = [
     'Malgun Gothic',
     'Noto Sans KR',
@@ -1001,65 +1011,98 @@ class _LyricLine extends StatelessWidget {
     'Segoe UI',
   ];
 
+  void _seek(BuildContext context) {
+    if (widget.line.start == Duration.zero) return;
+    ProviderScope.containerOf(context, listen: false)
+        .read(playerProvider.notifier)
+        .seek(widget.line.start);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isSynced = widget.line.start != Duration.zero;
     final dimColor = context.appTheme.text.withValues(alpha: 0.38);
-    final baseColor = isActive ? context.appTheme.text : dimColor;
-    final fontSize = isActive ? 22.0 : 18.0;
-    final fontWeight = isActive ? FontWeight.w700 : FontWeight.w500;
+    final baseColor = widget.isActive
+        ? context.appTheme.text
+        : _hovered && isSynced
+            ? context.appTheme.text
+            : dimColor;
+    final fontSize = widget.isActive ? 22.0 : 18.0;
+    final fontWeight = widget.isActive ? FontWeight.w700 : FontWeight.w500;
 
     // ── Karaoke word-by-word highlighting ──────────────────────────
-    if (isActive && line.hasWordTiming) {
-      return Padding(
-        padding: EdgeInsets.only(bottom: 18),
-        child: Align(
-          alignment: isRtl ? Alignment.centerRight : Alignment.centerLeft,
-          child: Wrap(
-            textDirection: isRtl ? TextDirection.rtl : TextDirection.ltr,
-            spacing: 0,
-            runSpacing: 2,
-            children: line.words.map((word) {
-              final lit = position >= word.start;
-              return AnimatedDefaultTextStyle(
-                duration: const Duration(milliseconds: 120),
-                style: TextStyle(
-                  fontFamilyFallback: _fallbackFonts,
-                  fontSize: fontSize,
-                  fontWeight: fontWeight,
-                  height: 1.35,
-                  color: lit
-                      ? context.appTheme.button
-                      : context.appTheme.text.withValues(alpha: 0.55),
-                ),
-                child: Text(
-                  '${word.text} ',
-                  textAlign: isRtl ? TextAlign.right : TextAlign.left,
-                ),
-              );
-            }).toList(),
+    if (widget.isActive && widget.line.hasWordTiming) {
+      return MouseRegion(
+        cursor: isSynced ? SystemMouseCursors.click : MouseCursor.defer,
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: GestureDetector(
+          onTap: () => _seek(context),
+          child: Padding(
+            padding: EdgeInsets.only(bottom: 18),
+            child: Align(
+              alignment:
+                  widget.isRtl ? Alignment.centerRight : Alignment.centerLeft,
+              child: Wrap(
+                textDirection:
+                    widget.isRtl ? TextDirection.rtl : TextDirection.ltr,
+                spacing: 0,
+                runSpacing: 2,
+                children: widget.line.words.map((word) {
+                  final lit = widget.position >= word.start;
+                  return AnimatedDefaultTextStyle(
+                    duration: const Duration(milliseconds: 120),
+                    style: TextStyle(
+                      fontFamilyFallback: _fallbackFonts,
+                      fontSize: fontSize,
+                      fontWeight: fontWeight,
+                      height: 1.35,
+                      color: lit
+                          ? context.appTheme.button
+                          : context.appTheme.text.withValues(alpha: 0.55),
+                    ),
+                    child: Text(
+                      '${word.text} ',
+                      textAlign:
+                          widget.isRtl ? TextAlign.right : TextAlign.left,
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
           ),
         ),
       );
     }
 
     // ── Plain line (no word timing or not active) ───────────────────
-    return Padding(
-      padding: EdgeInsets.only(bottom: 18),
-      child: AnimatedDefaultTextStyle(
-        duration: const Duration(milliseconds: 220),
-        style: TextStyle(
-          fontFamilyFallback: _fallbackFonts,
-          fontSize: fontSize,
-          fontWeight: fontWeight,
-          height: 1.35,
-          color: baseColor,
-        ),
-        child: Align(
-          alignment: isRtl ? Alignment.centerRight : Alignment.centerLeft,
-          child: Text(
-            line.text,
-            softWrap: true,
-            textAlign: isRtl ? TextAlign.right : TextAlign.left,
+    return MouseRegion(
+      cursor: isSynced ? SystemMouseCursors.click : MouseCursor.defer,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTap: () => _seek(context),
+        child: Padding(
+          padding: EdgeInsets.only(bottom: 18),
+          child: AnimatedDefaultTextStyle(
+            duration: const Duration(milliseconds: 220),
+            style: TextStyle(
+              fontFamilyFallback: _fallbackFonts,
+              fontSize: fontSize,
+              fontWeight: fontWeight,
+              height: 1.35,
+              color: baseColor,
+            ),
+            child: Align(
+              alignment:
+                  widget.isRtl ? Alignment.centerRight : Alignment.centerLeft,
+              child: Text(
+                widget.line.text,
+                softWrap: true,
+                textAlign:
+                    widget.isRtl ? TextAlign.right : TextAlign.left,
+              ),
+            ),
           ),
         ),
       ),
