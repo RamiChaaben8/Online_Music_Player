@@ -32,6 +32,12 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Install NuGet
+        uses: nuget/setup-nuget@v2
+
+      - name: Enable Windows desktop
+        run: flutter config --enable-windows-desktop
+
       - name: Build Windows release
         run: flutter build windows --release
 

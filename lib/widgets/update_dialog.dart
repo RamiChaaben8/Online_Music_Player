@@ -20,6 +20,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart' show launchUrl, LaunchMode;
 
 import '../desktop/theme/app_theme.dart';
+import '../desktop/theme/desktop_theme.dart';
 import '../providers/update_provider.dart';
 import '../services/app_constants.dart';
 
