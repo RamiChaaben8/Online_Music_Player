@@ -41,30 +41,41 @@ jobs:
       - name: Build Windows release
         run: flutter build windows --release
 
-      - name: Write install.bat
+      - name: Build installer (.exe)
         shell: pwsh
         run: |
-          $dir = "build\windows\x64\runner\Release"
-          @"
-          @echo off
-          echo Installing Utify...
-          xcopy /E /I /Y "%~dp0." "%LOCALAPPDATA%\Utify\"
-          echo Done. You can close this window and relaunch Utify.
-          pause
-          "@ | Set-Content "$dir\install.bat"
+          # Extract version from tag (strip leading V or v)
+          $version = "${{ github.ref_name }}" -replace '^[Vv]', ''
+          Write-Host "Building installer for version $version"
 
-      - name: Zip Windows build
-        shell: pwsh
-        run: |
-          Compress-Archive -Path "build\windows\x64\runner\Release\*" `
-                           -DestinationPath "utify-windows.zip" -Force
-          Write-Host "Zip size: $((Get-Item utify-windows.zip).Length) bytes"
+          # Inno Setup is pre-installed on GitHub Actions windows-latest runners
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            # Fallback path for newer runner images
+            $iscc = "C:\Program Files\Inno Setup 6\ISCC.exe"
+          }
+          if (-not (Test-Path $iscc)) {
+            Write-Error "Inno Setup not found — installing via Chocolatey"
+            choco install innosetup --no-progress -y
+            $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          }
+
+          # Create output directory
+          New-Item -ItemType Directory -Force -Path "installer\Output" | Out-Null
+
+          # Compile the installer, injecting the version number
+          & $iscc "installer\utify.iss" /DMyAppVersion=$version
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup compilation failed" }
+
+          # Rename output to predictable name
+          Move-Item "installer\Output\utify-setup.exe" "utify-windows-setup.exe" -Force
+          Write-Host "Installer size: $((Get-Item utify-windows-setup.exe).Length) bytes"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: utify-windows
-          path: utify-windows.zip
+          path: utify-windows-setup.exe
           retention-days: 1
 
   # ── macOS build (disabled — uncomment when ready) ──────────────────────────
@@ -165,6 +176,6 @@ jobs:
             **Platform support:** Windows ✅ &nbsp;|&nbsp; macOS 🔜 &nbsp;|&nbsp; Linux 🔜
           draft: false
           prerelease: false
-          files: artifacts/utify-windows.zip
+          files: artifacts/utify-windows-setup.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

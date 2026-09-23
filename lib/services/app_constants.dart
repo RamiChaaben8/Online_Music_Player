@@ -23,7 +23,7 @@ class AppConstants {
 
   // ── Asset name patterns (must match what release.yml uploads) ─────────────
   // GitHub Actions packages the Windows build as this filename.
-  static const String windowsAssetName = 'utify-windows.zip';
+  static const String windowsAssetName = 'utify-windows-setup.exe';
 
   // TODO(macOS): update this when macOS build is added to release.yml
   static const String macosAssetName = 'utify-macos.zip';

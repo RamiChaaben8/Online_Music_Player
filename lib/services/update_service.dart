@@ -187,17 +187,15 @@ class UpdateService {
   }) async {
     if (result.downloadUrl.isEmpty) {
       throw UpdateException(
-          'No Windows download found in this release. '
+          'No Windows installer found in this release. '
           'Please visit ${result.releasePage} to download manually.');
     }
 
-    // 1. Determine temp download path.
+    // 1. Download the installer .exe to a temp directory.
     final tempDir = await getTemporaryDirectory();
-    final zipPath = '${tempDir.path}\\utify-update.zip';
-    final extractDir = '${tempDir.path}\\utify-update';
-    final zipFile = File(zipPath);
+    final installerPath = '${tempDir.path}\\utify-setup.exe';
+    final installerFile = File(installerPath);
 
-    // 2. Stream-download with progress reporting.
     try {
       final req = http.Request('GET', Uri.parse(result.downloadUrl));
       final streamedResponse = await _client.send(req).timeout(
@@ -212,7 +210,7 @@ class UpdateService {
       final total = streamedResponse.contentLength ?? 0;
       var received = 0;
 
-      final sink = zipFile.openWrite();
+      final sink = installerFile.openWrite();
       await for (final chunk in streamedResponse.stream) {
         sink.add(chunk);
         received += chunk.length;
@@ -228,69 +226,28 @@ class UpdateService {
       throw UpdateException('Download failed: $e');
     }
 
-    // 3. Verify the downloaded file has non-zero size.
-    final downloadedSize = await zipFile.length();
-    if (downloadedSize < 1024) {
+    // 2. Verify the file has a reasonable size.
+    final downloadedSize = await installerFile.length();
+    if (downloadedSize < 1024 * 100) {
+      // Less than 100 KB is definitely corrupt for a Flutter app installer
       throw const UpdateException(
-          'Downloaded file appears to be corrupt (too small). '
-          'Please try again.');
+          'Downloaded installer appears corrupt (too small). Please try again.');
     }
 
     onProgress?.call(1.0);
 
-    // 4. Extract the zip using PowerShell's Expand-Archive (built into Windows 10+).
-    final extractDirObj = Directory(extractDir);
-    if (await extractDirObj.exists()) await extractDirObj.delete(recursive: true);
-    await extractDirObj.create(recursive: true);
-
-    final extractResult = await Process.run(
-      'powershell',
-      [
-        '-NoProfile',
-        '-NonInteractive',
-        '-Command',
-        'Expand-Archive -LiteralPath "$zipPath" -DestinationPath "$extractDir" -Force',
-      ],
+    // 3. Launch the Inno Setup installer silently.
+    //    /VERYSILENT  — no UI shown at all
+    //    /SUPPRESSMSGBOXES — suppress any error dialogs
+    //    /NORESTART   — don't reboot after install
+    //    /CLOSEAPPLICATIONS — close running instances automatically
+    await Process.start(
+      installerPath,
+      ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CLOSEAPPLICATIONS'],
+      mode: ProcessStartMode.detached,
     );
-    if (extractResult.exitCode != 0) {
-      throw UpdateException(
-          'Failed to extract update: ${extractResult.stderr}');
-    }
 
-    // 5. The zip should contain an update script called "install.bat" or
-    //    the app executable directly. We look for install.bat first; if not
-    //    found we fall back to running the .exe directly.
-    //
-    //    GitHub Actions (release.yml) packages everything into the zip with
-    //    an install.bat at the root.  See .github/workflows/release.yml for
-    //    the exact layout.
-    final installBat = File('$extractDir\\install.bat');
-    final exeFile = _findExeInDir(extractDirObj);
-
-    if (await installBat.exists()) {
-      // Silent install via script.
-      await Process.start(
-        'cmd',
-        ['/c', installBat.path],
-        mode: ProcessStartMode.detached,
-        workingDirectory: extractDir,
-      );
-    } else if (exeFile != null) {
-      // Run the .exe directly and let it replace files.
-      await Process.start(
-        exeFile.path,
-        [],
-        mode: ProcessStartMode.detached,
-        workingDirectory: exeFile.parent.path,
-      );
-    } else {
-      throw UpdateException(
-          'Could not find an installer or executable in the downloaded update. '
-          'Please install manually from ${result.releasePage}');
-    }
-
-    // 6. Exit so the installer can overwrite the running executable.
-    //    Small delay so the installer process has time to launch.
+    // 4. Exit so the installer can overwrite the running executable.
     await Future<void>.delayed(const Duration(milliseconds: 500));
     exit(0);
   }
@@ -381,16 +338,6 @@ class UpdateService {
     final parts = v.split('.').map((p) => int.parse(p.trim())).toList();
     while (parts.length < 3) parts.add(0);
     return parts;
-  }
-
-  /// Recursively searches [dir] for the first .exe file.
-  File? _findExeInDir(Directory dir) {
-    try {
-      for (final entity in dir.listSync(recursive: true)) {
-        if (entity is File && entity.path.endsWith('.exe')) return entity;
-      }
-    } catch (_) {}
-    return null;
   }
 }
 
