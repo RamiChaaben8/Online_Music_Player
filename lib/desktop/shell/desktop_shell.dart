@@ -32,6 +32,7 @@ import '../../widgets/offline_indicator.dart';
 import '../../screens/privacy_settings_screen.dart';
 import '../../screens/friends_screen.dart';
 import '../../widgets/update_dialog.dart';
+import '../../services/taskbar_controls.dart';
 
 class DesktopShell extends ConsumerStatefulWidget {
   const DesktopShell({super.key});
@@ -102,6 +103,14 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
               playerState: ref.read(playerProvider),
             );
       }
+
+      // Initialise Windows taskbar thumbnail toolbar (Prev / Play-Pause / Next).
+      // Must be called after the first frame so the native window handle exists.
+      TaskbarControls.instance.init(
+        onPrev: () => ref.read(playerProvider.notifier).skipToPrevious(),
+        onPlayPause: () => ref.read(playerProvider.notifier).togglePlayPause(),
+        onNext: () => ref.read(playerProvider.notifier).skipToNext(),
+      );
     });
   }
 
@@ -273,6 +282,8 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
   Widget build(BuildContext context) {
     ref.listen<PlayerState>(playerProvider, (_, next) {
       ref.read(presenceProvider.notifier).updateFromPlayer(next);
+      // Keep taskbar Play/Pause icon in sync with actual playback state.
+      TaskbarControls.instance.updatePlayState(next.isPlaying);
     });
     final panelMode = ref.watch(panelModeProvider);
 

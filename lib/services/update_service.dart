@@ -77,7 +77,11 @@ class UpdateService {
   /// response is malformed.
   Future<UpdateResult> checkForUpdate() async {
     final info = await PackageInfo.fromPlatform();
-    final currentVersion = info.version; // e.g. "1.0.0"
+
+    // PackageInfo.version can include a build-metadata suffix from pubspec
+    // (e.g. "1.0.0+1").  Strip everything from '+' onwards so we compare
+    // pure semver triplets against the GitHub tag.
+    final currentVersion = info.version.split('+').first.trim();
 
     http.Response response;
     try {
@@ -236,19 +240,31 @@ class UpdateService {
 
     onProgress?.call(1.0);
 
-    // 3. Launch the Inno Setup installer silently.
-    //    /VERYSILENT  — no UI shown at all
-    //    /SUPPRESSMSGBOXES — suppress any error dialogs
-    //    /NORESTART   — don't reboot after install
-    //    /CLOSEAPPLICATIONS — close running instances automatically
+    // 3. Launch the Inno Setup installer.
+    //    /SILENT       — shows a small progress window (not /VERYSILENT which
+    //                    runs completely hidden and looks like nothing happened)
+    //    /SUPPRESSMSGBOXES — suppress non-fatal error pop-ups
+    //    /NORESTART    — don't reboot after install
+    //    /CLOSEAPPLICATIONS — Inno Setup will ask running instances to close
+    //
+    // Use Process.run with shell:true so the path is handled correctly even
+    // when it contains spaces (common for user temp directories).
+    // We do NOT use ProcessStartMode.detached because on some Windows
+    // configurations the child process is killed when the parent exits before
+    // the child has fully initialised.  Instead we give the installer a moment
+    // to start before we call exit(0).
     await Process.start(
       installerPath,
-      ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CLOSEAPPLICATIONS'],
+      ['/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CLOSEAPPLICATIONS'],
       mode: ProcessStartMode.detached,
+      runInShell: false,
     );
 
-    // 4. Exit so the installer can overwrite the running executable.
-    await Future<void>.delayed(const Duration(milliseconds: 500));
+    // Give the installer process a couple of seconds to fully start and
+    // acquire its own window before we exit.  Without this delay, the OS can
+    // kill the child before it gets past its own initialisation on some
+    // machines.
+    await Future<void>.delayed(const Duration(seconds: 2));
     exit(0);
   }
 
@@ -335,7 +351,10 @@ class UpdateService {
   }
 
   List<int> _parseSemver(String v) {
-    final parts = v.split('.').map((p) => int.parse(p.trim())).toList();
+    // Strip build metadata (+anything) and pre-release labels (-anything)
+    // before splitting so "1.0.0+1" and "1.0.0-beta" both parse cleanly.
+    final clean = v.split('+').first.split('-').first.trim();
+    final parts = clean.split('.').map((p) => int.parse(p.trim())).toList();
     while (parts.length < 3) parts.add(0);
     return parts;
   }
