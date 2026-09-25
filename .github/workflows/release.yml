@@ -152,9 +152,9 @@ jobs:
         run: |
           PREV=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
           if [ -z "$PREV" ]; then
-            NOTES=$(git log --pretty=format:"- %s" | head -30)
+            NOTES=$(git log --pretty=format:"- %s%n%b" | head -30)
           else
-            NOTES=$(git log "${PREV}..HEAD" --pretty=format:"- %s")
+            NOTES=$(git log "${PREV}..HEAD" --pretty=format:"- %s%n%b")
           fi
           {
             echo "notes<<EOF"
