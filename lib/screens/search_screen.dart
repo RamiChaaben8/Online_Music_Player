@@ -212,7 +212,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                       song: song,
                       isCurrentlyPlaying: isCurrent && playerState.isPlaying,
                       isSelected: isCurrent,
-                      onTap: () => _playSong(song, searchState.results),
+                      onTap: () => _playSong(song),
                     );
                   },
                   childCount: searchState.results.length,
@@ -235,10 +235,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     );
   }
 
-  void _playSong(Song song, List<Song> queue) {
+  void _playSong(Song song) {
     final currentId = ref.read(playerProvider).currentSong?.id;
     if (currentId != song.id) {
-      ref.read(playerProvider.notifier).playSong(song, queue: queue);
+      ref.read(playerProvider.notifier).playSong(song, queue: [song]);
     }
     Navigator.of(context).push(
       PageRouteBuilder(

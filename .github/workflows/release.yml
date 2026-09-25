@@ -5,6 +5,8 @@ on:
     tags:
       - 'v*.*.*'
       - 'V*.*.*'
+      - 'v*.*'
+      - 'V*.*'
 
 permissions:
   contents: write
@@ -46,6 +48,7 @@ jobs:
         run: |
           # Extract version from tag (strip leading V or v)
           $version = "${{ github.ref_name }}" -replace '^[Vv]', ''
+          if ($version.Split('.').Length -eq 2) { $version = "$version.0" }
           Write-Host "Building installer for version $version"
 
           # Inno Setup is pre-installed on GitHub Actions windows-latest runners
@@ -125,11 +128,67 @@ jobs:
   #         path: utify-linux.tar.gz
   #         retention-days: 1
 
+  build-android:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    outputs:
+      available: ${{ steps.signing.outputs.available }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Require Android signing secrets
+        id: signing
+        shell: bash
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [[ -z "$KEYSTORE" || -z "$STORE_PASSWORD" || -z "$KEY_ALIAS" || -z "$KEY_PASSWORD" ]]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "Android APK skipped: Android signing secrets are not configured. Windows release will still publish."
+            exit 0
+          fi
+          echo "available=true" >> "$GITHUB_OUTPUT"
+          echo "$KEYSTORE" | base64 --decode > android/app/upload-keystore.jks
+          printf 'storePassword=%s\nkeyPassword=%s\nkeyAlias=%s\n' "$STORE_PASSWORD" "$KEY_PASSWORD" "$KEY_ALIAS" > android/app/key.properties
+      - name: Set up Java
+        if: steps.signing.outputs.available == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Flutter
+        if: steps.signing.outputs.available == 'true'
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+        if: steps.signing.outputs.available == 'true'
+      - name: Build signed APK
+        if: steps.signing.outputs.available == 'true'
+        run: |
+          VERSION="$(echo "$GITHUB_REF_NAME" | sed -E 's/^[vV]//')"
+          if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+$ ]]; then VERSION="$VERSION.0"; fi
+          IFS=. read -r MAJOR MINOR PATCH <<< "$VERSION"
+          BUILD_NUMBER=$((MAJOR * 1000000 + MINOR * 1000 + PATCH))
+          flutter build apk --release --build-name="$VERSION" --build-number="$BUILD_NUMBER"
+          cp build/app/outputs/flutter-apk/app-release.apk utify-android.apk
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        if: steps.signing.outputs.available == 'true'
+        with:
+          name: utify-android
+          path: utify-android.apk
+          retention-days: 1
+
   # ── Publish GitHub Release ─────────────────────────────────────────────────
   release:
     name: Publish Release
     runs-on: ubuntu-latest
-    needs: [build-windows]
+    needs: [build-windows, build-android]
     # Add build-macos and build-linux to the needs list when those jobs are enabled.
 
     steps:
@@ -142,6 +201,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: utify-windows
+          path: artifacts/
+
+      - name: Download Android artifact
+        uses: actions/download-artifact@v4
+        if: needs.build-android.outputs.available == 'true'
+        with:
+          name: utify-android
           path: artifacts/
 
       - name: List artifacts
@@ -173,9 +239,9 @@ jobs:
             ${{ steps.changelog.outputs.notes }}
 
             ---
-            **Platform support:** Windows ✅ &nbsp;|&nbsp; macOS 🔜 &nbsp;|&nbsp; Linux 🔜
+            **Platform support:** Windows ✅ &nbsp;|&nbsp; Android ${{ needs.build-android.outputs.available == 'true' && '✅' || 'requires signing setup' }} &nbsp;|&nbsp; macOS 🔜 &nbsp;|&nbsp; Linux 🔜
           draft: false
           prerelease: false
-          files: artifacts/utify-windows-setup.exe
+          files: artifacts/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

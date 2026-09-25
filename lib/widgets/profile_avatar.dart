@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/player_provider.dart';
 import '../screens/auth/delete_account_screen.dart';
 import '../screens/privacy_settings_screen.dart';
+import 'update_dialog.dart';
 
 class ProfileAvatar extends ConsumerWidget {
   const ProfileAvatar({super.key});
@@ -47,6 +50,15 @@ void showAccountMenu(BuildContext context, WidgetRef ref) {
               borderRadius: BorderRadius.circular(2),
             ),
           ),
+          if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android)
+            ListTile(
+              leading: const Icon(Icons.system_update_alt, color: Colors.white70),
+              title: const Text('Check for Updates', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(context);
+                showUpdateDialog(context, ref);
+              },
+            ),
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.white70),
             title:

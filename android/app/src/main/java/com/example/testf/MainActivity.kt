@@ -2,8 +2,13 @@ package com.example.testf
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
+import androidx.core.content.FileProvider
+import java.io.File
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.ryanheise.audioservice.AudioServiceActivity
@@ -17,6 +22,7 @@ class MainActivity : AudioServiceActivity() {
         const val LIFECYCLE_CHANNEL = "com.example.testf/lifecycle"
         const val PERM_CHANNEL   = "com.example.testf/permissions"
         const val PERM_REQ_CODE  = 1001
+        const val UPDATE_CHANNEL = "com.example.testf/app_update"
     }
 
     private lateinit var marquee: MarqueeNotificationHelper
@@ -65,6 +71,36 @@ class MainActivity : AudioServiceActivity() {
                         result.success(null)
                     }
                     else -> result.notImplemented()
+                }
+            }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, UPDATE_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                if (call.method != "installApk") {
+                    result.notImplemented()
+                } else {
+                    val apk = call.argument<String>("path")?.let(::File)
+                    if (apk == null || !apk.isFile) {
+                        result.error("APK_MISSING", "Downloaded APK was not found", null)
+                    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                        !packageManager.canRequestPackageInstalls()) {
+                        startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                            Uri.parse("package:$packageName")))
+                        result.success(false)
+                    } else {
+                        try {
+                            val uri = FileProvider.getUriForFile(this,
+                                "$packageName.fileprovider", apk)
+                            val intent = Intent(Intent.ACTION_VIEW).apply {
+                                setDataAndType(uri, "application/vnd.android.package-archive")
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            startActivity(intent)
+                            result.success(true)
+                        } catch (e: Exception) {
+                            result.error("INSTALLER_FAILED", e.message, null)
+                        }
+                    }
                 }
             }
     }

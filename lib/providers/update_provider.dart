@@ -20,6 +20,7 @@ enum UpdateStatus {
   available,    // update found, waiting for user action
   upToDate,     // checked — already on latest
   downloading,  // fetching the asset
+  installing,   // Android package installer opened
   error,        // something went wrong
 }
 
@@ -116,6 +117,9 @@ class UpdateNotifier extends StateNotifier<UpdateState> {
           }
         },
       );
+      if (state.status == UpdateStatus.downloading) {
+        state = state.copyWith(status: UpdateStatus.installing);
+      }
       // If we get here on Windows the app should already be exiting.
       // This line is only reached if exit(0) somehow didn't fire.
     } on UnimplementedError catch (e) {

@@ -189,9 +189,11 @@ class SyncService {
 
   /// Make this device the active playback device.
   Future<void> claimAsActiveDevice() async {
+    // Treat the initiating device as active immediately. Local playback and
+    // its transport controls must remain usable while Firestore completes.
+    _isActive = true;
     if (_uid == null || _deviceId == null) return;
     await _fs.claimActiveDevice(_uid!, _deviceId!, _deviceName ?? 'Unknown');
-    _isActive = true;
   }
 
   /// Release this device's active claim (on logout / app close).

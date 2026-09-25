@@ -122,7 +122,11 @@ class AudioPlayerService {
         _queue.insert(0, song);
         _currentIndex = 0;
       }
-      _unshuffledQueue = _shuffle ? List<Song>.from(_queue) : null;
+      if (_shuffle) {
+        _reconcileShuffleBaseline(_queue);
+      } else {
+        _unshuffledQueue = null;
+      }
       _shufflePlayed
         ..clear()
         ..add(_currentIndex);
@@ -143,7 +147,7 @@ class AudioPlayerService {
 
   void setQueue(List<Song> queue, {int? currentIndex}) {
     _queue = List.from(queue);
-    if (_shuffle) _unshuffledQueue = List<Song>.from(_queue);
+    if (_shuffle) _reconcileShuffleBaseline(_queue);
     if (_queue.isEmpty) {
       _currentIndex = -1;
     } else if (currentIndex != null) {
@@ -190,18 +194,25 @@ class AudioPlayerService {
     if (_queue.isEmpty) return;
     int next;
     if (_shuffle && _queue.length > 1) {
-      var candidates = List<int>.generate(_queue.length, (index) => index)
-          .where((index) => !_shufflePlayed.contains(index))
-          .toList();
-      if (candidates.isEmpty) {
+      next = -1;
+      // Play forward through the shuffled queue in the same order it is
+      // displayed. This prevents random jumps back into already-passed rows.
+      for (var offset = 1; offset < _queue.length; offset++) {
+        final candidate = (_currentIndex + offset) % _queue.length;
+        if (!_shufflePlayed.contains(candidate)) {
+          next = candidate;
+          break;
+        }
+      }
+      if (next == -1) {
         _shufflePlayed
           ..clear()
           ..add(_currentIndex);
-        candidates = List<int>.generate(_queue.length, (index) => index)
+        final candidates = List<int>.generate(_queue.length, (index) => index)
             .where((index) => index != _currentIndex)
             .toList();
+        next = candidates[_random.nextInt(candidates.length)];
       }
-      next = candidates[_random.nextInt(candidates.length)];
       _shufflePlayed.add(next);
     } else {
       next = (_currentIndex + 1) % _queue.length;
@@ -457,6 +468,26 @@ class AudioPlayerService {
         }
       });
     }
+  }
+
+  /// Keep the pre-shuffle order while incorporating queue additions/removals.
+  /// Queue updates often contain the shuffled display order, which must not
+  /// replace the order restored when shuffle is turned off.
+  void _reconcileShuffleBaseline(List<Song> updatedQueue) {
+    final original = _unshuffledQueue;
+    if (original == null) {
+      _unshuffledQueue = List<Song>.from(updatedQueue);
+      return;
+    }
+
+    final byId = {for (final song in updatedQueue) song.id: song};
+    final reconciled = <Song>[
+      for (final song in original)
+        if (byId.containsKey(song.id)) byId.remove(song.id)!,
+      for (final song in updatedQueue)
+        if (byId.containsKey(song.id)) byId.remove(song.id)!,
+    ];
+    _unshuffledQueue = reconciled;
   }
 
   AudioSource _remoteAudioSource(String streamUrl, MediaItem mediaItem) {

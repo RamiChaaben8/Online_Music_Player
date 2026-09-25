@@ -92,8 +92,7 @@ class _UpdateDialogShell extends ConsumerWidget {
         ];
 
       case UpdateStatus.available:
-        final isUnsupportedPlatform =
-            !Platform.isWindows; // macOS/Linux not yet supported
+        final isUnsupportedPlatform = !Platform.isWindows && !Platform.isAndroid;
         return [
           _cancelBtn(context, ref, theme),
           const SizedBox(width: 4),
@@ -120,7 +119,7 @@ class _UpdateDialogShell extends ConsumerWidget {
                 foregroundColor: Colors.black,
               ),
               icon: const Icon(Icons.download_rounded, size: 16),
-              label: const Text('Update Now'),
+              label: Text(Platform.isAndroid ? 'Download & Install' : 'Update Now'),
               onPressed: () => notifier.downloadAndInstall(
                 onUnsupported: (releasePageUrl) async {
                   final url = Uri.parse(releasePageUrl);
@@ -133,6 +132,12 @@ class _UpdateDialogShell extends ConsumerWidget {
 
       case UpdateStatus.downloading:
         return [_cancelBtn(context, ref, theme, disabled: true)];
+
+      case UpdateStatus.installing:
+        return [TextButton(
+          onPressed: () { notifier.reset(); Navigator.of(context).pop(); },
+          child: Text('Close', style: TextStyle(color: theme.button)),
+        )];
 
       case UpdateStatus.error:
         return [
@@ -228,7 +233,7 @@ class _UpdateDialogBody extends StatelessWidget {
 
       case UpdateStatus.available:
         final result = state.result!;
-        final isUnsupported = !Platform.isWindows;
+        final isUnsupported = !Platform.isWindows && !Platform.isAndroid;
         return Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -357,6 +362,13 @@ class _UpdateDialogBody extends StatelessWidget {
               ),
             ],
           ),
+        );
+
+      case UpdateStatus.installing:
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Text('Android installer opened. Confirm Install there to finish updating Utify.',
+              style: TextStyle(color: theme.subtext)),
         );
 
       case UpdateStatus.error:

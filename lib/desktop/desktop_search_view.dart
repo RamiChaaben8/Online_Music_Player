@@ -171,7 +171,7 @@ class _SearchResultRowState extends ConsumerState<_SearchResultRow> {
           borderRadius: BorderRadius.circular(8),
           onTap: () => ref.read(playerProvider.notifier).playSong(
                 widget.song,
-                queue: widget.allResults,
+                queue: [widget.song],
               ),
           child: Padding(
             padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -301,7 +301,7 @@ class _SearchResultRowState extends ConsumerState<_SearchResultRow> {
                     } else {
                       ref.read(playerProvider.notifier).playSong(
                             widget.song,
-                            queue: widget.allResults,
+                            queue: [widget.song],
                           );
                     }
                   },

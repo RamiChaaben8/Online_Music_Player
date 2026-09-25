@@ -573,17 +573,11 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   }) {
     // If this device is passive, claim it first.
     if (!state.isActiveDevice) {
-      _sync.service.claimAsActiveDevice().then((_) {
-        if (!mounted) return;
-        state = state.copyWith(isActiveDevice: true);
-        _doPlaySong(
-          song,
-          queue: queue,
-          sourcePlaylist: sourcePlaylist,
-          suppressRemoteCommand: suppressRemoteCommand,
-        );
-      });
-      return;
+      // Cloud device handoff must not block local playback. Firestore can be
+      // slow or unavailable on desktop; start the song now and sync the claim
+      // in the background so a tap never degrades into a visual-only button.
+      state = state.copyWith(isActiveDevice: true);
+      unawaited(_sync.service.claimAsActiveDevice().catchError((_) {}));
     }
     _doPlaySong(
       song,

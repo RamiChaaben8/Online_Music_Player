@@ -22,6 +22,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:flutter/services.dart';
 import 'dart:convert';
 
 import 'app_constants.dart';
@@ -66,6 +67,8 @@ class UpdateException implements Exception {
 // ── Service ──────────────────────────────────────────────────────────────────
 
 class UpdateService {
+  static const MethodChannel _androidUpdateChannel =
+      MethodChannel('com.example.testf/app_update');
   // Shared HTTP client — reuse across calls.
   static final http.Client _client = http.Client();
 
@@ -173,6 +176,8 @@ class UpdateService {
   }) async {
     if (Platform.isWindows) {
       return _installWindows(result, onProgress: onProgress);
+    } else if (Platform.isAndroid) {
+      return _installAndroid(result, onProgress: onProgress);
     } else if (Platform.isMacOS) {
       return _installMacOS(result);
     } else if (Platform.isLinux) {
@@ -180,6 +185,47 @@ class UpdateService {
     } else {
       throw UpdateException(
           'Auto-update is not supported on this platform.');
+    }
+  }
+
+  Future<void> _installAndroid(
+    UpdateResult result, {
+    ValueChanged<double>? onProgress,
+  }) async {
+    if (result.downloadUrl.isEmpty) {
+      throw UpdateException('No Android APK found in this release. Please visit ${result.releasePage}.');
+    }
+    final dir = await getTemporaryDirectory();
+    final apk = File('${dir.path}${Platform.pathSeparator}utify-update.apk');
+    try {
+      final response = await _client.send(http.Request('GET', Uri.parse(result.downloadUrl)))
+          .timeout(const Duration(minutes: 10));
+      if (response.statusCode != 200) {
+        throw UpdateException('APK download failed (HTTP ${response.statusCode}).');
+      }
+      final total = response.contentLength ?? 0;
+      var received = 0;
+      final sink = apk.openWrite();
+      await for (final chunk in response.stream) {
+        sink.add(chunk);
+        received += chunk.length;
+        if (total > 0) onProgress?.call(received / total);
+      }
+      await sink.flush();
+      await sink.close();
+    } on SocketException {
+      throw const UpdateException('Download interrupted. Check your internet connection.');
+    } catch (e) {
+      if (e is UpdateException) rethrow;
+      throw UpdateException('APK download failed: $e');
+    }
+    if (await apk.length() < 1024 * 1024) {
+      throw const UpdateException('Downloaded APK appears incomplete. Please try again.');
+    }
+    onProgress?.call(1.0);
+    final launched = await _androidUpdateChannel.invokeMethod<bool>('installApk', {'path': apk.path});
+    if (launched != true) {
+      throw const UpdateException('Allow Utify to install unknown apps in Android Settings, then tap Update Now again.');
     }
   }
 
@@ -240,31 +286,46 @@ class UpdateService {
 
     onProgress?.call(1.0);
 
-    // 3. Launch the Inno Setup installer.
-    //    /SILENT       — shows a small progress window (not /VERYSILENT which
-    //                    runs completely hidden and looks like nothing happened)
-    //    /SUPPRESSMSGBOXES — suppress non-fatal error pop-ups
-    //    /NORESTART    — don't reboot after install
-    //    /CLOSEAPPLICATIONS — Inno Setup will ask running instances to close
-    //
-    // Use Process.run with shell:true so the path is handled correctly even
-    // when it contains spaces (common for user temp directories).
-    // We do NOT use ProcessStartMode.detached because on some Windows
-    // configurations the child process is killed when the parent exits before
-    // the child has fully initialised.  Instead we give the installer a moment
-    // to start before we call exit(0).
+    // 3. Let a detached helper wait for this app to exit before running Setup.
+    // This avoids races on slower Windows machines and records install errors.
+    String psQuote(String value) => "'${value.replaceAll("'", "''")}'";
+    final installDir = File(Platform.resolvedExecutable).parent.path;
+    final logPath = '${tempDir.path}\\utify-update.log';
+    final scriptPath = '${tempDir.path}\\utify-update.ps1';
+    final script = '''
+\$ErrorActionPreference = 'Stop'
+try { Wait-Process -Id ${pid} -ErrorAction SilentlyContinue } catch {}
+\$setup = ${psQuote(installerPath)}
+\$installDir = ${psQuote(installDir)}
+\$logPath = ${psQuote(logPath)}
+\$setupArgs = '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /DIR="' + \$installDir + '" /LOG="' + \$logPath + '"'
+\$result = Start-Process -FilePath \$setup -ArgumentList \$setupArgs -Wait -PassThru
+if (\$result.ExitCode -eq 0) {
+  Start-Process -FilePath ${psQuote(Platform.resolvedExecutable)}
+} else {
+  Start-Process -FilePath \$setup -ArgumentList ('/DIR="' + \$installDir + '" /LOG="' + \$logPath + '"')
+}
+''';
+    final scriptFile = File(scriptPath);
+    await scriptFile.writeAsBytes(
+      [0xEF, 0xBB, 0xBF, ...utf8.encode(script)],
+      flush: true,
+    );
     await Process.start(
-      installerPath,
-      ['/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CLOSEAPPLICATIONS'],
+      'powershell.exe',
+      [
+        '-NoLogo',
+        '-NoProfile',
+        '-WindowStyle',
+        'Hidden',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        scriptPath,
+      ],
       mode: ProcessStartMode.detached,
       runInShell: false,
     );
-
-    // Give the installer process a couple of seconds to fully start and
-    // acquire its own window before we exit.  Without this delay, the OS can
-    // kill the child before it gets past its own initialisation on some
-    // machines.
-    await Future<void>.delayed(const Duration(seconds: 2));
     exit(0);
   }
 
@@ -327,6 +388,7 @@ class UpdateService {
 
   /// Returns the platform-specific release asset filename.
   String _assetNameForPlatform() {
+    if (Platform.isAndroid) return 'utify-android.apk';
     if (Platform.isWindows) return AppConstants.windowsAssetName;
     if (Platform.isMacOS)   return AppConstants.macosAssetName;
     if (Platform.isLinux)   return AppConstants.linuxAssetName;
