@@ -82,7 +82,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
             child: song.isLocal || song.thumbnailUrl.isEmpty
                 ? const _AlbumPlaceholder()
                 : VideoPreviewWidget(
-                    videoId: song.id,
+                    imageUrl: song.thumbnailUrl,
                     fit: BoxFit.cover,
                   ),
           ),
@@ -798,10 +798,7 @@ class _LyricsBody extends StatelessWidget {
   Widget build(BuildContext context) {
     // Show up to 6 lines around the current position
     final lines = lyrics.lines;
-    int activeIdx = 0;
-    for (int i = 0; i < lines.length; i++) {
-      if (position >= lines[i].start) activeIdx = i;
-    }
+    final activeIdx = _activeLyricIndex(lines, position);
 
     final start = (activeIdx - 1).clamp(0, lines.length);
     final end = (activeIdx + 5).clamp(0, lines.length);
@@ -835,9 +832,21 @@ class _LyricsBody extends StatelessWidget {
 }
 
 int _activeLineIndex(LyricsState lyrics, Duration position) {
+  return _activeLyricIndex(lyrics.lines, position);
+}
+
+int _activeLyricIndex(List<LyricLine> lines, Duration position) {
+  var low = 0;
+  var high = lines.length - 1;
   var active = 0;
-  for (var i = 0; i < lyrics.lines.length; i++) {
-    if (position >= lyrics.lines[i].start) active = i;
+  while (low <= high) {
+    final middle = low + ((high - low) >> 1);
+    if (position >= lines[middle].start) {
+      active = middle;
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
   }
   return active;
 }

@@ -8,7 +8,7 @@
 // Resolution order on getAudioStreamUrl(id):
 //   1. L1 hit  → return immediately (0 ms)
 //   2. L2 hit  → populate L1, return (< 1 ms)
-//   3. Miss    → fetch manifest (~2–4 s), write to both caches, return
+//   3. Miss    → fetch a supported MP4 stream, write to both caches
 //
 // This means songs the user played before will start with zero manifest
 // round-trip, exactly like YT Music's behaviour.
@@ -21,6 +21,7 @@ import '../models/song.dart';
 
 const _kTtl = Duration(hours: 5);
 const _kHiveBox = 'stream_url_cache';
+const _kStreamCachePrefix = 'stream_v4_';
 
 class _CachedUrl {
   final String url;
@@ -37,6 +38,9 @@ class YoutubeService {
 
   // In-flight deduplication
   final Map<String, Future<String>> _inflight = {};
+  final Set<String> _queuedPrefetch = {};
+  final List<String> _prefetchQueue = [];
+  int _activePrefetches = 0;
 
   YoutubeExplode get yt => _yt;
 
@@ -92,7 +96,9 @@ class YoutubeService {
     if (mem != null && !mem.isExpired) return mem.url;
 
     // L2 — Hive (fast disk read, survives restarts)
-    final hive = _readHive(videoId);
+    // Use a versioned key so URLs cached before the compatibility fallback
+    // existed are not reused indefinitely.
+    final hive = _readHive('$_kStreamCachePrefix$videoId');
     if (hive != null && !hive.isExpired) {
       _mem[videoId] = hive; // promote to L1
       return hive.url;
@@ -111,8 +117,58 @@ class YoutubeService {
 
   }
 
-  /// Resolves an audio-only stream for downloads. Playback keeps using the
-  /// cached muxed stream because it is supported consistently by just_audio.
+  /// Returns distinct stream URLs in playback order. Keeping alternatives
+  /// lets the player move to another container when one format stalls or the
+  /// device decoder rejects it.
+  Future<List<String>> getAudioStreamCandidates(String videoId) async {
+    try {
+      final manifest = await _yt.videos.streamsClient.getManifest(videoId);
+      final muxedMp4 = manifest.muxed
+          .where((stream) => stream.container.name == 'mp4')
+          .toList()
+        ..sort((a, b) => a.bitrate.compareTo(b.bitrate));
+      final audioMp4 = manifest.audioOnly
+          .where((stream) => stream.container.name == 'mp4')
+          .toList()
+        ..sort((a, b) => a.bitrate.compareTo(b.bitrate));
+      final otherMuxed = manifest.muxed
+          .where((stream) => stream.container.name != 'mp4')
+          .toList()
+        ..sort((a, b) => a.bitrate.compareTo(b.bitrate));
+      final otherAudio = manifest.audioOnly
+          .where((stream) => stream.container.name != 'mp4')
+          .toList()
+        ..sort((a, b) => a.bitrate.compareTo(b.bitrate));
+      final hls = manifest.hls.toList()
+        ..sort((a, b) => a.bitrate.compareTo(b.bitrate));
+
+      final ordered = <StreamInfo>[];
+      for (var index = 0;
+          index < [muxedMp4.length, audioMp4.length, hls.length, otherMuxed.length, otherAudio.length]
+              .reduce((a, b) => a > b ? a : b);
+          index++) {
+        if (index < muxedMp4.length) ordered.add(muxedMp4[index]);
+        if (index < audioMp4.length) ordered.add(audioMp4[index]);
+        if (index < hls.length) ordered.add(hls[index]);
+        if (index < otherMuxed.length) ordered.add(otherMuxed[index]);
+        if (index < otherAudio.length) ordered.add(otherAudio[index]);
+      }
+
+      final seen = <String>{};
+      return ordered.map((stream) => stream.url.toString())
+          .where((url) => seen.add(url))
+          .toList();
+    } on VideoRequiresPurchaseException {
+      throw YoutubeServiceException('This video requires a purchase.');
+    } on VideoUnplayableException catch (e) {
+      throw YoutubeServiceException('Video unplayable: ${e.message}');
+    } catch (e) {
+      if (e is YoutubeServiceException) rethrow;
+      throw YoutubeServiceException('Failed to get stream candidates: $e');
+    }
+  }
+
+  /// Resolves an audio-only stream URL.
   Future<String> getAudioOnlyStreamUrl(String videoId) async {
     final manifest = await _yt.videos.streamsClient.getManifest(videoId);
     var streams =
@@ -121,29 +177,24 @@ class YoutubeService {
     if (streams.isEmpty) {
       throw YoutubeServiceException('No audio-only stream found for $videoId');
     }
-    streams.sort((a, b) => b.bitrate.compareTo(a.bitrate));
+    streams.sort((a, b) => a.bitrate.compareTo(b.bitrate));
     return streams.first.url.toString();
   }
 
   Future<String> _fetchAndCache(String videoId) async {
     try {
-      final manifest = await _yt.videos.streamsClient.getManifest(videoId);
-
-      var streams = manifest.muxed
-          .where((s) => s.container.name == 'mp4')
-          .toList();
-      if (streams.isEmpty) streams = manifest.muxed.toList();
-      if (streams.isEmpty) {
-        throw YoutubeServiceException('No streams found for $videoId');
+      final candidates = await getAudioStreamCandidates(videoId);
+      if (candidates.isEmpty) {
+        throw YoutubeServiceException('No audio streams found for $videoId');
       }
 
-      streams.sort((a, b) => a.bitrate.compareTo(b.bitrate));
-      final url = streams.first.url.toString();
+      final url = candidates.first;
 
       // Write to both caches
       final cached = _CachedUrl(url, DateTime.now());
       _mem[videoId] = cached;
-      _writeHive(videoId, url).catchError((_) {}); // non-blocking disk write
+      _writeHive('$_kStreamCachePrefix$videoId', url)
+          .catchError((_) {}); // non-blocking disk write
 
       return url;
     } on VideoRequiresPurchaseException {
@@ -212,19 +263,39 @@ class YoutubeService {
   void prefetchUrl(String videoId) {
     final mem = _mem[videoId];
     if (mem != null && !mem.isExpired) return;
-    final hive = _readHive(videoId);
+    final hive = _readHive('$_kStreamCachePrefix$videoId');
     if (hive != null && !hive.isExpired) {
       _mem[videoId] = hive;
       return; // already cached — no network needed
     }
-    if (_inflight.containsKey(videoId)) return;
-    getAudioStreamUrl(videoId).catchError((_) => '');
+    if (_inflight.containsKey(videoId) || !_queuedPrefetch.add(videoId)) return;
+    _prefetchQueue.add(videoId);
+    _drainPrefetchQueue();
+  }
+
+  void _drainPrefetchQueue() {
+    while (_activePrefetches < 3 && _prefetchQueue.isNotEmpty) {
+      final id = _prefetchQueue.removeAt(0);
+      _queuedPrefetch.remove(id);
+      if (_inflight.containsKey(id)) continue;
+      _activePrefetches++;
+      getAudioStreamUrl(id).catchError((_) => '').whenComplete(() {
+        _activePrefetches--;
+        _drainPrefetchQueue();
+      });
+    }
   }
 
   /// Seed the memory cache directly from a [Song]'s stored [Song.streamUrl]
   /// field (written by AudioPlayerService after each play).
   /// This is zero-cost — no Hive read, no network.
   void seedFromSong(Song song) {
+    final cachedMime = song.streamUrl == null
+        ? null
+        : Uri.tryParse(song.streamUrl!)?.queryParameters['mime'];
+    // Old song records may hold audio-only streams that previously stalled on
+    // some devices. Prefer a compatible muxed stream for the first attempt.
+    if (cachedMime?.startsWith('audio/') ?? false) return;
     if (song.streamUrl != null &&
         song.streamUrlFetchedAt != null &&
         !song.isStreamUrlExpired) {
@@ -232,11 +303,16 @@ class YoutubeService {
     }
   }
 
+  void rememberAudioStreamUrl(String videoId, String url) {
+    _mem[videoId] = _CachedUrl(url, DateTime.now());
+    _writeHive('$_kStreamCachePrefix$videoId', url).catchError((_) {});
+  }
+
   void prefetchBatch(List<String> videoIds, {int maxConcurrent = 3}) {
     final needed = videoIds.where((id) {
       final mem = _mem[id];
       if (mem != null && !mem.isExpired) return false;
-      final hive = _readHive(id);
+      final hive = _readHive('$_kStreamCachePrefix$id');
       if (hive != null && !hive.isExpired) {
         _mem[id] = hive; // warm L1 from L2 for free
         return false;

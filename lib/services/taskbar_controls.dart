@@ -33,6 +33,7 @@ class TaskbarControls {
   VoidCallback? _onNext;
 
   bool _initialised = false;
+  bool? _lastPlayState;
 
   // ── Public API ─────────────────────────────────────────────────────────────
 
@@ -50,6 +51,7 @@ class TaskbarControls {
     _initialised = true;
 
     // Start paused state (app hasn't played anything yet).
+    _lastPlayState = false;
     _setButtons(isPlaying: false);
   }
 
@@ -57,6 +59,10 @@ class TaskbarControls {
   /// Safe to call before [init] — it becomes a no-op.
   void updatePlayState(bool isPlaying) {
     if (!Platform.isWindows || !_initialised) return;
+    // PlayerState also changes as the playback position advances. The native
+    // taskbar toolbar only needs an update when the Play/Pause icon changes.
+    if (_lastPlayState == isPlaying) return;
+    _lastPlayState = isPlaying;
     _setButtons(isPlaying: isPlaying);
   }
 

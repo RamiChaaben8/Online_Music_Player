@@ -64,9 +64,17 @@ class _LyricsPanelState extends ConsumerState<LyricsPanel> {
       _lineKeys.clear();
       for (int i = 0; i < lines.length; i++) _lineKeys.add(GlobalKey());
     }
-    int active = -1;
-    for (int i = 0; i < lines.length; i++) {
-      if (pos >= lines[i].start) active = i;
+    var low = 0;
+    var high = lines.length - 1;
+    var active = -1;
+    while (low <= high) {
+      final middle = low + ((high - low) >> 1);
+      if (pos >= lines[middle].start) {
+        active = middle;
+        low = middle + 1;
+      } else {
+        high = middle - 1;
+      }
     }
     if (active != _activeIndex) {
       _activeIndex = active;

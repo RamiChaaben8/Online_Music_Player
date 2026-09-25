@@ -137,6 +137,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
 
   final List<StreamSubscription> _subs = [];
   DateTime _lastPositionSync = DateTime.fromMillisecondsSinceEpoch(0);
+  int _lastPositionBucket = -1;
 
   /// True while a remote-triggered load is in progress.
   bool _applyingRemote = false;
@@ -159,13 +160,18 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
 
   void _subscribeToPlayerStreams() {
     _subs.add(_service.positionStream.listen((pos) {
-      if (_sync.service.isActive) {
+      // The progress UI does not need every backend position event. Coalesce
+      // updates to ~2.5 per second so screens and lyric widgets do less work.
+      final positionBucket = pos.inMilliseconds ~/ 400;
+      if ((_sync.service.isActive || _service.player.playing) &&
+          positionBucket != _lastPositionBucket) {
+        _lastPositionBucket = positionBucket;
         state = state.copyWith(position: pos);
       }
       if (_sync.service.isActive &&
           state.currentSong != null &&
           DateTime.now().difference(_lastPositionSync) >=
-              const Duration(seconds: 1)) {
+              const Duration(seconds: 5)) {
         _lastPositionSync = DateTime.now();
         _sendCommand(RemoteCommand.none);
       }
@@ -802,7 +808,14 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
 
   void toggleShuffle() {
     _service.toggleShuffle();
-    state = state.copyWith(shuffle: _service.shuffle);
+    state = state.copyWith(
+      shuffle: _service.shuffle,
+      queue: _service.queue,
+      currentIndex: _service.currentIndex,
+    );
+    if (_sync.service.isActive) {
+      _sendCommand(RemoteCommand.queueUpdate);
+    }
   }
 
   void toggleLoopMode() {

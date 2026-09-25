@@ -168,9 +168,17 @@ class _DesktopNowPlayingPanelState
         _lineKeys.add(GlobalKey());
       }
     }
-    int active = -1;
-    for (int i = 0; i < lines.length; i++) {
-      if (pos >= lines[i].start) active = i;
+    var low = 0;
+    var high = lines.length - 1;
+    var active = -1;
+    while (low <= high) {
+      final middle = low + ((high - low) >> 1);
+      if (pos >= lines[middle].start) {
+        active = middle;
+        low = middle + 1;
+      } else {
+        high = middle - 1;
+      }
     }
     if (active != _activeIndex) {
       _activeIndex = active;
@@ -908,7 +916,10 @@ class _VideoCard extends StatelessWidget {
       children: [
         ColoredBox(
           color: context.appTheme.text,
-          child: VideoPreviewWidget(videoId: song.id, fit: BoxFit.cover),
+          child: VideoPreviewWidget(
+            imageUrl: song.thumbnailUrl,
+            fit: BoxFit.cover,
+          ),
         ),
         Positioned(
           left: 0,

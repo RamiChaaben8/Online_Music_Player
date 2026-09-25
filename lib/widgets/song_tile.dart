@@ -20,6 +20,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/song.dart';
 import '../models/playlist.dart';
 import '../providers/download_provider.dart';
+import '../providers/youtube_provider.dart';
 import 'song_context_menu.dart';
 
 class SongTile extends ConsumerWidget {
@@ -50,6 +51,9 @@ class SongTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Resolve the stream while this song is visible so tapping it does not
+    // need to wait for YouTube's manifest request.
+    ref.read(youtubeServiceProvider).prefetchUrl(song.id);
     final dlState = ref.watch(downloadProvider);
     final isDownloaded = dlState.isDownloaded(song.id);
     final isDownloading = dlState.isDownloading(song.id);

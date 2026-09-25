@@ -27,6 +27,7 @@ import 'audio_player_service.dart';
 class TuneifyAudioHandler extends BaseAudioHandler with SeekHandler {
   final AudioPlayerService _service;
   final List<StreamSubscription> _subs = [];
+  int _lastPositionSecond = -1;
 
   AudioPlayerService get service => _service;
 
@@ -44,6 +45,10 @@ class TuneifyAudioHandler extends BaseAudioHandler with SeekHandler {
     _subs.add(_service.playerStateStream.listen(_onPlayerState));
 
     _subs.add(_service.positionStream.listen((pos) {
+      // OS media sessions only display whole seconds; publishing every audio
+      // backend tick creates needless platform-channel and notification work.
+      if (pos.inSeconds == _lastPositionSecond) return;
+      _lastPositionSecond = pos.inSeconds;
       playbackState.add(playbackState.value.copyWith(updatePosition: pos));
     }));
 
@@ -206,6 +211,8 @@ class TuneifyAudioHandler extends BaseAudioHandler with SeekHandler {
     } else {
       await _service.seek(position);
     }
+    _lastPositionSecond = position.inSeconds;
+    playbackState.add(playbackState.value.copyWith(updatePosition: position));
   }
 
   @override

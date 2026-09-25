@@ -15,6 +15,8 @@ import 'download_service.dart';
 import 'youtube_service.dart';
 
 class AudioPlayerService {
+  static const _streamAttemptTimeout = Duration(seconds: 7);
+  static const _maxStreamsPerLoad = 3;
   // Build platform-appropriate load config.
   // AndroidLoadControl must only be passed on Android — the type is harmless
   // to reference in Dart but passing it causes an assertion inside just_audio
@@ -53,16 +55,20 @@ class AudioPlayerService {
   List<Song> _queue = [];
   int _currentIndex = -1;
   bool _shuffle = false;
+  List<Song>? _unshuffledQueue;
   final Set<int> _shufflePlayed = {};
   final Random _random = Random();
   LoopMode _loopMode = LoopMode.off;
   double _volume = 1.0;
 
   StreamSubscription<PlayerState>? _completionSub;
+  StreamSubscription<PlaybackEvent>? _playbackErrorSub;
+  Timer? _startupWatchdog;
 
   // Serial counter — incremented on every _loadAndPlay call.
   // Used by the setAudioSource callback to discard itself if superseded.
   int _loadSerial = 0;
+  int? _recoveringSerial;
 
   final StreamController<String> _errorController =
       StreamController<String>.broadcast();
@@ -116,6 +122,7 @@ class AudioPlayerService {
         _queue.insert(0, song);
         _currentIndex = 0;
       }
+      _unshuffledQueue = _shuffle ? List<Song>.from(_queue) : null;
       _shufflePlayed
         ..clear()
         ..add(_currentIndex);
@@ -136,6 +143,7 @@ class AudioPlayerService {
 
   void setQueue(List<Song> queue, {int? currentIndex}) {
     _queue = List.from(queue);
+    if (_shuffle) _unshuffledQueue = List<Song>.from(_queue);
     if (_queue.isEmpty) {
       _currentIndex = -1;
     } else if (currentIndex != null) {
@@ -213,10 +221,35 @@ class AudioPlayerService {
   }
 
   void toggleShuffle() {
-    _shuffle = !_shuffle;
+    if (!_shuffle) {
+      _unshuffledQueue = List<Song>.from(_queue);
+      // Keep the current track where it is and shuffle only what is still
+      // ahead, so enabling shuffle never interrupts the song already playing.
+      for (var i = _queue.length - 1; i > _currentIndex + 1; i--) {
+        final j = _currentIndex + 1 + _random.nextInt(i - _currentIndex);
+        final song = _queue[i];
+        _queue[i] = _queue[j];
+        _queue[j] = song;
+      }
+      _shuffle = true;
+    } else {
+      final currentId = currentSong?.id;
+      final original = _unshuffledQueue;
+      if (original != null) {
+        _queue = List<Song>.from(original);
+        final restoredIndex = currentId == null
+            ? -1
+            : _queue.indexWhere((song) => song.id == currentId);
+        if (restoredIndex >= 0) _currentIndex = restoredIndex;
+      }
+      _unshuffledQueue = null;
+      _shuffle = false;
+    }
     _shufflePlayed
       ..clear()
-      ..add(_currentIndex);
+      ..addAll(_shuffle && _currentIndex >= 0
+          ? Iterable<int>.generate(_currentIndex + 1)
+          : [_currentIndex]);
   }
 
   void toggleLoopMode() {
@@ -238,13 +271,21 @@ class AudioPlayerService {
 
   // ── Core load ────────────────────────────────────────────────────────────
 
-  Future<void> _loadAndPlay(int index) async {
+  Future<void> _loadAndPlay(
+    int index, {
+    Set<String> failedStreamUrls = const {},
+  }) async {
     if (index < 0 || index >= _queue.length) return;
 
     final song = _queue[index];
+    _youtube.seedFromSong(song);
 
     _completionSub?.cancel();
     _completionSub = null;
+    _playbackErrorSub?.cancel();
+    _playbackErrorSub = null;
+    _startupWatchdog?.cancel();
+    _startupWatchdog = null;
 
     // Stamp this load. If another _loadAndPlay starts before setAudioSource
     // resolves, the stale callback will see a different serial and skip play().
@@ -259,8 +300,6 @@ class AudioPlayerService {
           song.thumbnailUrl.isNotEmpty ? Uri.parse(song.thumbnailUrl) : null,
     );
 
-    AudioSource source;
-
     final localPath = song.isLocal && song.localPath != null
         ? song.localPath
         : await _findDownloadedFile(song);
@@ -268,29 +307,109 @@ class AudioPlayerService {
     // After an await, check if we've been superseded.
     if (_loadSerial != mySerial) return;
 
-    if (localPath != null) {
-      source = AudioSource.file(localPath, tag: mediaItem);
-    } else {
-      final streamUrl = await _youtube.getAudioStreamUrl(song.id);
-      if (_loadSerial != mySerial) return; // superseded during URL fetch
-      _persistStreamUrl(song, streamUrl);
+    final isRemoteSource = localPath == null;
+    final attemptedUrls = Set<String>.from(failedStreamUrls);
+    String? activeStreamUrl;
 
-      source = AudioSource.uri(
-        Uri.parse(streamUrl),
-        tag: mediaItem,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-              'AppleWebKit/537.36 (KHTML, like Gecko) '
-              'Chrome/114.0.0.0 Safari/537.36',
+    try {
+      if (localPath != null) {
+        await _player.setAudioSource(
+          AudioSource.file(localPath, tag: mediaItem),
+          preload: true,
+        );
+      } else {
+        final cachedUrl = await _youtube
+            .getAudioStreamUrl(song.id)
+            .timeout(_streamAttemptTimeout);
+        final candidates = <String>[cachedUrl];
+        var candidatesFetched = false;
+        if (attemptedUrls.contains(cachedUrl)) {
+          candidates
+            ..clear()
+            ..addAll(await _youtube
+                .getAudioStreamCandidates(song.id)
+                .timeout(_streamAttemptTimeout));
+          candidatesFetched = true;
+        }
+
+        Object? lastError;
+        var loaded = false;
+        for (final streamUrl in candidates) {
+          if (attemptedUrls.length >= _maxStreamsPerLoad) break;
+          if (!attemptedUrls.add(streamUrl)) continue;
+          if (_loadSerial != mySerial) return;
+          try {
+            await _player.setAudioSource(
+              _remoteAudioSource(streamUrl, mediaItem),
+              preload: true,
+            ).timeout(_streamAttemptTimeout);
+            activeStreamUrl = streamUrl;
+            _youtube.rememberAudioStreamUrl(song.id, streamUrl);
+            _persistStreamUrl(song, streamUrl);
+            loaded = true;
+            break;
+          } catch (error) {
+            lastError = error;
+          }
+        }
+
+        if (!loaded && attemptedUrls.length < _maxStreamsPerLoad) {
+          final alternatives = candidatesFetched
+              ? candidates
+              : await _youtube
+                  .getAudioStreamCandidates(song.id)
+                  .timeout(_streamAttemptTimeout);
+          for (final streamUrl in alternatives) {
+            if (attemptedUrls.length >= _maxStreamsPerLoad) break;
+            if (!attemptedUrls.add(streamUrl)) continue;
+            if (_loadSerial != mySerial) return;
+            try {
+              await _player.setAudioSource(
+                _remoteAudioSource(streamUrl, mediaItem),
+                preload: true,
+              ).timeout(_streamAttemptTimeout);
+              activeStreamUrl = streamUrl;
+              _youtube.rememberAudioStreamUrl(song.id, streamUrl);
+              _persistStreamUrl(song, streamUrl);
+              loaded = true;
+              break;
+            } catch (error) {
+              lastError = error;
+            }
+          }
+        }
+        if (!loaded) {
+          throw lastError ?? YoutubeServiceException(
+            'No compatible audio stream could be opened for ${song.title}.',
+          );
+        }
+      }
+      _playbackErrorSub = _player.playbackEventStream.listen(
+        (_) {},
+        onError: (Object error, StackTrace stackTrace) {
+          _handlePlaybackError(
+            index,
+            mySerial,
+            isRemoteSource,
+            activeStreamUrl,
+            attemptedUrls,
+            error,
+          );
         },
       );
-    }
-
-    // Await setAudioSource so errors surface correctly, then play if still current.
-    try {
-      await _player.setAudioSource(source, preload: true);
       if (_loadSerial == mySerial) {
-        await _player.play();
+        // just_audio's play future stays pending until playback pauses or ends.
+        // Do not block track-change notifications and next-track prefetch on it.
+        unawaited(_player.play().catchError((Object error) {
+          _handlePlaybackError(
+            index,
+            mySerial,
+            isRemoteSource,
+            activeStreamUrl,
+            attemptedUrls,
+            error,
+          );
+        }));
       }
     } catch (e) {
       if (_loadSerial == mySerial) {
@@ -305,14 +424,84 @@ class AudioPlayerService {
     if (_loadSerial != mySerial) return;
 
     _songChangeController.add(song);
-    _prefetchNext();
+    _prefetchUpcoming();
 
     _completionSub = _player.playerStateStream.listen((ps) {
       if (ps.processingState == ProcessingState.completed &&
           _loopMode != LoopMode.one) {
         skipToNext();
       }
+    }, onError: (Object error, StackTrace stackTrace) {
+      _handlePlaybackError(
+        index,
+        mySerial,
+        isRemoteSource,
+        activeStreamUrl,
+        attemptedUrls,
+        error,
+      );
     });
+    if (isRemoteSource) {
+      _startupWatchdog = Timer(const Duration(seconds: 8), () {
+        if (_loadSerial == mySerial &&
+            _player.playing &&
+            _player.position == Duration.zero) {
+          _handlePlaybackError(
+            index,
+            mySerial,
+            isRemoteSource,
+            activeStreamUrl,
+            attemptedUrls,
+            TimeoutException('The audio stream did not start.'),
+          );
+        }
+      });
+    }
+  }
+
+  AudioSource _remoteAudioSource(String streamUrl, MediaItem mediaItem) {
+    return AudioSource.uri(
+      Uri.parse(streamUrl),
+      tag: mediaItem,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+            'AppleWebKit/537.36 (KHTML, like Gecko) '
+            'Chrome/114.0.0.0 Safari/537.36',
+      },
+    );
+  }
+
+  void _handlePlaybackError(
+    int index,
+    int serial,
+    bool isRemoteSource,
+    String? activeStreamUrl,
+    Set<String> attemptedUrls,
+    Object error,
+  ) {
+    if (_loadSerial != serial) return;
+    if (_recoveringSerial == serial) return;
+    if (!isRemoteSource || attemptedUrls.length >= _maxStreamsPerLoad) {
+      _player.pause().catchError((_) {});
+      _errorController.add('Playback failed: $error');
+      return;
+    }
+
+    _recoveringSerial = serial;
+    unawaited(() async {
+      try {
+        final failed = Set<String>.from(attemptedUrls);
+        if (activeStreamUrl != null) failed.add(activeStreamUrl);
+        if (_loadSerial != serial) return;
+        await _loadAndPlay(index, failedStreamUrls: failed);
+      } catch (retryError) {
+        if (_loadSerial == serial) {
+          _errorController.add('Playback failed: $retryError');
+        }
+      } finally {
+        if (_recoveringSerial == serial) _recoveringSerial = null;
+      }
+    }());
   }
 
   /// Checks the Tuneify download folder for a file matching this song's title.
@@ -353,15 +542,20 @@ class AudioPlayerService {
     }
   }
 
-  void _prefetchNext() {
+  void _prefetchUpcoming() {
     if (_queue.length <= 1) return;
-    final nextIndex = (_currentIndex + 1) % _queue.length;
-    if (nextIndex == _currentIndex) return;
-    _youtube.prefetchUrl(_queue[nextIndex].id);
+    final ids = <String>[];
+    for (var offset = 1; offset <= 2 && offset < _queue.length; offset++) {
+      final song = _queue[(_currentIndex + offset) % _queue.length];
+      if (song.id != _queue[_currentIndex].id) ids.add(song.id);
+    }
+    _youtube.prefetchBatch(ids, maxConcurrent: 2);
   }
 
   void dispose() {
     _completionSub?.cancel();
+    _playbackErrorSub?.cancel();
+    _startupWatchdog?.cancel();
     _errorController.close();
     _songChangeController.close();
     _player.dispose();

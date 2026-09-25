@@ -582,8 +582,9 @@ class _AppShellState extends ConsumerState<AppShell>
     ref.listen<PlayerState>(playerProvider, (_, next) {
       ref.read(presenceProvider.notifier).updateFromPlayer(next);
     });
-    final playerState = ref.watch(playerProvider);
-    final hasSong = playerState.currentSong != null;
+    final hasSong = ref.watch(
+      playerProvider.select((playerState) => playerState.currentSong != null),
+    );
 
     return Scaffold(
       body: Stack(

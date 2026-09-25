@@ -7,7 +7,6 @@ list(APPEND FLUTTER_PLUGIN_LIST
   ffmpeg_kit_flutter_new_audio
   firebase_auth
   firebase_core
-  fvp
   media_kit_libs_windows_audio
   url_launcher_windows
   webview_flutter_windows

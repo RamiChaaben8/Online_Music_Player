@@ -111,6 +111,8 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
         onPlayPause: () => ref.read(playerProvider.notifier).togglePlayPause(),
         onNext: () => ref.read(playerProvider.notifier).skipToNext(),
       );
+      TaskbarControls.instance
+          .updatePlayState(ref.read(playerProvider).isPlaying);
     });
   }
 

@@ -39,10 +39,6 @@ dependencies:
   flutter_animate: ^4.5.0
   palette_generator: ^0.3.3+3
 
-  # Video playback (for Now Playing video preview)
-  video_player: ^2.9.2
-  fvp: ^0.38.1  # Windows/Linux/macOS backend for video_player
-
   # Icons
   cupertino_icons: ^1.0.8
   path_provider: ^2.1.6

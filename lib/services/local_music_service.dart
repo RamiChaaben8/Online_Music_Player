@@ -12,6 +12,7 @@
 // ============================================================
 
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:path_provider/path_provider.dart';
 
@@ -26,40 +27,10 @@ const _audioExts = {
 class LocalMusicService {
 
   Future<List<Song>> scanLocalSongs() async {
-    // Resolve every candidate to its real path so symlinks don't
-    // cause the same directory to be scanned multiple times.
-    final seenDirs  = <String>{};   // canonical dir paths already queued
-    final seenFiles = <String>{};   // canonical file paths already added
-    final songs     = <Song>[];
-
-    for (final raw in await _candidateDirs()) {
-      if (!await raw.exists()) continue;
-
-      // Resolve symlinks → real path
-      String canonical;
-      try {
-        canonical = raw.resolveSymbolicLinksSync();
-      } catch (_) {
-        canonical = raw.path;
-      }
-
-      if (!seenDirs.add(canonical)) continue; // already scheduled
-
-      try {
-        await _scanDir(
-          Directory(canonical),
-          songs,
-          seenFiles,
-          seenDirs,
-          maxDepth: 3,
-        );
-      } catch (_) {}
-    }
-
-    songs.sort((a, b) =>
-        a.title.toLowerCase().compareTo(b.title.toLowerCase()));
-    return songs;
+    final paths = (await _candidateDirs()).map((dir) => dir.path).toList();
+    return Isolate.run(() => _scanLocalMusicPaths(paths));
   }
+
 
   // ── Candidate directories ──────────────────────────────────────────────
 
@@ -226,4 +197,30 @@ class LocalMusicService {
       return null;
     }
   }
+}
+
+Future<List<Song>> _scanLocalMusicPaths(List<String> paths) async {
+  final service = LocalMusicService();
+  final seenDirs = <String>{};
+  final seenFiles = <String>{};
+  final songs = <Song>[];
+
+  for (final path in paths) {
+    final raw = Directory(path);
+    if (!await raw.exists()) continue;
+    String canonical;
+    try {
+      canonical = raw.resolveSymbolicLinksSync();
+    } catch (_) {
+      canonical = raw.path;
+    }
+    if (!seenDirs.add(canonical)) continue;
+    try {
+      await service._scanDir(
+        Directory(canonical), songs, seenFiles, seenDirs, maxDepth: 3,
+      );
+    } catch (_) {}
+  }
+  songs.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+  return songs;
 }

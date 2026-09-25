@@ -52,61 +52,7 @@ class _DesktopSearchViewState extends ConsumerState<DesktopSearchView> {
         color: context.appTheme.main,
         borderRadius: BorderRadius.all(Radius.circular(12)),
       ),
-      child: Column(
-        children: [
-          // ── Search bar ────────────────────────────────────────────────
-          Padding(
-            padding: EdgeInsets.fromLTRB(24, 24, 24, 16),
-            child: Container(
-              height: 52,
-              decoration: BoxDecoration(
-                color: context.appTheme.highlight,
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Row(
-                children: [
-                  SizedBox(width: 16),
-                  Icon(Icons.search, color: context.appTheme.subtext, size: 22),
-                  SizedBox(width: 12),
-                  Expanded(
-                    child: TextField(
-                      controller: _controller,
-                      focusNode: _focusNode,
-                      style:
-                          TextStyle(color: context.appTheme.text, fontSize: 16),
-                      decoration: InputDecoration(
-                        border: InputBorder.none,
-                        hintText: 'What do you want to play?',
-                        hintStyle: TextStyle(
-                            color: context.appTheme.subtext, fontSize: 16),
-                        isDense: true,
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                      onSubmitted: _search,
-                    ),
-                  ),
-                  if (_controller.text.isNotEmpty)
-                    IconButton(
-                      icon: Icon(Icons.close,
-                          color: context.appTheme.subtext, size: 20),
-                      onPressed: () {
-                        _controller.clear();
-                        ref.read(searchProvider.notifier).clear();
-                        setState(() {});
-                      },
-                    ),
-                  SizedBox(width: 8),
-                ],
-              ),
-            ),
-          ),
-
-          // ── Results ───────────────────────────────────────────────────
-          Expanded(
-            child: _buildBody(searchState),
-          ),
-        ],
-      ),
+      child: _buildBody(searchState),
     );
   }
 

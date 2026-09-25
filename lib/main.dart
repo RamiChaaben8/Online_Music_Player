@@ -9,7 +9,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
-import 'package:fvp/fvp.dart' as fvp;
 import 'dart:io';
 
 import 'firebase_options.dart';
@@ -75,12 +74,6 @@ Future<void> main() async {
       macOS: false,
     );
   }
-
-  // Register fvp as the video_player backend for desktop platforms.
-  // This enables video_player to work on Windows/Linux/macOS using libmdk.
-  fvp.registerWith(options: {
-    'platforms': ['windows', 'linux', 'macos'],
-  });
 
   // ── Audio handler initialisation ─────────────────────────────────────────
   //

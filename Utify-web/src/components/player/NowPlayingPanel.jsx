@@ -4,7 +4,7 @@
  * Exact match of desktop_now_playing_panel.dart:
  *
  *  ┌──────────────────────────────────┐
- *  │  VideoPreview  (muted, looping)  │  ← 10-sec loop via stream URL
+ *  │  Cached artwork image            │
  *  │  resizable height via drag bar   │
  *  ├──────────────────────────────────┤
  *  │  [Lyrics] header + lang picker   │  ← language dropdown
@@ -14,10 +14,10 @@
  */
 
 import { useEffect, useRef, useState, useCallback, forwardRef } from 'react'
-import { Mic2, ChevronDown, Check, Music2, VideoOff } from 'lucide-react'
+import { Mic2, ChevronDown, Check, Music2 } from 'lucide-react'
 import { usePlayerStore } from '../../stores/playerStore'
 import { useSyncStore } from '../../hooks/useSyncSession'
-import { getVideoStreamUrl, getCaptionTracks, getCaptionTrack } from '../../services/youtubeService'
+import { getCaptionTracks, getCaptionTrack } from '../../services/youtubeService'
 import { fetchLyricsForSong } from '../../services/lyricsService'
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -29,7 +29,6 @@ const SNAP_FRAC    = 0.10
 const ANIM_MS      = 150
 const PAUSE_MS     = 3000
 const STORAGE_KEY  = 'utify_now_playing_video_h'
-const PREVIEW_SECS = 10   // 10-second loop window (mirrors Flutter)
 
 // ── Main component ────────────────────────────────────────────────────────────
 
@@ -180,9 +179,17 @@ export default function NowPlayingPanel() {
   // Sync active lyric line
   useEffect(() => {
     if (!lyricsLines.length) return
+    let low = 0
+    let high = lyricsLines.length - 1
     let active = -1
-    for (let i = 0; i < lyricsLines.length; i++) {
-      if (position >= lyricsLines[i].time) active = i
+    while (low <= high) {
+      const middle = low + Math.floor((high - low) / 2)
+      if (position >= lyricsLines[middle].time) {
+        active = middle
+        low = middle + 1
+      } else {
+        high = middle - 1
+      }
     }
     if (active !== activeIdxRef.current) {
       activeIdxRef.current = active
@@ -244,7 +251,7 @@ export default function NowPlayingPanel() {
         <div style={s.placeholder}>
           <Music2 size={64} color='var(--color-subtext)' style={{ opacity: 0.15 }} />
           <p style={{ color: 'var(--color-subtext)', marginTop: 16, fontSize: 14, textAlign: 'center' }}>
-            Play a song to see<br />the video & lyrics
+            Play a song to see<br />the artwork & lyrics
           </p>
         </div>
         <DragBar onMouseDown={onDragBarMouseDown} dragging={dragging} />
@@ -262,7 +269,7 @@ export default function NowPlayingPanel() {
         }}
         onWheel={onVideoWheel}
       >
-        <VideoPreview videoId={currentSong.id} song={currentSong} />
+        <StillArtwork song={currentSong} />
       </div>
 
       {/* ── Lyrics card ── */}
@@ -352,135 +359,24 @@ export default function NowPlayingPanel() {
   )
 }
 
-// ── VideoPreview ──────────────────────────────────────────────────────────────
-// Mirrors VideoPreviewWidget.dart:
-//  - Fetches muxed MP4 stream URL via Cloud Function
-//  - Plays muted (audio stays with IFrame player)
-//  - Picks a random start point from middle 50% of video
-//  - Loops a 10-second window
-//  - Falls back to thumbnail if stream unavailable
-
-const previewStartCache = new Map() // videoId → startSeconds
-
-function VideoPreview({ videoId, song }) {
-  const videoRef = useRef(null)
-  const [status, setStatus] = useState('loading') // 'loading' | 'playing' | 'error'
-  const loopIntervalRef = useRef(null)
-  const startRef        = useRef(0)
-  const loadSerialRef   = useRef(0)
-
-  useEffect(() => {
-    if (!videoId) return
-    const serial = ++loadSerialRef.current
-    setStatus('loading')
-
-    // Clear any previous loop interval
-    clearInterval(loopIntervalRef.current)
-
-    getVideoStreamUrl(videoId).then((entry) => {
-      if (serial !== loadSerialRef.current) return
-      if (!entry?.url) { setStatus('error'); return }
-
-      const video = videoRef.current
-      if (!video) return
-
-      video.src    = entry.url
-      video.muted  = true  // audio authority stays with YT IFrame
-      video.volume = 0
-      video.loop   = false
-
-      video.addEventListener('loadedmetadata', () => {
-        if (serial !== loadSerialRef.current) return
-        const duration = video.duration || 60
-
-        // Pick random start from middle 50% (mirrors Flutter's _randomPreviewStart)
-        let start = previewStartCache.get(videoId)
-        if (start === undefined) {
-          const maxStart   = Math.max(0, duration - PREVIEW_SECS)
-          const midStart   = maxStart * 0.25
-          const midEnd     = maxStart * 0.75
-          const range      = Math.max(1, midEnd - midStart)
-          start = midStart + Math.random() * range
-          previewStartCache.set(videoId, start)
-        }
-        startRef.current = start
-        video.currentTime = start
-        video.play().then(() => setStatus('playing')).catch(() => setStatus('error'))
-      }, { once: true })
-
-      video.addEventListener('error', () => {
-        if (serial !== loadSerialRef.current) return
-        setStatus('error')
-      }, { once: true })
-
-    }).catch(() => {
-      if (serial !== loadSerialRef.current) return
-      setStatus('error')
-    })
-
-    return () => {
-      clearInterval(loopIntervalRef.current)
-      ++loadSerialRef.current
-      const video = videoRef.current
-      if (video) { video.pause(); video.src = '' }
-    }
-  }, [videoId])
-
-  // Loop: check every 200ms and seek back if past the 10s window
-  useEffect(() => {
-    if (status !== 'playing') return
-    loopIntervalRef.current = setInterval(() => {
-      const video = videoRef.current
-      if (!video) return
-      if (video.currentTime >= startRef.current + PREVIEW_SECS) {
-        video.currentTime = startRef.current
-        video.play().catch(() => {})
-      }
-    }, 200)
-    return () => clearInterval(loopIntervalRef.current)
-  }, [status])
-
+// Static artwork uses the browser image cache and avoids running a second video decoder.
+function StillArtwork({ song }) {
   return (
     <div style={{ position: 'absolute', inset: 0, background: '#1A1A1A', overflow: 'hidden' }}>
-      {/* Hidden video element */}
-      <video
-        ref={videoRef}
-        muted
-        playsInline
-        style={{
-          position: 'absolute', inset: 0, width: '100%', height: '100%',
-          objectFit: 'cover',
-          display: status === 'playing' ? 'block' : 'none',
-        }}
-      />
-
-      {/* Loading state */}
-      {status === 'loading' && (
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-          {song?.thumbnailUrl && (
-            <img src={song.thumbnailUrl} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(8px)', opacity: 0.4 }} />
-          )}
-          <div className="utify-spinner" style={{ position: 'relative' }} />
-          <span style={{ color: 'var(--color-subtext)', fontSize: 13, marginTop: 10, position: 'relative' }}>
-            Loading video…
-          </span>
+      {song?.thumbnailUrl ? (
+        <img
+          src={song.thumbnailUrl}
+          alt={song.title || ''}
+          loading="eager"
+          decoding="async"
+          fetchPriority="high"
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+        />
+      ) : (
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--color-card)' }}>
+          <Music2 size={40} color='var(--color-subtext)' style={{ opacity: 0.5 }} />
         </div>
       )}
-
-      {/* Error / fallback: show thumbnail */}
-      {status === 'error' && (
-        <div style={{ position: 'absolute', inset: 0 }}>
-          {song?.thumbnailUrl
-            ? <img src={song.thumbnailUrl} alt={song.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            : <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'var(--color-card)' }}>
-                <VideoOff size={40} color='var(--color-subtext)' style={{ opacity: 0.5 }} />
-                <span style={{ color: 'var(--color-subtext)', fontSize: 13, marginTop: 10 }}>Video preview unavailable</span>
-              </div>
-          }
-        </div>
-      )}
-
-      {/* Song info overlay at bottom */}
       <div style={{
         position: 'absolute', left: 0, right: 0, bottom: 0, height: 110,
         background: 'linear-gradient(to bottom, transparent, rgba(0,0,0,0.88))',
@@ -497,9 +393,6 @@ function VideoPreview({ videoId, song }) {
     </div>
   )
 }
-
-// ── LyricLine ─────────────────────────────────────────────────────────────────
-
 const LyricLine = forwardRef(function LyricLine({ text, words, isActive, position, onClick }, ref) {
   const base = {
     cursor: 'pointer', lineHeight: 1.35, marginBottom: 18,

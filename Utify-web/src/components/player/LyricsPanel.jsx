@@ -146,9 +146,17 @@ export default function LyricsPanel() {
   useEffect(() => {
     const lines = lyricsState.lines
     if (!lines.length) return
+    let low = 0
+    let high = lines.length - 1
     let active = -1
-    for (let i = 0; i < lines.length; i++) {
-      if (position >= lines[i].time) active = i
+    while (low <= high) {
+      const middle = low + Math.floor((high - low) / 2)
+      if (position >= lines[middle].time) {
+        active = middle
+        low = middle + 1
+      } else {
+        high = middle - 1
+      }
     }
     if (active !== activeIdxRef.current) {
       activeIdxRef.current = active

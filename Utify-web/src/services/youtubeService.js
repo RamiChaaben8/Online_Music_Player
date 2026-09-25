@@ -4,12 +4,9 @@
 import {
   searchYouTubeParser,
   getTrendingMusicParser,
-  getVideoStreamUrlParser,
   getCaptionTracksParser,
   getCaptionTrackParser
 } from './youtubeParser'
-
-const streamUrlCache = new Map() // videoId -> { url, mimeType, expiresAt }
 
 // ── searchYouTube ─────────────────────────────────────────────────────────────
 
@@ -23,22 +20,6 @@ export async function searchYouTube(query, pageToken = null) {
 export async function getTrendingMusic(regionCode = 'US') {
   const res = await getTrendingMusicParser({ data: { regionCode } })
   return res
-}
-
-// ── getVideoStreamUrl ─────────────────────────────────────────────────────────
-
-export async function getVideoStreamUrl(videoId) {
-  const now = Date.now()
-  if (streamUrlCache.has(videoId)) {
-    const cached = streamUrlCache.get(videoId)
-    if (cached.expiresAt > now + 60_000) return cached
-    streamUrlCache.delete(videoId)
-  }
-
-  const res = await getVideoStreamUrlParser({ data: { videoId } })
-  const result = res
-  streamUrlCache.set(videoId, result)
-  return result
 }
 
 // ── getCaptionTracks ──────────────────────────────────────────────────────────
