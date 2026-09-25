@@ -18,6 +18,9 @@ on:
 permissions:
   contents: write
 
+env:
+  UTIFY_RELEASE_TAG: ${{ github.ref_name == 'V1.2-android' && 'V1.2' || inputs.release_tag || github.ref_name }}
+
 jobs:
 
   # ── Windows build ───────────────────────────────────────────────────────────
@@ -53,7 +56,7 @@ jobs:
       - name: Build installer (.exe)
         shell: pwsh
         env:
-          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+          RELEASE_TAG: ${{ env.UTIFY_RELEASE_TAG }}
         run: |
           # Extract version from tag (strip leading V or v)
           $version = "$env:RELEASE_TAG" -replace '^[Vv]', ''
@@ -176,7 +179,7 @@ jobs:
       - name: Build APK
         env:
           SIGNING_MODE: ${{ steps.signing.outputs.mode }}
-          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+          RELEASE_TAG: ${{ env.UTIFY_RELEASE_TAG }}
         run: |
           VERSION="$(echo "$RELEASE_TAG" | sed -E 's/^[vV]//')"
           if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+$ ]]; then VERSION="$VERSION.0"; fi
@@ -242,10 +245,10 @@ jobs:
       - name: Create GitHub Release and upload assets
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.release_tag || github.ref_name }}
-          name: "Utify ${{ inputs.release_tag || github.ref_name }}"
+          tag_name: ${{ env.UTIFY_RELEASE_TAG }}
+          name: "Utify ${{ env.UTIFY_RELEASE_TAG }}"
           body: |
-            ## What's new in ${{ inputs.release_tag || github.ref_name }}
+            ## What's new in ${{ env.UTIFY_RELEASE_TAG }}
 
             ${{ steps.changelog.outputs.notes }}
 
