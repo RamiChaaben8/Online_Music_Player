@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'dart:async';
 import '../../models/song.dart';
 import '../../providers/player_provider.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/search_history_provider.dart';
 import '../../providers/youtube_provider.dart';
 import '../theme/desktop_theme.dart';
@@ -186,6 +187,7 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
   @override
   Widget build(BuildContext context) {
     final theme = context.appTheme;
+    final currentUser = ref.watch(authStateProvider).asData?.value;
 
     return Container(
       height: kTopBarHeight,
@@ -240,7 +242,7 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
           ),
           SizedBox(width: 8),
           Tooltip(
-            message: 'Account',
+            message: 'Edit profile and account',
             child: InkWell(
               borderRadius: BorderRadius.circular(24),
               onTap: widget.onProfileTap,
@@ -249,8 +251,22 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
                 child: CircleAvatar(
                   radius: 16,
                   backgroundColor: theme.cardColor,
-                  child:
-                      Icon(Icons.person, color: theme.textSecondary, size: 18),
+                  child: currentUser?.photoURL?.isNotEmpty == true
+                      ? ClipOval(
+                          child: Image.network(
+                            currentUser!.photoURL!,
+                            width: 32,
+                            height: 32,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Icon(
+                              Icons.person,
+                              color: theme.textSecondary,
+                              size: 18,
+                            ),
+                          ),
+                        )
+                      : Icon(Icons.person,
+                          color: theme.textSecondary, size: 18),
                 ),
               ),
             ),

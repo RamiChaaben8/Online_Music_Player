@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'dart:async';
@@ -364,7 +363,15 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen>
   Widget _avatar(PublicProfile? profile) {
     if (profile?.photoURL.isNotEmpty == true) {
       return CircleAvatar(
-        backgroundImage: CachedNetworkImageProvider(profile!.photoURL),
+        child: ClipOval(
+          child: Image.network(
+            profile!.photoURL,
+            width: 40,
+            height: 40,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => const Icon(Icons.person_outline),
+          ),
+        ),
       );
     }
     return const CircleAvatar(child: Icon(Icons.person_outline));

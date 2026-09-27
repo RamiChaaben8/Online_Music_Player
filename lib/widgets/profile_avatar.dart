@@ -7,6 +7,7 @@ import '../providers/auth_provider.dart';
 import '../providers/player_provider.dart';
 import '../screens/auth/delete_account_screen.dart';
 import '../screens/privacy_settings_screen.dart';
+import '../services/firestore_service.dart';
 import 'update_dialog.dart';
 
 class ProfileAvatar extends ConsumerWidget {
@@ -14,7 +15,9 @@ class ProfileAvatar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final user = ref.watch(authServiceProvider).currentUser;
+    final authState = ref.watch(authStateProvider);
+    final user = authState.asData?.value ??
+        ref.read(authServiceProvider).currentUser;
     return GestureDetector(
       onTap: () => showAccountMenu(context, ref),
       child: CircleAvatar(
@@ -59,6 +62,41 @@ void showAccountMenu(BuildContext context, WidgetRef ref) {
                 showUpdateDialog(context, ref);
               },
             ),
+          ListTile(
+            leading: const Icon(Icons.edit_outlined, color: Colors.white70),
+            title: const Text('Edit Profile', style: TextStyle(color: Colors.white)),
+            onTap: () async {
+              Navigator.pop(context);
+              final user = ref.read(authServiceProvider).currentUser;
+              if (user == null) return;
+              final nameController = TextEditingController(text: user.displayName ?? '');
+              final photoController = TextEditingController(text: user.photoURL ?? '');
+              final saved = await showDialog<bool>(
+                context: context,
+                builder: (dialogContext) => AlertDialog(
+                  title: const Text('Edit Profile'),
+                  content: Column(mainAxisSize: MainAxisSize.min, children: [
+                    TextField(controller: nameController, maxLength: 50, decoration: const InputDecoration(labelText: 'Display name')),
+                    TextField(controller: photoController, keyboardType: TextInputType.url, decoration: const InputDecoration(labelText: 'Profile image URL')),
+                  ]),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Cancel')),
+                    FilledButton(onPressed: () async {
+                      try {
+                        await FirestoreService().updateOwnProfile(user: user, displayName: nameController.text, photoURL: photoController.text);
+                        if (dialogContext.mounted) Navigator.pop(dialogContext, true);
+                      } catch (error) {
+                        if (dialogContext.mounted) ScaffoldMessenger.of(dialogContext).showSnackBar(SnackBar(content: Text('$error')));
+                      }
+                    }, child: const Text('Save')),
+                  ],
+                ),
+              );
+              nameController.dispose();
+              photoController.dispose();
+              if (saved == true && context.mounted) ref.invalidate(authStateProvider);
+            },
+          ),
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.white70),
             title:

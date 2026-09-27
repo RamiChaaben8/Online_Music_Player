@@ -19,6 +19,7 @@ import {
   orderBy,
   writeBatch,
   increment,
+  runTransaction,
 } from 'firebase/firestore'
 import { db } from '../firebase'
 
@@ -69,7 +70,7 @@ export async function getPublicProfile(uid) {
   return { uid, ...snap.data() }
 }
 
-export async function createPublicProfile(user, username) {
+export async function createPublicProfile(user, username, displayName = user.displayName || '') {
   const normalized = username.trim().toLowerCase()
   if (!/^[a-z0-9_]{3,20}$/.test(normalized)) {
     throw new Error('Username must be 3-20 characters: lowercase letters, numbers, or _')
@@ -78,24 +79,41 @@ export async function createPublicProfile(user, username) {
   const usernameRef = doc(db, 'usernames', normalized)
   const profileRef = doc(db, 'publicProfiles', user.uid)
 
-  const [usernameSnap, profileSnap] = await Promise.all([
-    getDoc(usernameRef),
-    getDoc(profileRef),
-  ])
-
-  if (usernameSnap.exists()) throw new Error('That username is already taken.')
-  if (profileSnap.exists()) throw new Error('Your public profile already exists.')
-
-  const batch = writeBatch(db)
-  batch.set(profileRef, {
-    username: normalized,
-    displayName: user.displayName || '',
-    photoURL: user.photoURL || '',
-    createdAt: serverTimestamp(),
-    friendCount: 0,
-    privacy: 'public',
+  await runTransaction(db, async (transaction) => {
+    const [usernameSnap, profileSnap] = await Promise.all([
+      transaction.get(usernameRef),
+      transaction.get(profileRef),
+    ])
+    if (usernameSnap.exists()) throw new Error('That username is already taken.')
+    if (profileSnap.exists()) throw new Error('Your public profile already exists.')
+    transaction.set(profileRef, {
+      username: normalized,
+      usernameLower: normalized,
+      displayName: displayName.trim(),
+      photoURL: user.photoURL || '',
+      createdAt: serverTimestamp(),
+      friendCount: 0,
+      privacy: { showOnlineStatus: true, showActivity: true, allowFriendRequests: true },
+    })
+    transaction.set(usernameRef, { uid: user.uid })
   })
-  batch.set(usernameRef, { uid: user.uid })
+}
+
+export async function syncMissingPublicProfileDisplayName(user) {
+  const authDisplayName = user.displayName?.trim() || ''
+  if (!authDisplayName) return
+  const profileRef = doc(db, 'publicProfiles', user.uid)
+  const profile = await getDoc(profileRef)
+  const currentName = profile.data()?.displayName
+  if (profile.exists() && (typeof currentName !== 'string' || !currentName.trim())) {
+    await updateDoc(profileRef, { displayName: authDisplayName })
+  }
+}
+
+export async function deletePublicProfile(uid, username) {
+  const batch = writeBatch(db)
+  batch.delete(adminProfileRef(uid))
+  batch.delete(adminUsernameRef(username.trim().toLowerCase()))
   await batch.commit()
 }
 
@@ -259,6 +277,122 @@ export async function sendRemoteCommand(uid, command, extra = {}) {
     deviceId,
     deviceName:   "Utify Web",
     updatedAt:    serverTimestamp(),
+  })
+}
+
+const adminProfileRef = (uid) => doc(db, 'publicProfiles', uid)
+const adminUsernameRef = (username) => doc(db, 'usernames', username)
+const signupCodeRef = (code) => doc(db, 'signupCodes', code.trim().toUpperCase())
+
+export async function isSignupCodeAvailable(code) {
+  const normalized = code.trim().toUpperCase()
+  if (!/^[A-Z0-9_-]{8,80}$/.test(normalized)) return false
+  const snapshot = await getDoc(signupCodeRef(normalized))
+  return snapshot.exists() && snapshot.data().enabled === true
+}
+
+export async function redeemSignupCode(code) {
+  const normalized = code.trim().toUpperCase()
+  if (!/^[A-Z0-9_-]{8,80}$/.test(normalized)) throw new Error('Enter a valid serial code.')
+  const codeRef = signupCodeRef(normalized)
+  await runTransaction(db, async (transaction) => {
+    const snapshot = await transaction.get(codeRef)
+    if (!snapshot.exists() || snapshot.data().enabled !== true) {
+      throw new Error('This serial code is invalid or has already been used.')
+    }
+    transaction.delete(codeRef)
+  })
+}
+
+export async function createSignupCode(adminUid) {
+  if (!adminUid) throw new Error('Your admin account could not be verified. Please sign in again.')
+  if (!globalThis.crypto?.getRandomValues) throw new Error('Secure code generation is unavailable in this browser.')
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16))
+    const code = `UTY-${Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('').toUpperCase()}`
+    const codeRef = signupCodeRef(code)
+    try {
+      await runTransaction(db, async (transaction) => {
+        const snapshot = await transaction.get(codeRef)
+        if (snapshot.exists()) throw new Error('Generated code already exists.')
+        transaction.set(codeRef, { enabled: true, createdAt: serverTimestamp(), createdBy: adminUid })
+      })
+      return code
+    } catch (error) {
+      if (error.message !== 'Generated code already exists.' || attempt === 2) throw error
+    }
+  }
+  throw new Error('Could not generate a unique signup code. Please try again.')
+}
+
+export async function createAdminManagedProfile({ uid, username, displayName, photoURL, privacy }) {
+  const normalized = username.trim().toLowerCase()
+  if (!/^[a-z0-9_]{3,20}$/.test(normalized)) throw new Error('Username must be 3-20 characters: lowercase letters, numbers, or _')
+  if (!uid.trim()) throw new Error('A user ID is required.')
+
+  const profileRef = adminProfileRef(uid.trim())
+  const usernameRef = adminUsernameRef(normalized)
+  await runTransaction(db, async (transaction) => {
+    const [profileSnap, usernameSnap] = await Promise.all([
+      transaction.get(profileRef),
+      transaction.get(usernameRef),
+    ])
+    if (profileSnap.exists()) throw new Error('A profile already exists for this user ID.')
+    if (usernameSnap.exists()) throw new Error('That username is already taken.')
+    transaction.set(profileRef, {
+      username: normalized,
+      usernameLower: normalized,
+      displayName: displayName.trim(),
+      photoURL: photoURL.trim(),
+      createdAt: serverTimestamp(),
+      friendCount: 0,
+      privacy,
+    })
+    transaction.set(usernameRef, { uid: uid.trim() })
+  })
+}
+
+export async function updateAdminManagedProfile(uid, changes) {
+  const normalized = changes.username.trim().toLowerCase()
+  if (!/^[a-z0-9_]{3,20}$/.test(normalized)) throw new Error('Username must be 3-20 characters: lowercase letters, numbers, or _')
+  const profileRef = adminProfileRef(uid)
+  const nextUsernameRef = adminUsernameRef(normalized)
+
+  await runTransaction(db, async (transaction) => {
+    const profileSnap = await transaction.get(profileRef)
+    if (!profileSnap.exists()) throw new Error('This profile no longer exists.')
+    const previousUsername = profileSnap.data().usernameLower || profileSnap.data().username || ''
+    const previousUsernameRef = previousUsername ? adminUsernameRef(previousUsername) : null
+    const [nextUsernameSnap, previousUsernameSnap] = await Promise.all([
+      transaction.get(nextUsernameRef),
+      previousUsernameRef ? transaction.get(previousUsernameRef) : Promise.resolve(null),
+    ])
+    if (normalized !== previousUsername && nextUsernameSnap.exists()) throw new Error('That username is already taken.')
+    transaction.update(profileRef, {
+      username: normalized,
+      usernameLower: normalized,
+      displayName: changes.displayName.trim(),
+      photoURL: changes.photoURL.trim(),
+      privacy: changes.privacy,
+    })
+    if (normalized !== previousUsername) {
+      if (previousUsernameSnap?.exists() && previousUsernameSnap.data().uid === uid) transaction.delete(previousUsernameRef)
+      transaction.set(nextUsernameRef, { uid })
+    }
+  })
+}
+
+export async function deleteAdminManagedProfile(uid) {
+  const profileRef = adminProfileRef(uid)
+  await runTransaction(db, async (transaction) => {
+    const profileSnap = await transaction.get(profileRef)
+    if (!profileSnap.exists()) return
+    const username = profileSnap.data().usernameLower || profileSnap.data().username || ''
+    const usernameRef = username ? adminUsernameRef(username) : null
+    const usernameSnap = usernameRef ? await transaction.get(usernameRef) : null
+    transaction.delete(profileRef)
+    if (usernameSnap?.exists() && usernameSnap.data().uid === uid) transaction.delete(usernameRef)
   })
 }
 

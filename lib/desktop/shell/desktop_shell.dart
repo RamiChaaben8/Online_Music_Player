@@ -5,6 +5,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../models/playlist.dart';
 import '../../providers/local_music_provider.dart';
@@ -246,8 +247,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
       await ref.read(playerProvider.notifier).pause().catchError((_) {});
       await ref.read(authServiceProvider).signOut();
     } else if (action == _AccountAction.profile) {
-      _showInfoDialog(
-          'Profile', user?.email ?? 'No profile details available.');
+      if (user != null) await _showEditProfileDialog(user);
     } else if (action == _AccountAction.checkForUpdates) {
       if (mounted) await showUpdateDialog(context, ref);
     } else {
@@ -261,23 +261,112 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
     }
   }
 
-  void _showInfoDialog(String title, String message) {
-    showDialog<void>(
-      context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: context.appTheme.card,
-        title: Text(title, style: TextStyle(color: context.appTheme.text)),
-        content:
-            Text(message, style: TextStyle(color: context.appTheme.subtext)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child:
-                Text('Close', style: TextStyle(color: context.appTheme.button)),
+  Future<void> _showEditProfileDialog(User user) async {
+    final displayNameController =
+        TextEditingController(text: user.displayName ?? '');
+    final photoUrlController =
+        TextEditingController(text: user.photoURL ?? '');
+    final formKey = GlobalKey<FormState>();
+    var saving = false;
+    String? error;
+
+    try {
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            backgroundColor: context.appTheme.card,
+            title: Text('Edit profile',
+                style: TextStyle(color: context.appTheme.text)),
+            content: SizedBox(
+              width: 420,
+              child: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextFormField(
+                      controller: displayNameController,
+                      maxLength: 50,
+                      decoration: const InputDecoration(
+                        labelText: 'Display name',
+                        counterText: '',
+                      ),
+                      validator: (value) => (value?.trim().isNotEmpty ?? false)
+                          ? null
+                          : 'Enter a display name.',
+                    ),
+                    const SizedBox(height: 14),
+                    TextFormField(
+                      controller: photoUrlController,
+                      keyboardType: TextInputType.url,
+                      decoration: const InputDecoration(
+                        labelText: 'Profile image URL',
+                        hintText: 'https://example.com/image.jpg',
+                        helperText: 'Leave blank to keep the current image.',
+                      ),
+                    ),
+                    if (error != null) ...[
+                      const SizedBox(height: 12),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(error!,
+                            style: const TextStyle(color: Colors.redAccent)),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: saving ? null : () => Navigator.pop(dialogContext),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: saving
+                    ? null
+                    : () async {
+                        if (!formKey.currentState!.validate()) return;
+                        setDialogState(() {
+                          saving = true;
+                          error = null;
+                        });
+                        try {
+                          await ref
+                              .read(firestoreServiceProvider)
+                              .updateOwnProfile(
+                                user: user,
+                                displayName: displayNameController.text,
+                                photoURL: photoUrlController.text,
+                              );
+                          if (dialogContext.mounted) {
+                            Navigator.pop(dialogContext);
+                          }
+                        } catch (e) {
+                          setDialogState(() {
+                            error = e.toString();
+                            saving = false;
+                          });
+                        }
+                      },
+                child: saving
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Save'),
+              ),
+            ],
           ),
-        ],
-      ),
-    );
+        ),
+      );
+    } finally {
+      displayNameController.dispose();
+      photoUrlController.dispose();
+    }
   }
 
   @override

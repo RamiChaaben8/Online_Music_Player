@@ -195,19 +195,26 @@ function ConfirmDialog({ title, message, onConfirm, onCancel, confirmLabel = 'Co
 // ── 1. Profile section ────────────────────────────────────────────────────────
 function ProfileSection({ user, onToast }) {
   const [displayName, setDisplayName] = useState(user?.displayName || '')
+  const [photoURL, setPhotoURL] = useState(user?.photoURL || '')
   const [saving, setSaving] = useState(false)
-  const dirty = displayName.trim() !== (user?.displayName || '')
+  const dirty = displayName.trim() !== (user?.displayName || '') || photoURL.trim() !== (user?.photoURL || '')
 
   const handleSave = async () => {
     if (!dirty || !user) return
     setSaving(true)
     try {
-      await updateProfile(auth.currentUser, { displayName: displayName.trim() })
+      const normalizedPhotoURL = photoURL.trim()
+      if (normalizedPhotoURL && !/^https?:\/\//i.test(normalizedPhotoURL)) {
+        throw new Error('Image URL must start with http:// or https://.')
+      }
+      await updateProfile(auth.currentUser, { displayName: displayName.trim(), photoURL: normalizedPhotoURL || null })
       // Also update publicProfile doc
       await updateDoc(doc(db, 'publicProfiles', user.uid), {
         displayName: displayName.trim(),
+        photoURL: normalizedPhotoURL,
       })
-      onToast('Display name updated.')
+      useAuthStore.setState({ user: auth.currentUser })
+      onToast('Profile updated.')
     } catch (e) {
       onToast(`Could not update: ${e.message}`, 'error')
     } finally {
@@ -265,6 +272,24 @@ function ProfileSection({ user, onToast }) {
           {saving && <Spinner size={14} />}
           Save
         </button>
+      </div>
+
+      <label
+        htmlFor="setting-photourl"
+        style={{ display: 'block', fontSize: 13, color: 'var(--color-subtext)', margin: '16px 0 6px', fontWeight: 600 }}
+      >
+        Profile Image URL
+      </label>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+        {photoURL.trim() ? <img src={photoURL.trim()} alt="Profile preview" onError={(e) => { e.currentTarget.style.visibility = 'hidden' }} style={{ width: 42, height: 42, borderRadius: '50%', objectFit: 'cover' }} /> : null}
+        <input
+          id="setting-photourl"
+          type="url"
+          value={photoURL}
+          onChange={(e) => setPhotoURL(e.target.value)}
+          placeholder="https://example.com/photo.jpg"
+          style={{ flexGrow: 1, minWidth: 0, padding: '10px 14px', borderRadius: 6, border: '1px solid var(--color-highlight-elevated)', background: 'var(--color-highlight)', color: 'var(--color-text)', fontSize: 15, outline: 'none' }}
+        />
       </div>
 
       <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--color-subtext)' }}>

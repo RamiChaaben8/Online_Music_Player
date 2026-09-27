@@ -248,3 +248,27 @@ Mirrors the Flutter app behaviour exactly:
 The Firebase config in `src/firebase.js` contains the web API key. This key is **safe to be public** for web apps — it identifies your Firebase project but is protected by Firestore security rules and Firebase Auth. Never commit server-side secrets (service account keys).
 
 For CI/CD, the `firebase.json` and `Utify-web/` directory are all you need. The Firebase API key is not a secret.
+
+## Admin dashboard
+
+The standalone `/admin` page is available only to accounts with the Firebase Authentication custom claim `admin: true` (or `role: "admin"`). On the Spark plan, it reads the existing `publicProfiles` collection directly. Create, edit, and delete controls manage Utify profile documents and username reservations; they do not create or delete Firebase Authentication accounts. The Firestore rules must be deployed to allow only admins to perform those profile-management writes.
+
+This is an Utify profile directory, not a complete Firebase Authentication user export. Accounts without a `publicProfiles/{uid}` document do not appear, and Firebase-only account details such as verified email and last sign-in time are unavailable. Firestore's free quota includes 50,000 reads and 20,000 writes per day for the free database.
+
+Grant the admin claim only from a trusted Firebase Admin SDK environment. For example, using the Admin SDK in a secured script:
+
+```js
+await getAuth().setCustomUserClaims('<user-uid>', { admin: true })
+```
+
+The account must sign in again (or refresh its ID token) for the new claim to appear. No Cloud Functions deployment is required for this dashboard. After deploying the updated rules, the profile CRUD controls work on the Spark plan:
+
+```sh
+firebase deploy --only firestore:rules --project ytspotify-aa97c
+```
+
+### One-time signup serial codes
+
+Signup checks a code in `signupCodes/{CODE}` before creating an account, then atomically deletes that code after account creation. To issue a code manually, create a Firestore document in `signupCodes`, use a unique uppercase random code (preferably 16 or more characters) as its document ID, and set `{ "enabled": true }`. A code can be redeemed once. The same Firestore rules deployment above is required.
+
+This is a client-side signup gate. Firebase Auth does not validate the code itself, so it cannot prevent a determined person from creating an Auth account by calling Firebase directly. Do not treat it as a secure admission boundary without a trusted backend.

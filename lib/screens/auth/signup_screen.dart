@@ -20,7 +20,9 @@ class SignupScreen extends ConsumerStatefulWidget {
 
 class _SignupScreenState extends ConsumerState<SignupScreen> {
   final _formKey = GlobalKey<FormState>();
+  final _serialCodeCtrl = TextEditingController();
   final _nameCtrl = TextEditingController();
+  final _usernameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
@@ -31,7 +33,9 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
 
   @override
   void dispose() {
+    _serialCodeCtrl.dispose();
     _nameCtrl.dispose();
+    _usernameCtrl.dispose();
     _emailCtrl.dispose();
     _passCtrl.dispose();
     _confirmCtrl.dispose();
@@ -43,20 +47,15 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
     final ok = await ref
         .read(authNotifierProvider.notifier)
         .signUpWithEmail(
-            _emailCtrl.text, _passCtrl.text, _nameCtrl.text);
+            _emailCtrl.text,
+            _passCtrl.text,
+            _nameCtrl.text,
+            _serialCodeCtrl.text,
+            _usernameCtrl.text);
     // AuthGate will automatically show the app shell on success.
     if (!ok && mounted) {
       _showError(
           ref.read(authNotifierProvider).error ?? 'Sign up failed.');
-    }
-  }
-
-  Future<void> _googleSignIn() async {
-    final ok =
-        await ref.read(authNotifierProvider.notifier).signInWithGoogle();
-    if (!ok && mounted) {
-      final err = ref.read(authNotifierProvider).error;
-      if (err != null) _showError(err);
     }
   }
 
@@ -106,6 +105,26 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                     ),
                     const SizedBox(height: 36),
 
+                    _label('Serial Code'),
+                    const SizedBox(height: 6),
+                    TextFormField(
+                      controller: _serialCodeCtrl,
+                      textCapitalization: TextCapitalization.characters,
+                      autocorrect: false,
+                      enableSuggestions: false,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: _deco('Enter your one-time code',
+                          icon: Icons.confirmation_number_outlined),
+                      validator: (v) {
+                        final code = (v ?? '').trim();
+                        if (!RegExp(r'^[A-Za-z0-9_-]{8,80}$').hasMatch(code)) {
+                          return 'Enter a valid serial code';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+
                     _label('Display Name'),
                     const SizedBox(height: 6),
                     TextFormField(
@@ -117,6 +136,26 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                       validator: (v) => (v == null || v.trim().isEmpty)
                           ? 'Enter your name'
                           : null,
+                    ),
+                    const SizedBox(height: 16),
+
+                    _label('Username'),
+                    const SizedBox(height: 6),
+                    TextFormField(
+                      controller: _usernameCtrl,
+                      textInputAction: TextInputAction.next,
+                      autocorrect: false,
+                      enableSuggestions: false,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: _deco('lowercase_username',
+                          icon: Icons.alternate_email),
+                      validator: (v) {
+                        final username = (v ?? '').trim().toLowerCase();
+                        if (!RegExp(r'^[a-z0-9_]{3,20}$').hasMatch(username)) {
+                          return 'Use 3-20 lowercase letters, numbers, or _';
+                        }
+                        return null;
+                      },
                     ),
                     const SizedBox(height: 16),
 
@@ -198,45 +237,6 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                                     strokeWidth: 2.5,
                                     color: Colors.black))
                             : const Text('Create Account'),
-                      ),
-                    ),
-
-                    const SizedBox(height: 24),
-
-                    Row(children: const [
-                      Expanded(
-                          child: Divider(color: Color(0xFF282828))),
-                      Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 12),
-                        child: Text('or',
-                            style: TextStyle(
-                                color: Color(0xFFB3B3B3),
-                                fontSize: 13)),
-                      ),
-                      Expanded(
-                          child: Divider(color: Color(0xFF282828))),
-                    ]),
-
-                    const SizedBox(height: 24),
-
-                    SizedBox(
-                      height: 50,
-                      child: OutlinedButton.icon(
-                        onPressed: isLoading ? null : _googleSignIn,
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.white,
-                          side: const BorderSide(
-                              color: Color(0xFF282828)),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(50)),
-                        ),
-                        icon: const Text('G',
-                            style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF4285F4))),
-                        label: const Text('Continue with Google',
-                            style: TextStyle(fontSize: 15)),
                       ),
                     ),
 

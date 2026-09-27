@@ -61,19 +61,31 @@ Future<String?> showCollaboratorInviteDialog(
             final friend = friends[index];
             final profile = friend.profile;
             final displayName = profile?.displayName.trim();
-            final name = displayName?.isNotEmpty == true
-                ? displayName!
-                : 'Friend ${index + 1}';
+            final username = profile?.username.trim();
+            final String name;
+            if (displayName != null && displayName.isNotEmpty) {
+              name = displayName;
+            } else if (username != null && username.isNotEmpty) {
+              name = '@$username';
+            } else {
+              name = friend.otherUid ?? 'Unknown user';
+            }
             final subtitle = profile?.username.trim();
             return ListTile(
               contentPadding: EdgeInsets.zero,
               leading: CircleAvatar(
                 radius: 18,
-                backgroundImage: profile?.photoURL.isNotEmpty == true
-                    ? NetworkImage(profile!.photoURL)
-                    : null,
                 child: profile?.photoURL.isNotEmpty == true
-                    ? null
+                    ? ClipOval(
+                        child: Image.network(
+                          profile!.photoURL,
+                          width: 36,
+                          height: 36,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) =>
+                              const Icon(Icons.person),
+                        ),
+                      )
                     : const Icon(Icons.person),
               ),
               title: Text(name, style: TextStyle(color: context.appTheme.text)),

@@ -5,7 +5,7 @@
 //   • authServiceProvider   — singleton AuthService
 //   • authStateProvider     — StreamProvider<User?> (Firebase stream)
 //   • authNotifierProvider  — StateNotifier with isLoading + error
-//     for login / signup / google actions driven by the UI.
+//     for login and signup actions driven by the UI.
 // ============================================================
 
 import 'package:firebase_auth/firebase_auth.dart';
@@ -21,7 +21,7 @@ final authServiceProvider = Provider<AuthService>((ref) => AuthService());
 // Use this in AuthGate to decide which tree to show.
 
 final authStateProvider = StreamProvider<User?>((ref) {
-  return ref.watch(authServiceProvider).authStateChanges;
+  return ref.watch(authServiceProvider).userChanges;
 });
 
 // ── UI-facing notifier ────────────────────────────────────────────────────────
@@ -54,30 +54,35 @@ class AuthNotifier extends StateNotifier<AuthNotifierState> {
     } on AuthException catch (e) {
       state = state.copyWith(isLoading: false, error: e.message);
       return false;
+    } catch (_) {
+      state = state.copyWith(
+        isLoading: false,
+        error: 'Could not sign in. Please try again.',
+      );
+      return false;
     }
   }
 
   Future<bool> signUpWithEmail(
-      String email, String password, String displayName) async {
+      String email,
+      String password,
+      String displayName,
+      String serialCode,
+      String username) async {
     state = state.copyWith(isLoading: true, clearError: true);
     try {
-      await _auth.signUpWithEmail(email, password, displayName);
+      await _auth.signUpWithEmail(
+          email, password, displayName, serialCode, username);
       state = state.copyWith(isLoading: false);
       return true;
     } on AuthException catch (e) {
       state = state.copyWith(isLoading: false, error: e.message);
       return false;
-    }
-  }
-
-  Future<bool> signInWithGoogle() async {
-    state = state.copyWith(isLoading: true, clearError: true);
-    try {
-      final cred = await _auth.signInWithGoogle();
-      state = state.copyWith(isLoading: false);
-      return cred != null;
-    } on AuthException catch (e) {
-      state = state.copyWith(isLoading: false, error: e.message);
+    } catch (_) {
+      state = state.copyWith(
+        isLoading: false,
+        error: 'Could not complete signup. Please try again.',
+      );
       return false;
     }
   }

@@ -1,18 +1,7 @@
 // ============================================================
 // services/auth_service.dart
 //
-// Wraps Firebase Auth for Tuneify.
-//
-// Google Sign-In strategy
-// ─────────────────────────────────────────────────────────────
-// • Android / iOS  → native GoogleSignIn flow (google_sign_in package).
-// • Windows / Linux / Web → google_sign_in also works on Windows via
-//   the google_sign_in_web / desktop shims, but the most reliable path
-//   on Windows is signInWithPopup via firebase_auth's web support
-//   (firebase_auth calls the Google OAuth endpoint in a real browser
-//   window via the google_sign_in package's desktop implementation).
-//   We use the same GoogleSignIn() call on all platforms; the package
-//   selects the correct underlying flow automatically.
+// Wraps Firebase Auth for Utify.
 //
 // Persistent sessions
 // ─────────────────────────────────────────────────────────────
@@ -22,8 +11,10 @@
 // ============================================================
 
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:google_sign_in/google_sign_in.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_core/firebase_core.dart';
+
+import 'firestore_service.dart';
 
 class AuthException implements Exception {
   final String message;
@@ -34,12 +25,14 @@ class AuthException implements Exception {
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirestoreService _profiles = FirestoreService();
 
   // ── Current user ───────────────────────────────────────────────────────────
 
   User? get currentUser => _auth.currentUser;
 
-  Stream<User?> get authStateChanges => _auth.authStateChanges();
+  Stream<User?> get userChanges => _auth.userChanges();
 
   // ── Email / Password ───────────────────────────────────────────────────────
 
@@ -58,16 +51,72 @@ class AuthService {
     String email,
     String password,
     String displayName,
+    String serialCode,
+    String username,
   ) async {
+    final normalizedCode = serialCode.trim().toUpperCase();
+    if (!RegExp(r'^[A-Z0-9_-]{8,80}$').hasMatch(normalizedCode)) {
+      throw const AuthException('Enter a valid serial code.');
+    }
+
+    final codeRef = _firestore.collection('signupCodes').doc(normalizedCode);
+    DocumentSnapshot<Map<String, dynamic>> codeSnapshot;
     try {
-      final cred = await _auth.createUserWithEmailAndPassword(
+      codeSnapshot = await codeRef.get();
+    } on FirebaseException catch (e) {
+      throw AuthException(e.message ?? 'Could not validate the serial code.');
+    } catch (_) {
+      throw const AuthException('Could not validate the serial code. Check your connection and try again.');
+    }
+    if (!codeSnapshot.exists || codeSnapshot.data()?['enabled'] != true) {
+      throw const AuthException(
+          'This serial code is invalid or has already been used.');
+    }
+
+    UserCredential? credential;
+    var profileCreated = false;
+    try {
+      credential = await _auth.createUserWithEmailAndPassword(
         email: email.trim(),
         password: password,
       );
-      await cred.user?.updateDisplayName(displayName.trim());
-      return cred;
-    } on FirebaseAuthException catch (e) {
-      throw AuthException(_friendlyMessage(e));
+      await credential.user?.updateDisplayName(displayName.trim());
+      final user = credential.user;
+      if (user == null) throw const AuthException('Could not create your account.');
+      await _profiles.createPublicProfile(
+        user: user,
+        username: username,
+        displayName: displayName,
+      );
+      profileCreated = true;
+      // A document delete is a single atomic Firestore write. Rules only allow
+      // deleting an enabled code, so only one racing signup can consume it.
+      await codeRef.delete();
+      return credential;
+    } catch (e) {
+      if (profileCreated && credential?.user != null) {
+        try {
+          await _profiles.deletePublicProfile(
+            uid: credential!.user!.uid,
+            username: username,
+          );
+        } catch (_) {}
+      }
+      if (credential?.user != null) {
+        try {
+          await credential!.user!.delete();
+        } catch (_) {
+          await _auth.signOut();
+        }
+      }
+      if (e is AuthException) rethrow;
+      if (e is FirebaseAuthException) {
+        throw AuthException(_friendlyMessage(e));
+      }
+      if (e is FirebaseException) {
+        throw AuthException(e.message ?? 'Could not validate the serial code.');
+      }
+      throw const AuthException('Could not complete signup. Please try again.');
     }
   }
 
@@ -79,44 +128,10 @@ class AuthService {
     }
   }
 
-  // ── Google Sign-In ─────────────────────────────────────────────────────────
-  //
-  // On Android/iOS the GoogleSignIn package shows the native account picker.
-  // On Windows/Linux it opens the system browser to complete OAuth, then
-  // passes the idToken back to Firebase. The google_sign_in package handles
-  // all of this automatically — we just call signIn().
-
-  Future<UserCredential?> signInWithGoogle() async {
-    try {
-      if (kIsWeb) {
-        // Web: use Firebase's built-in popup flow
-        final provider = GoogleAuthProvider();
-        return await _auth.signInWithPopup(provider);
-      }
-
-      // Mobile / Desktop: google_sign_in package
-      final googleUser = await GoogleSignIn().signIn();
-      if (googleUser == null) return null; // user cancelled
-
-      final googleAuth = await googleUser.authentication;
-      final credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
-      );
-      return await _auth.signInWithCredential(credential);
-    } on FirebaseAuthException catch (e) {
-      throw AuthException(_friendlyMessage(e));
-    } catch (e) {
-      throw AuthException('Google sign-in failed. Please try again.');
-    }
-  }
-
   // ── Sign out ───────────────────────────────────────────────────────────────
 
   Future<void> signOut() async {
     try {
-      // Also disconnect Google so the account picker shows next time
-      try { await GoogleSignIn().signOut(); } catch (_) {}
       await _auth.signOut();
     } catch (_) {}
   }

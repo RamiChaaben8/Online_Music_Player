@@ -3,30 +3,6 @@ import { Link, useNavigate } from 'react-router-dom'
 import { Eye, EyeOff, Music2 } from 'lucide-react'
 import { useAuthStore } from '../../stores/authStore'
 
-// ── Inline Google "G" SVG logo ──────────────────────────────────────────────
-function GoogleIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-      <path
-        d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"
-        fill="#4285F4"
-      />
-      <path
-        d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"
-        fill="#34A853"
-      />
-      <path
-        d="M3.964 10.707A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.707V4.961H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.039l3.007-2.332z"
-        fill="#FBBC05"
-      />
-      <path
-        d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.961L3.964 7.293C4.672 5.163 6.656 3.58 9 3.58z"
-        fill="#EA4335"
-      />
-    </svg>
-  )
-}
-
 // ── Shared field styles ──────────────────────────────────────────────────────
 const inputStyle = {
   width: '100%',
@@ -91,9 +67,11 @@ function PasswordStrength({ password }) {
 
 export default function SignupPage() {
   const navigate = useNavigate()
-  const { signUpWithEmail, signInWithGoogle, clearError } = useAuthStore()
+  const { signUpWithEmail, clearError } = useAuthStore()
 
   const [displayName,   setDisplayName]   = useState('')
+  const [username,      setUsername]      = useState('')
+  const [serialCode,    setSerialCode]    = useState('')
   const [email,         setEmail]         = useState('')
   const [password,      setPassword]      = useState('')
   const [confirmPass,   setConfirmPass]   = useState('')
@@ -101,14 +79,15 @@ export default function SignupPage() {
   const [showConfirm,   setShowConfirm]   = useState(false)
   const [localError,    setLocalError]    = useState('')
   const [submitting,    setSubmitting]    = useState(false)
-  const [googleLoading, setGoogleLoading] = useState(false)
 
   const clearErr = () => setLocalError('')
 
   // ── Validation ─────────────────────────────────────────────────────────────
   function validate() {
+    if (!/^[a-zA-Z0-9_-]{8,80}$/.test(serialCode.trim())) return 'Enter a valid serial code.'
     if (!displayName.trim())          return 'Please enter your display name.'
     if (displayName.trim().length < 2)return 'Display name must be at least 2 characters.'
+    if (!/^[a-zA-Z0-9_]{3,20}$/.test(username.trim())) return 'Username must be 3-20 letters, numbers, or underscores.'
     if (!email.trim())                return 'Please enter your email address.'
     if (!/\S+@\S+\.\S+/.test(email))  return 'Please enter a valid email address.'
     if (!password)                    return 'Please enter a password.'
@@ -126,7 +105,7 @@ export default function SignupPage() {
 
     setSubmitting(true)
     try {
-      await signUpWithEmail(email, password, displayName)
+      await signUpWithEmail(email, password, displayName, serialCode, username)
       navigate('/', { replace: true })
     } catch (err) {
       setLocalError(err.message)
@@ -135,22 +114,7 @@ export default function SignupPage() {
     }
   }
 
-  // ── Google sign-up ─────────────────────────────────────────────────────────
-  async function handleGoogle() {
-    clearError()
-    setLocalError('')
-    setGoogleLoading(true)
-    try {
-      await signInWithGoogle()
-      navigate('/', { replace: true })
-    } catch (err) {
-      setLocalError(err.message)
-    } finally {
-      setGoogleLoading(false)
-    }
-  }
-
-  const isWorking = submitting || googleLoading
+  const isWorking = submitting
 
   return (
     <div
@@ -226,6 +190,25 @@ export default function SignupPage() {
 
         {/* ── Form ─────────────────────────────────────────────────────────── */}
         <form onSubmit={handleSubmit} noValidate>
+          {/* Serial code */}
+          <div style={{ marginBottom: '20px' }}>
+            <label htmlFor="signup-serial-code" style={labelStyle}>Serial Code</label>
+            <input
+              id="signup-serial-code"
+              type="text"
+              autoComplete="off"
+              autoCapitalize="characters"
+              spellCheck="false"
+              placeholder="Enter your one-time code"
+              value={serialCode}
+              onChange={(e) => { setSerialCode(e.target.value); clearErr() }}
+              disabled={isWorking}
+              style={inputStyle}
+              onFocus={(e) => (e.target.style.borderColor = 'var(--color-button)')}
+              onBlur={(e)  => (e.target.style.borderColor = 'transparent')}
+            />
+          </div>
+
           {/* Display Name */}
           <div style={{ marginBottom: '20px' }}>
             <label htmlFor="signup-name" style={labelStyle}>Display Name</label>
@@ -236,6 +219,27 @@ export default function SignupPage() {
               placeholder="Your name"
               value={displayName}
               onChange={(e) => { setDisplayName(e.target.value); clearErr() }}
+              disabled={isWorking}
+              style={inputStyle}
+              onFocus={(e) => (e.target.style.borderColor = 'var(--color-button)')}
+              onBlur={(e)  => (e.target.style.borderColor = 'transparent')}
+            />
+          </div>
+
+          {/* Username is stored separately from the user's display name. */}
+          <div style={{ marginBottom: '20px' }}>
+            <label htmlFor="signup-username" style={labelStyle}>Username</label>
+            <input
+              id="signup-username"
+              type="text"
+              autoComplete="username"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck="false"
+              maxLength={20}
+              placeholder="lowercase_username"
+              value={username}
+              onChange={(e) => { setUsername(e.target.value); clearErr() }}
               disabled={isWorking}
               style={inputStyle}
               onFocus={(e) => (e.target.style.borderColor = 'var(--color-button)')}
@@ -384,49 +388,9 @@ export default function SignupPage() {
           </button>
         </form>
 
-        {/* ── Divider ──────────────────────────────────────────────────────── */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-          <div style={{ flex: 1, height: '1px', backgroundColor: 'var(--color-highlight)' }} />
-          <span style={{ color: 'var(--color-subtext)', fontSize: '13px' }}>or</span>
-          <div style={{ flex: 1, height: '1px', backgroundColor: 'var(--color-highlight)' }} />
-        </div>
-
-        {/* ── Google Sign Up ────────────────────────────────────────────────── */}
-        <button
-          type="button"
-          onClick={handleGoogle}
-          disabled={isWorking}
-          style={{
-            width: '100%',
-            padding: '13px',
-            backgroundColor: 'transparent',
-            border: '1px solid var(--color-highlight-elevated)',
-            borderRadius: '50px',
-            color: 'var(--color-text)',
-            fontSize: '15px',
-            fontWeight: '600',
-            cursor: isWorking ? 'not-allowed' : 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '10px',
-            transition: 'border-color 0.2s, background-color 0.2s',
-            marginBottom: '32px',
-          }}
-          onMouseEnter={(e) => { if (!isWorking) e.currentTarget.style.backgroundColor = 'var(--color-highlight)' }}
-          onMouseLeave={(e) => { if (!isWorking) e.currentTarget.style.backgroundColor = 'transparent' }}
-        >
-          <GoogleIcon />
-          {googleLoading ? 'Connecting…' : 'Sign up with Google'}
-        </button>
-
-        {/* ── Footer ───────────────────────────────────────────────────────── */}
         <p style={{ textAlign: 'center', margin: 0, fontSize: '14px', color: 'var(--color-subtext)' }}>
           Already have an account?{' '}
-          <Link
-            to="/login"
-            style={{ color: 'var(--color-button)', fontWeight: '600', textDecoration: 'none' }}
-          >
+          <Link to="/login" style={{ color: 'var(--color-button)', fontWeight: '600', textDecoration: 'none' }}>
             Sign in
           </Link>
         </p>

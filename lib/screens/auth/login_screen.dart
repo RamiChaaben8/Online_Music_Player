@@ -43,15 +43,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
   }
 
-  Future<void> _googleSignIn() async {
-    final ok =
-        await ref.read(authNotifierProvider.notifier).signInWithGoogle();
-    if (!ok && mounted) {
-      final err = ref.read(authNotifierProvider).error;
-      if (err != null) _showError(err);
-    }
-  }
-
   void _showError(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(msg),
@@ -89,7 +80,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         color: _kAccent, size: 56),
                     const SizedBox(height: 16),
                     const Text(
-                      'Tuneify',
+                      'Utify',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: Colors.white,
@@ -191,45 +182,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                     strokeWidth: 2.5,
                                     color: Colors.black))
                             : const Text('Sign In'),
-                      ),
-                    ),
-
-                    const SizedBox(height: 24),
-
-                    Row(children: const [
-                      Expanded(
-                          child: Divider(color: Color(0xFF282828))),
-                      Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 12),
-                        child: Text('or',
-                            style: TextStyle(
-                                color: Color(0xFFB3B3B3),
-                                fontSize: 13)),
-                      ),
-                      Expanded(
-                          child: Divider(color: Color(0xFF282828))),
-                    ]),
-
-                    const SizedBox(height: 24),
-
-                    SizedBox(
-                      height: 50,
-                      child: OutlinedButton.icon(
-                        onPressed: isLoading ? null : _googleSignIn,
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.white,
-                          side: const BorderSide(
-                              color: Color(0xFF282828)),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(50)),
-                        ),
-                        icon: const Text('G',
-                            style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF4285F4))),
-                        label: const Text('Continue with Google',
-                            style: TextStyle(fontSize: 15)),
                       ),
                     ),
 

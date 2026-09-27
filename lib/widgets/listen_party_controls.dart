@@ -107,14 +107,24 @@ class _ListenPartyControlsState extends ConsumerState<ListenPartyControls> {
                         contentPadding: EdgeInsets.zero,
                         leading: CircleAvatar(
                           radius: 16,
-                          backgroundImage: profile?.photoURL.isNotEmpty == true
-                              ? NetworkImage(profile!.photoURL)
-                              : null,
                           child: profile?.photoURL.isNotEmpty == true
-                              ? null
+                              ? ClipOval(child: Image.network(
+                                  profile!.photoURL,
+                                  width: 32,
+                                  height: 32,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) =>
+                                      const Icon(Icons.person, size: 16),
+                                ))
                               : const Icon(Icons.person, size: 16),
                         ),
-                        title: Text(profile?.displayName ?? otherUid),
+                        title: Text(
+                          profile?.displayName.trim().isNotEmpty == true
+                              ? profile!.displayName
+                              : profile?.username.trim().isNotEmpty == true
+                                  ? '@${profile!.username}'
+                                  : otherUid,
+                        ),
                         subtitle: Text('@${profile?.username ?? otherUid}'),
                         trailing: IconButton(
                           tooltip: 'Invite',

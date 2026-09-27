@@ -31,6 +31,7 @@ class AuthGate extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final authAsync = ref.watch(authStateProvider);
+    final authIsLoading = ref.watch(authNotifierProvider).isLoading;
 
     return authAsync.when(
       loading: () => const _SplashScreen(),
@@ -56,6 +57,13 @@ class AuthGate extends ConsumerWidget {
         ),
       ),
       data: (user) {
+        // Firebase emits the newly created user before signup finishes its
+        // serial-code transaction. Keep the app shell from initializing until
+        // the auth operation either completes or rolls the account back.
+        if (user != null && authIsLoading) {
+          return const _SplashScreen();
+        }
+
         if (user == null) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             ref.read(presenceProvider.notifier).stop();
@@ -99,6 +107,13 @@ class AuthGate extends ConsumerWidget {
             if (context.mounted) {
               await ref.read(playerProvider.notifier).restoreLastSession();
               await MigrationDialog.showIfNeeded(context, ref, user.uid);
+            }
+            try {
+              await ref
+                  .read(firestoreServiceProvider)
+                  .syncMissingPublicProfileDisplayName(user);
+            } catch (_) {
+              // Name repair is best-effort and should not block app startup.
             }
             if (context.mounted &&
                 !(await ref

@@ -3,15 +3,14 @@ import { create } from 'zustand'
 import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
-  signInWithPopup,
   signOut,
   sendPasswordResetEmail,
   updateProfile,
   deleteUser,
   onAuthStateChanged,
 } from 'firebase/auth'
-import { auth, googleProvider } from '../firebase'
-import { deleteUserData } from '../services/firestoreService'
+import { auth } from '../firebase'
+import { createPublicProfile, deletePublicProfile, deleteUserData, isSignupCodeAvailable, redeemSignupCode, syncMissingPublicProfileDisplayName } from '../services/firestoreService'
 
 const friendlyMessage = (code) => {
   const map = {
@@ -43,7 +42,8 @@ export const useAuthStore = create((set, get) => ({
   async signInWithEmail(email, password) {
     set({ error: null })
     try {
-      await signInWithEmailAndPassword(auth, email.trim(), password)
+      const credential = await signInWithEmailAndPassword(auth, email.trim(), password)
+      await syncMissingPublicProfileDisplayName(credential.user).catch(() => {})
     } catch (e) {
       const msg = friendlyMessage(e.code)
       set({ error: msg })
@@ -51,24 +51,29 @@ export const useAuthStore = create((set, get) => ({
     }
   },
 
-  async signUpWithEmail(email, password, displayName) {
+  async signUpWithEmail(email, password, displayName, serialCode, username) {
     set({ error: null })
+    let createdUser = null
+    let createdPublicProfile = false
     try {
+      if (!await isSignupCodeAvailable(serialCode || '')) {
+        throw new Error('That serial code is invalid or has already been used.')
+      }
       const cred = await createUserWithEmailAndPassword(auth, email.trim(), password)
+      createdUser = cred.user
       await updateProfile(cred.user, { displayName: displayName.trim() })
+      await createPublicProfile(cred.user, username, displayName)
+      createdPublicProfile = true
+      await redeemSignupCode(serialCode)
     } catch (e) {
-      const msg = friendlyMessage(e.code)
-      set({ error: msg })
-      throw new Error(msg)
-    }
-  },
-
-  async signInWithGoogle() {
-    set({ error: null })
-    try {
-      await signInWithPopup(auth, googleProvider)
-    } catch (e) {
-      const msg = friendlyMessage(e.code) || 'Google sign-in failed.'
+      if (createdUser) {
+        if (createdPublicProfile) {
+          await deletePublicProfile(createdUser.uid, username).catch(() => {})
+        }
+        await deleteUser(createdUser).catch(() => {})
+        await signOut(auth).catch(() => {})
+      }
+      const msg = e.code?.startsWith('auth/') ? friendlyMessage(e.code) : e.message
       set({ error: msg })
       throw new Error(msg)
     }

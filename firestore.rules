@@ -6,6 +6,11 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function adminUser() {
+      return signedIn()
+        && (request.auth.token.admin == true || request.auth.token.role == 'admin');
+    }
+
     function pairId(a, b) {
       return a < b ? a + '_' + b : b + '_' + a;
     }
@@ -20,6 +25,16 @@ service cloud.firestore {
       return value is string
         && value == value.lower()
         && value.matches('^[a-z0-9_]{3,20}$');
+    }
+
+    function validManagedProfile(data) {
+      return validUsername(data.username)
+        && data.usernameLower == data.username
+        && data.displayName is string
+        && data.photoURL is string
+        && data.privacy.showOnlineStatus is bool
+        && data.privacy.showActivity is bool
+        && data.privacy.allowFriendRequests is bool;
     }
 
     function requestTarget(data) {
@@ -38,34 +53,34 @@ service cloud.firestore {
 
     match /publicProfiles/{uid} {
       allow read: if signedIn();
-      allow create: if signedIn()
-        && request.auth.uid == uid
-        && validUsername(request.resource.data.username)
-        && request.resource.data.usernameLower == request.resource.data.username
-        && request.resource.data.displayName is string
-        && request.resource.data.photoURL is string
-        && request.resource.data.privacy.showOnlineStatus is bool
-        && request.resource.data.privacy.showActivity is bool
-        && request.resource.data.privacy.allowFriendRequests is bool
+      allow create: if ((signedIn() && request.auth.uid == uid) || adminUser())
+        && validManagedProfile(request.resource.data)
         && !exists(/databases/$(database)/documents/publicProfiles/$(uid));
-      allow update: if signedIn()
-        && request.auth.uid == uid
-        && validUsername(request.resource.data.username)
-        && request.resource.data.usernameLower == request.resource.data.username
-        && request.resource.data.privacy.showOnlineStatus is bool
-        && request.resource.data.privacy.showActivity is bool
-        && request.resource.data.privacy.allowFriendRequests is bool;
-      allow delete: if signedIn() && request.auth.uid == uid;
+      allow update: if ((signedIn() && request.auth.uid == uid) || adminUser())
+        && validManagedProfile(request.resource.data);
+      allow delete: if (signedIn() && request.auth.uid == uid) || adminUser();
     }
 
     match /usernames/{usernameLower} {
       allow read: if signedIn();
       allow create: if signedIn()
         && validUsername(usernameLower)
-        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.uid is string
+        && (request.resource.data.uid == request.auth.uid || adminUser())
         && !exists(/databases/$(database)/documents/usernames/$(usernameLower));
       allow update, delete: if signedIn()
-        && resource.data.uid == request.auth.uid;
+        && (resource.data.uid == request.auth.uid || adminUser());
+    }
+
+    match /signupCodes/{code} {
+      // Signup can check one high-entropy code by document ID before auth.
+      // Listing the collection is never allowed.
+      allow get: if true;
+      allow list: if false;
+      allow create, update: if adminUser()
+        && request.resource.data.enabled is bool;
+      allow delete: if adminUser()
+        || (signedIn() && resource.data.enabled == true);
     }
 
     match /friendships/{friendshipId} {

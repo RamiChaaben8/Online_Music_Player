@@ -45,16 +45,58 @@ class FirestoreService {
     }, SetOptions(merge: true));
   }
 
-  Future<PublicProfile?> getPublicProfile(String uid) async {
-    final cached = _profileCache[uid];
-    if (cached != null) return cached;
-    final doc = await _db.collection('publicProfiles').doc(uid).get();
-    if (!doc.exists || doc.data() == null) return null;
-    final profile = PublicProfile.fromMap(uid, doc.data()!);
-    _profileCache[uid] = profile;
+  Future<void> updateOwnProfile({
+    required User user,
+    required String displayName,
+    required String photoURL,
+  }) async {
+    final normalizedName = displayName.trim();
+    final normalizedPhotoURL = photoURL.trim();
+    if (normalizedName.isEmpty) {
+      throw const FirestoreProfileException('Display name cannot be empty.');
+    }
+    if (normalizedPhotoURL.isNotEmpty) {
+      final uri = Uri.tryParse(normalizedPhotoURL);
+      if (uri == null ||
+          !uri.hasAuthority ||
+          !['http', 'https'].contains(uri.scheme.toLowerCase())) {
+        throw const FirestoreProfileException(
+            'Image URL must start with http:// or https://.');
+      }
+    }
+
+    await user.updateDisplayName(normalizedName);
+    await user.updatePhotoURL(
+        normalizedPhotoURL.isEmpty ? null : normalizedPhotoURL);
+    final savedPhotoURL = normalizedPhotoURL;
+
+    final profileRef = _db.collection('publicProfiles').doc(user.uid);
+    final profile = await profileRef.get();
+    if (profile.exists) {
+      await profileRef.update({
+        'displayName': normalizedName,
+        'photoURL': savedPhotoURL,
+      });
+    }
+    _profileCache.remove(user.uid);
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('friend_profile_$uid', jsonEncode(profile.toMap()));
-    return profile;
+    await prefs.remove('friend_profile_${user.uid}');
+  }
+
+  Future<PublicProfile?> getPublicProfile(String uid) async {
+    try {
+      final doc = await _db.collection('publicProfiles').doc(uid).get();
+      if (doc.exists && doc.data() != null) {
+        final profile = PublicProfile.fromMap(uid, doc.data()!);
+        _profileCache[uid] = profile;
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('friend_profile_$uid', jsonEncode(profile.toMap()));
+        return profile;
+      }
+    } catch (_) {
+      // Keep showing the last known profile while offline or if the read fails.
+    }
+    return getCachedPublicProfile(uid);
   }
 
   Future<PublicProfile?> getCachedPublicProfile(String uid) async {
@@ -80,6 +122,7 @@ class FirestoreService {
   Future<void> createPublicProfile({
     required User user,
     required String username,
+    String? displayName,
   }) async {
     final normalized = username.trim().toLowerCase();
     if (!usernamePattern.hasMatch(normalized)) {
@@ -107,7 +150,7 @@ class FirestoreService {
     batch.set(profileRef, {
       'username': normalized,
       'usernameLower': normalized,
-      'displayName': user.displayName ?? '',
+      'displayName': displayName?.trim() ?? user.displayName ?? '',
       'photoURL': user.photoURL ?? '',
       'createdAt': FieldValue.serverTimestamp(),
       'privacy': {
@@ -116,6 +159,28 @@ class FirestoreService {
         'allowFriendRequests': true,
       },
     });
+    await batch.commit();
+  }
+
+  Future<void> syncMissingPublicProfileDisplayName(User user) async {
+    final authDisplayName = user.displayName?.trim() ?? '';
+    if (authDisplayName.isEmpty) return;
+    final profileRef = _db.collection('publicProfiles').doc(user.uid);
+    final profile = await profileRef.get();
+    final currentName = profile.data()?['displayName'];
+    if (profile.exists && (currentName is! String || currentName.trim().isEmpty)) {
+      await profileRef.update({'displayName': authDisplayName});
+    }
+  }
+
+  Future<void> deletePublicProfile({
+    required String uid,
+    required String username,
+  }) async {
+    final normalized = username.trim().toLowerCase();
+    final batch = _db.batch();
+    batch.delete(_db.collection('publicProfiles').doc(uid));
+    batch.delete(_db.collection('usernames').doc(normalized));
     await batch.commit();
   }
 
@@ -185,8 +250,7 @@ class FirestoreService {
         final friendship = Friendship.fromMap(doc.id, doc.data());
         final otherUid =
             friendship.members.firstWhere((member) => member != uid);
-        final profile = await getCachedPublicProfile(otherUid) ??
-            await getPublicProfile(otherUid);
+        final profile = await getPublicProfile(otherUid);
         return friendship.copyWith(otherUid: otherUid, profile: profile);
       }));
       return result;
@@ -207,8 +271,7 @@ class FirestoreService {
         return null;
       }
       final otherUid = friendship.members.firstWhere((member) => member != uid);
-      final profile = await getCachedPublicProfile(otherUid) ??
-          await getPublicProfile(otherUid);
+      final profile = await getPublicProfile(otherUid);
       return friendship.copyWith(otherUid: otherUid, profile: profile);
     }));
     result.addAll(hydrated.whereType<Friendship>());
@@ -228,8 +291,7 @@ class FirestoreService {
         }
         final otherUid =
             friendship.members.firstWhere((member) => member != uid);
-        final profile = await getCachedPublicProfile(otherUid) ??
-            await getPublicProfile(otherUid);
+        final profile = await getPublicProfile(otherUid);
         return friendship.copyWith(otherUid: otherUid, profile: profile);
       }));
       return result.whereType<Friendship>().toList();

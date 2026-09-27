@@ -18,8 +18,9 @@ import { useAuthStore } from '../stores/authStore'
 
 // ── Avatar helper ─────────────────────────────────────────────────────────────
 function Avatar({ photoURL, username, size = 40 }) {
+  const [imageFailed, setImageFailed] = useState(false)
   const initials = username ? username.charAt(0).toUpperCase() : '?'
-  if (photoURL) {
+  if (photoURL && !imageFailed) {
     return (
       <img
         src={photoURL}
@@ -31,7 +32,7 @@ function Avatar({ photoURL, username, size = 40 }) {
           objectFit: 'cover',
           flexShrink: 0,
         }}
-        onError={(e) => { e.currentTarget.style.display = 'none' }}
+        onError={() => setImageFailed(true)}
       />
     )
   }

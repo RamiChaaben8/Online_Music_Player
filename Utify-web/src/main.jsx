@@ -1,4 +1,4 @@
-import { StrictMode, useEffect } from 'react'
+import { StrictMode, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import './index.css'
@@ -23,6 +23,37 @@ import LikedSongsView from './pages/LikedSongsView'
 import FriendsView from './pages/FriendsView'
 import FriendProfileView from './pages/FriendProfileView'
 import SettingsPage from './pages/SettingsPage'
+import AdminDashboard from './pages/AdminDashboard'
+
+function AdminGate({ children }) {
+  const user = useAuthStore((s) => s.user)
+  const loading = useAuthStore((s) => s.loading)
+  const [checking, setChecking] = useState(true)
+  const [isAdmin, setIsAdmin] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    if (loading) return () => { active = false }
+    if (!user) {
+      setChecking(false)
+      return () => { active = false }
+    }
+    setChecking(true)
+    user.getIdTokenResult().then((token) => {
+      if (active) setIsAdmin(token.claims.admin === true || token.claims.role === 'admin')
+    }).catch(() => {
+      if (active) setIsAdmin(false)
+    }).finally(() => {
+      if (active) setChecking(false)
+    })
+    return () => { active = false }
+  }, [user, loading])
+
+  if (loading || (user && checking)) return <div style={{ minHeight: '100vh', background: 'var(--color-main)' }} />
+  if (!user) return <Navigate to="/login" replace />
+  if (!isAdmin) return <Navigate to="/" replace />
+  return children
+}
 
 // Root app component — subscribes to auth and initialises library
 function App() {
@@ -47,6 +78,7 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
+        <Route path="/admin" element={<AdminGate><AdminDashboard /></AdminGate>} />
         {/* Public routes — no auth required */}
         <Route path="/login"           element={<LoginPage />} />
         <Route path="/signup"          element={<SignupPage />} />
