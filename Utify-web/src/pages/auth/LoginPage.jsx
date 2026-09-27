@@ -30,7 +30,7 @@ const labelStyle = {
 
 export default function LoginPage() {
   const navigate = useNavigate()
-  const { signInWithEmail, loading, clearError } = useAuthStore()
+  const { signInWithEmail, enterGuest, loading, clearError } = useAuthStore()
 
   async function navigateAfterSignIn() {
     const token = await auth.currentUser?.getIdTokenResult()
@@ -254,6 +254,13 @@ export default function LoginPage() {
             Sign up
           </Link>
         </p>
+        <button
+          type="button"
+          onClick={() => { enterGuest(); navigate('/', { replace: true }) }}
+          style={{ width: '100%', marginTop: 14, padding: 12, borderRadius: 24, border: '1px solid var(--color-highlight-elevated)', background: 'transparent', color: 'var(--color-subtext)', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
+        >
+          Continue as guest
+        </button>
       </div>
     </div>
   )

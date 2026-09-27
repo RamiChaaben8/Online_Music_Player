@@ -121,6 +121,9 @@ class SyncService {
   /// Whether this device is currently the active playback device.
   bool _isActive = false;
   bool get isActive => _isActive;
+  bool _guestMode = false;
+
+  void setGuestMode(bool enabled) => _guestMode = enabled;
 
   String? get deviceId => _deviceId;
   String? get deviceName => _deviceName;
@@ -227,7 +230,19 @@ class SyncService {
     required int positionMs,
     required bool isPlaying,
   }) async {
-    if (_uid == null || _deviceId == null) return;
+    if (_uid == null) {
+      if (_guestMode) {
+        await _saveGuestPlaybackState(
+          currentSong: currentSong,
+          queue: queue,
+          queueIndex: queueIndex,
+          positionMs: positionMs,
+          isPlaying: isPlaying,
+        );
+      }
+      return;
+    }
+    if (_deviceId == null) return;
     await _saveLocalPlaybackState(
       uid: _uid!,
       currentSong: currentSong,
@@ -281,6 +296,41 @@ class SyncService {
   Future<RemoteCommandDoc?> getCachedLastState() async {
     if (_uid == null) return null;
     return getCachedLastStateForUser(_uid!);
+  }
+
+  Future<RemoteCommandDoc?> getCachedGuestLastState() async {
+    final value = Hive.box('settings').get('guest_playback_state');
+    if (value is! Map) return null;
+    try {
+      return RemoteCommandDoc(
+        command: RemoteCommand.none,
+        deviceId: '',
+        deviceName: 'Guest session',
+        currentSong: value['currentSong'] as Song?,
+        queue: (value['queue'] as List?)?.whereType<Song>().toList() ?? const [],
+        queueIndex: (value['queueIndex'] as num?)?.toInt() ?? 0,
+        positionMs: (value['positionMs'] as num?)?.toInt() ?? 0,
+        isPlaying: false,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _saveGuestPlaybackState({
+    required Song? currentSong,
+    required List<Song> queue,
+    required int queueIndex,
+    required int positionMs,
+    required bool isPlaying,
+  }) async {
+    await Hive.box('settings').put('guest_playback_state', {
+      'currentSong': currentSong,
+      'queue': List<Song>.from(queue),
+      'queueIndex': queueIndex,
+      'positionMs': positionMs,
+      'isPlaying': isPlaying,
+    });
   }
 
   Future<RemoteCommandDoc?> getCachedLastStateForUser(String uid) async {

@@ -59,6 +59,7 @@ function fmtDuration(secs) {
 // ── ContextMenu ───────────────────────────────────────────────────────────────
 
 function ContextMenu({ x, y, song, onClose, playlists, uid }) {
+  const isGuest = useAuthStore((s) => s.isGuest)
   const playSong      = usePlayerStore((s) => s.playSong)
   const addToQueue    = usePlayerStore((s) => s.addToQueue)
   const toggleLike    = useLibraryStore((s) => s.toggleLike)
@@ -142,7 +143,7 @@ function ContextMenu({ x, y, song, onClose, playlists, uid }) {
                 key={pl.id}
                 role="menuitem"
                 style={styles.ctxItem}
-                onClick={action(() => uid && addToPlaylist(uid, pl.id, song))}
+                onClick={action(() => (uid || isGuest) && addToPlaylist(uid, pl.id, song))}
               >
                 {pl.name}
               </button>
@@ -156,7 +157,7 @@ function ContextMenu({ x, y, song, onClose, playlists, uid }) {
       <button
         role="menuitem"
         style={styles.ctxItem}
-        onClick={action(() => uid && toggleLike(uid, song))}
+        onClick={action(() => (uid || isGuest) && toggleLike(uid, song))}
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill={liked ? 'var(--color-button)' : 'none'} stroke={liked ? 'var(--color-button)' : 'currentColor'} strokeWidth="2" aria-hidden="true">
           <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />

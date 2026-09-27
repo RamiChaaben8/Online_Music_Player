@@ -17,6 +17,7 @@ import '../../providers/sync_provider.dart';
 import '../../providers/presence_provider.dart';
 import '../../providers/youtube_provider.dart';
 import '../../providers/friends_provider.dart';
+import '../../providers/guest_session_provider.dart';
 import '../../services/firestore_service.dart';
 import '../home/desktop_home_view.dart';
 import '../now_playing/desktop_now_playing_panel.dart';
@@ -162,6 +163,28 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
   }
 
   Future<void> _showAccountMenu() async {
+    if (ref.read(guestSessionProvider)) {
+      final shouldSignIn = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Guest mode'),
+          content: const Text(
+              'Would you like to leave guest mode and go to the sign-in page?'),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Stay as guest')),
+            FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('Go to sign in')),
+          ],
+        ),
+      );
+      if (shouldSignIn == true) {
+        await ref.read(guestSessionProvider.notifier).leaveGuest();
+      }
+      return;
+    }
     final user = ref.read(authServiceProvider).currentUser;
     final action = await showDialog<_AccountAction>(
       context: context,
@@ -377,6 +400,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
       TaskbarControls.instance.updatePlayState(next.isPlaying);
     });
     final panelMode = ref.watch(panelModeProvider);
+    final guestMode = ref.watch(guestSessionProvider);
 
     return Scaffold(
       backgroundColor: context.appTheme.main,
@@ -405,7 +429,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
                 // so we only need to navigate here.
                 onNavigateToSearch: (q) => _navigateTo(1),
                 onProfileTap: _showAccountMenu,
-                onFriendsTap: () => _navigateTo(3),
+                onFriendsTap: guestMode ? null : () => _navigateTo(3),
               ),
 
               // ── Main content row ──────────────────────────────────

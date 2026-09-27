@@ -25,8 +25,14 @@ import FriendProfileView from './pages/FriendProfileView'
 import SettingsPage from './pages/SettingsPage'
 import AdminDashboard from './pages/AdminDashboard'
 
+function AccountOnly({ children }) {
+  const isGuest = useAuthStore((s) => s.isGuest)
+  return isGuest ? <Navigate to="/" replace /> : children
+}
+
 function AdminGate({ children }) {
   const user = useAuthStore((s) => s.user)
+  const isGuest = useAuthStore((s) => s.isGuest)
   const loading = useAuthStore((s) => s.loading)
   const [checking, setChecking] = useState(true)
   const [isAdmin, setIsAdmin] = useState(false)
@@ -34,8 +40,9 @@ function AdminGate({ children }) {
   useEffect(() => {
     let active = true
     if (loading) return () => { active = false }
-    if (!user) {
+    if (!user || isGuest) {
       setChecking(false)
+      setIsAdmin(false)
       return () => { active = false }
     }
     setChecking(true)
@@ -47,17 +54,17 @@ function AdminGate({ children }) {
       if (active) setChecking(false)
     })
     return () => { active = false }
-  }, [user, loading])
+  }, [user, loading, isGuest])
 
   if (loading || (user && checking)) return <div style={{ minHeight: '100vh', background: 'var(--color-main)' }} />
-  if (!user) return <Navigate to="/login" replace />
+  if (!user || isGuest) return <Navigate to={isGuest ? '/' : '/login'} replace />
   if (!isAdmin) return <Navigate to="/" replace />
   return children
 }
 
 // Root app component — subscribes to auth and initialises library
 function App() {
-  const { init: initAuth, user } = useAuthStore()
+  const { init: initAuth, user, isGuest } = useAuthStore()
   const { init: initLibrary, destroy: destroyLibrary } = useLibraryStore()
 
   // Subscribe to Firebase auth state once on mount
@@ -68,12 +75,14 @@ function App() {
 
   // When user changes, subscribe/unsubscribe library Firestore listeners
   useEffect(() => {
-    if (user?.uid) {
+    if (isGuest) {
+      initLibrary(null)
+    } else if (user?.uid) {
       initLibrary(user.uid)
     } else {
       destroyLibrary()
     }
-  }, [user?.uid, initLibrary, destroyLibrary])
+  }, [user?.uid, isGuest, initLibrary, destroyLibrary])
 
   return (
     <BrowserRouter>
@@ -97,9 +106,9 @@ function App() {
           <Route path="search"          element={<SearchView />} />
           <Route path="playlist/:id"    element={<PlaylistView />} />
           <Route path="liked-songs"     element={<LikedSongsView />} />
-          <Route path="friends"         element={<FriendsView />} />
-          <Route path="friends/:uid"    element={<FriendProfileView />} />
-          <Route path="settings"        element={<SettingsPage />} />
+          <Route path="friends"         element={<AccountOnly><FriendsView /></AccountOnly>} />
+          <Route path="friends/:uid"    element={<AccountOnly><FriendProfileView /></AccountOnly>} />
+          <Route path="settings"        element={<AccountOnly><SettingsPage /></AccountOnly>} />
         </Route>
 
         {/* Catch-all */}

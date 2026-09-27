@@ -214,6 +214,7 @@ function EmptyState() {
 // ── Main LikedSongsView ───────────────────────────────────────────────────────
 export default function LikedSongsView() {
   const user = useAuthStore((s) => s.user)
+  const isGuest = useAuthStore((s) => s.isGuest)
   const likedSongs = useLibraryStore((s) => s.likedSongs)
   const toggleLike = useLibraryStore((s) => s.toggleLike)
   const playQueue = usePlayerStore((s) => s.playQueue)
@@ -236,10 +237,10 @@ export default function LikedSongsView() {
   }, [likedSongs, playQueue])
 
   const handleUnlike = useCallback((songId) => {
-    if (!user?.uid) return
+    if (!user || (!user.uid && !isGuest)) return
     const song = likedSongs.find((s) => s.id === songId)
     if (song) toggleLike(user.uid, song)
-  }, [user?.uid, likedSongs, toggleLike])
+  }, [user, isGuest, likedSongs, toggleLike])
 
   return (
     <div

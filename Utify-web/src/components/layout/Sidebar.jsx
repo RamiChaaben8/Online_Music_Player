@@ -129,6 +129,7 @@ function Tooltip({ label, children }) {
 
 function ContextMenu({ x, y, playlist, onClose, onRename, onInvite }) {
   const { user }                  = useAuthStore()
+  const isGuest = useAuthStore((s) => s.isGuest)
   const { deletePlaylist }        = useLibraryStore()
   const { addToQueue }            = usePlayerStore()
   const menuRef                   = useRef(null)
@@ -243,7 +244,7 @@ function ContextMenu({ x, y, playlist, onClose, onRename, onInvite }) {
         Rename
       </button>
 
-      <button
+      {!isGuest && <button
         type="button"
         role="menuitem"
         style={itemStyle()}
@@ -252,7 +253,7 @@ function ContextMenu({ x, y, playlist, onClose, onRename, onInvite }) {
       >
         <UserPlus size={15} style={{ color: 'var(--color-subtext)', flexShrink: 0 }} />
         Invite Collaborator
-      </button>
+      </button>}
 
       {/* Divider */}
       <div style={{ height: 1, background: 'var(--color-highlight)', margin: '3px 4px' }} />

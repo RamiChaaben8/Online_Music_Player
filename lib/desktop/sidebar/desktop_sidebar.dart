@@ -16,6 +16,7 @@ import '../../providers/library_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/firestore_service.dart';
 import '../../providers/player_provider.dart';
+import '../../providers/guest_session_provider.dart';
 import '../theme/desktop_theme.dart';
 import '../widgets/invite_collaborator_dialog.dart';
 import '../../widgets/import_playlist_dialog.dart';
@@ -455,7 +456,7 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
               ],
               onChanged: (value) => visibility = value ?? 'private',
             ),
-            StatefulBuilder(
+            if (!ref.read(guestSessionProvider)) StatefulBuilder(
               builder: (context, setDialogState) => CheckboxListTile(
                 contentPadding: EdgeInsets.zero,
                 value: collaborative,
@@ -1045,7 +1046,7 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
             Icons.folder_off_outlined,
             'Remove from folder',
           ),
-        if (isOwner)
+        if (isOwner && !ref.read(guestSessionProvider))
           _menuItem(
             widget.playlist.sharedId == null
                 ? _PlaylistAction.collaborate

@@ -20,6 +20,7 @@ import '../models/song.dart';
 import '../providers/home_provider.dart';
 import '../providers/library_provider.dart';
 import '../providers/player_provider.dart';
+import '../providers/guest_session_provider.dart';
 import 'now_playing_screen.dart';
 import '../widgets/profile_avatar.dart';
 import '../widgets/listen_party_controls.dart';
@@ -30,6 +31,7 @@ class HomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final homeState = ref.watch(homeProvider);
+    final isGuest = ref.watch(guestSessionProvider);
     final library = ref.watch(libraryProvider);
     final recent = library.recentlyPlayed;
 
@@ -53,7 +55,7 @@ class HomeScreen extends ConsumerWidget {
                     children: [
                       const ProfileAvatar(),
                       const Spacer(),
-                      const PartyInviteButton(),
+                      if (!isGuest) const PartyInviteButton(),
                     ],
                   ),
                 ),

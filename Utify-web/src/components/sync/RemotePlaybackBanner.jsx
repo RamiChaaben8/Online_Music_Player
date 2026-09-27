@@ -18,9 +18,10 @@ import { useAuthStore } from '../../stores/authStore'
 
 export default function RemotePlaybackBanner() {
   const user = useAuthStore((s) => s.user)
+  const isGuest = useAuthStore((s) => s.isGuest)
 
   // Only render anything when the user is signed in
-  if (!user) return null
+  if (!user || isGuest) return null
 
   return <BannerInner />
 }

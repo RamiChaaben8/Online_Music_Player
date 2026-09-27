@@ -49,7 +49,7 @@ import('../stores/playerStore').then(({ _initSyncBridge }) => {
     // sendCmdFn — called with (action, extra?)
     (action, extra) => {
       const uid = useAuthStore.getState().user?.uid
-      if (!uid) return
+      if (!uid || useAuthStore.getState().isGuest) return
       const cmd = action === 'play_pause'
         ? (extra ? 'play' : 'pause')
         : action  // 'next' | 'prev' | 'playSong' | 'seek'
@@ -105,6 +105,7 @@ export const useSyncStore = create((set) => ({
 
 export function useSyncSession() {
   const user       = useAuthStore((s) => s.user)
+  const isGuest    = useAuthStore((s) => s.isGuest)
   const { deviceId, deviceName, setActiveDevice, setAllDevices } = useSyncStore()
 
   const activeDevice       = useSyncStore((s) => s.activeDevice)
@@ -140,16 +141,20 @@ export function useSyncSession() {
   // ── Save playback state to Firestore ──────────────────────────────────────
   const saveState = useCallback(async (cmd = 'none') => {
     if (!user) return
+    if (isGuest) {
+      localStorage.setItem('utify_guest_playback_v1', JSON.stringify(buildStatePayload(cmd)))
+      return
+    }
     try {
       await savePlaybackState(user.uid, buildStatePayload(cmd))
     } catch (err) {
       console.warn('[useSyncSession] saveState failed:', err)
     }
-  }, [user, buildStatePayload])
+  }, [user, isGuest, buildStatePayload])
 
   // ── Claim this device as active ───────────────────────────────────────────
   const claimDevice = useCallback(async () => {
-    if (!user) return
+    if (!user || isGuest) return
     try {
       await claimActiveDevice(user.uid, deviceId)
       // Save our current state so other devices see the new active device's state
@@ -157,10 +162,25 @@ export function useSyncSession() {
     } catch (err) {
       console.warn('[useSyncSession] claimDevice failed:', err)
     }
-  }, [user, deviceId, saveState])
+  }, [user, isGuest, deviceId, saveState])
 
   // ── Init ──────────────────────────────────────────────────────────────────
   useEffect(() => {
+    if (isGuest) {
+      initializedRef.current = false
+      try {
+        const state = JSON.parse(localStorage.getItem('utify_guest_playback_v1') || 'null')
+        if (state?.songData) {
+          usePlayerStore.getState().restoreSession(
+            state.songData,
+            state.queueData ?? [state.songData],
+            state.queueIndex ?? 0,
+            state.position ?? 0,
+          )
+        }
+      } catch {}
+      return
+    }
     if (!user || initializedRef.current) return
     initializedRef.current = true
 
@@ -267,7 +287,27 @@ export function useSyncSession() {
         releaseDevice(uid, deviceId).catch(() => {})
       }
     }
-  }, [user?.uid]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [user?.uid, isGuest]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const guestSong = usePlayerStore((s) => s.currentSong)
+  const guestQueue = usePlayerStore((s) => s.queue)
+  const guestQueueIndex = usePlayerStore((s) => s.queueIndex)
+  const guestPosition = usePlayerStore((s) => s.position)
+  const guestPlaying = usePlayerStore((s) => s.playing)
+  const guestShuffle = usePlayerStore((s) => s.shuffle)
+  const guestRepeat = usePlayerStore((s) => s.repeat)
+  useEffect(() => {
+    if (!isGuest || !guestSong) return
+    localStorage.setItem('utify_guest_playback_v1', JSON.stringify({
+      songData: guestSong,
+      queueData: guestQueue,
+      queueIndex: guestQueueIndex,
+      position: guestPosition,
+      playing: guestPlaying,
+      shuffle: guestShuffle,
+      repeat: guestRepeat,
+    }))
+  }, [isGuest, guestSong, guestQueue, guestQueueIndex, guestPosition, guestPlaying, guestShuffle, guestRepeat])
 
   // ── Watch: auto-start when THIS device becomes active ────────────────────
   // When activeDevice changes from someone-else to THIS device, start playing
@@ -279,7 +319,7 @@ export function useSyncSession() {
     const isNowMe = activeDeviceId === deviceId
     const wasSomeoneElse = prev !== null && prev !== deviceId
     // Just became active (transitioned from another device or null to this device)
-    if (isNowMe && wasSomeoneElse && user) {
+    if (isNowMe && wasSomeoneElse && user && !isGuest) {
       // Resume playback — position was already synced by subscribeToPlaybackState
       const ps = usePlayerStore.getState()
       if (ps.currentSong) {
@@ -287,39 +327,39 @@ export function useSyncSession() {
       }
     }
     prevActiveRef.current = activeDeviceId
-  }, [activeDeviceId, deviceId, user])
+  }, [activeDeviceId, deviceId, user, isGuest])
 
   // ── Watch: save on pause/resume ───────────────────────────────────────────
   const playing = usePlayerStore((s) => s.playing)
   useEffect(() => {
-    if (!user || !isThisDeviceActive) return
+    if (!user || (!isGuest && !isThisDeviceActive)) return
     if (prevPlayingRef.current === null) { prevPlayingRef.current = playing; return }
     if (prevPlayingRef.current !== playing) {
       prevPlayingRef.current = playing
       saveState(playing ? 'play' : 'pause')
     }
-  }, [playing, user, isThisDeviceActive, saveState])
+  }, [playing, user, isGuest, isThisDeviceActive, saveState])
 
   // ── Watch: save on track change ───────────────────────────────────────────
   const currentSong = usePlayerStore((s) => s.currentSong)
   useEffect(() => {
-    if (!user || !isThisDeviceActive || !currentSong) return
+    if (!user || (!isGuest && !isThisDeviceActive) || !currentSong) return
     if (prevSongIdRef.current && prevSongIdRef.current !== currentSong.id) {
       saveState('playSong')
     }
     prevSongIdRef.current = currentSong?.id ?? null
-  }, [currentSong?.id, user, isThisDeviceActive, saveState]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [currentSong?.id, user, isGuest, isThisDeviceActive, saveState]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Watch: save on seek ───────────────────────────────────────────────────
   const position = usePlayerStore((s) => s.position)
   useEffect(() => {
-    if (!user || !isThisDeviceActive) return
+    if (!user || (!isGuest && !isThisDeviceActive)) return
     if (prevPositionRef.current !== null) {
       const delta = Math.abs(position - prevPositionRef.current)
       if (delta > 3) saveState('seek')
     }
     prevPositionRef.current = position
-  }, [position, user, isThisDeviceActive, saveState])
+  }, [position, user, isGuest, isThisDeviceActive, saveState])
 
   return { activeDevice, isThisDeviceActive, claimDevice }
 }
@@ -328,15 +368,16 @@ export function useSyncSession() {
 
 export function useRemotePlayback() {
   const user       = useAuthStore((s) => s.user)
+  const isGuest    = useAuthStore((s) => s.isGuest)
   const allDevices = useSyncStore((s) => s.allDevices)
   const deviceId   = useSyncStore((s) => s.deviceId)
 
-  const remoteDevice = allDevices.find(
+  const remoteDevice = isGuest ? null : allDevices.find(
     (d) => d.isActive && d.id !== deviceId
   ) ?? null
 
   const claimHere = useCallback(async () => {
-    if (!user) return
+    if (!user || isGuest) return
     try {
       // 1. Read current synced position from Firestore so we resume at the right place
       const currentState = await loadPlaybackState(user.uid)
@@ -382,7 +423,7 @@ export function useRemotePlayback() {
     } catch (err) {
       console.warn('[useRemotePlayback] claimHere failed:', err)
     }
-  }, [user, deviceId])
+  }, [user, isGuest, deviceId])
 
   return { remoteDevice, claimHere }
 }

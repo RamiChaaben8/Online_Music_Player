@@ -14,9 +14,38 @@ import '../models/playlist.dart';
 
 class LibraryService {
   // Hive boxes (opened in main.dart)
-  Box<Song> get _likedBox => Hive.box<Song>('liked_songs');
-  Box<Song> get _recentBox => Hive.box<Song>('recently_played');
-  Box<Playlist> get _playlistsBox => Hive.box<Playlist>('playlists');
+  static bool _guestMode = false;
+
+  static void setGuestMode(bool enabled) => _guestMode = enabled;
+
+  Box<Song> get _likedBox => Hive.box<Song>(
+      _guestMode ? 'guest_liked_songs' : 'liked_songs');
+  Box<Song> get _recentBox => Hive.box<Song>(
+      _guestMode ? 'guest_recently_played' : 'recently_played');
+  Box<Playlist> get _playlistsBox => Hive.box<Playlist>(
+      _guestMode ? 'guest_playlists' : 'playlists');
+  Box<dynamic> get _settingsBox => Hive.box<dynamic>('settings');
+
+  String get _foldersKey => _guestMode ? 'guest_folders' : 'local_folders';
+
+  List<String> getFolders() =>
+      (_settingsBox.get(_foldersKey) as List?)?.cast<String>().toList() ??
+          <String>[];
+
+  Future<void> addFolder(String name) async {
+    final folders = getFolders().toSet()..add(name);
+    await _settingsBox.put(_foldersKey, folders.toList());
+  }
+
+  Future<void> renameFolder(String oldName, String newName) async {
+    final folders = getFolders().map((name) => name == oldName ? newName : name).toSet();
+    await _settingsBox.put(_foldersKey, folders.toList());
+  }
+
+  Future<void> deleteFolder(String name) async {
+    final folders = getFolders()..remove(name);
+    await _settingsBox.put(_foldersKey, folders);
+  }
 
   /// Exposed for FirestoreService sync (mirrors server-side likes to local cache).
   Box<Song> get likedBox => _likedBox;

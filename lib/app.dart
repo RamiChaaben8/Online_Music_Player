@@ -22,6 +22,7 @@ import 'providers/sync_provider.dart';
 import 'providers/presence_provider.dart';
 import 'providers/library_provider.dart';
 import 'providers/listen_party_provider.dart';
+import 'providers/guest_session_provider.dart';
 import 'platform/permissions.dart';
 import 'desktop/shell/desktop_shell.dart';
 import 'desktop/theme/desktop_theme.dart';
@@ -389,6 +390,7 @@ class _AppShellState extends ConsumerState<AppShell>
 
   // ── Create bottom sheet ──────────────────────────────────────────────────
   void _showCreateSheet() {
+    final isGuest = ref.read(guestSessionProvider);
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF282828),
@@ -396,6 +398,7 @@ class _AppShellState extends ConsumerState<AppShell>
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (_) => _CreateBottomSheet(
+        showParty: !isGuest,
         onCreatePlaylist: () {
           Navigator.pop(context);
           // Switch to Library tab first, then show dialog
@@ -416,6 +419,7 @@ class _AppShellState extends ConsumerState<AppShell>
     final controller = TextEditingController();
     var visibility = 'private';
     var collaborative = false;
+    final isGuest = ref.read(guestSessionProvider);
     showDialog(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
@@ -446,7 +450,7 @@ class _AppShellState extends ConsumerState<AppShell>
                     .toList(),
                 onChanged: (v) => setState(() => visibility = v ?? 'private'),
               ),
-              CheckboxListTile(
+              if (!isGuest) CheckboxListTile(
                 contentPadding: EdgeInsets.zero,
                 value: collaborative,
                 title: const Text('Collaborative',
@@ -585,13 +589,17 @@ class _AppShellState extends ConsumerState<AppShell>
     final hasSong = ref.watch(
       playerProvider.select((playerState) => playerState.currentSong != null),
     );
+    final isGuest = ref.watch(guestSessionProvider);
+    final screens = isGuest
+        ? _screens.take(3).toList()
+        : _screens;
 
     return Scaffold(
       body: Stack(
         children: [
           IndexedStack(
             index: _currentIndex,
-            children: _screens,
+            children: screens,
           ),
           const Positioned(
             top: 0,
@@ -617,8 +625,9 @@ class _AppShellState extends ConsumerState<AppShell>
           if (hasSong) const MiniPlayer(),
           _SpotifyBottomNav(
             currentIndex: _currentIndex,
+            guestMode: isGuest,
             onTap: (i) {
-              if (i == 4) {
+              if (i == (isGuest ? 3 : 4)) {
                 // Create — open bottom sheet
                 _showCreateSheet();
               } else {
@@ -636,16 +645,18 @@ class _AppShellState extends ConsumerState<AppShell>
 
 class _SpotifyBottomNav extends StatelessWidget {
   final int currentIndex;
+  final bool guestMode;
   final void Function(int) onTap;
 
   const _SpotifyBottomNav({
     required this.currentIndex,
+    required this.guestMode,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final items = [
+    final items = <_NavItem>[
       _NavItem(
           icon: Icons.home_outlined, activeIcon: Icons.home, label: 'Home'),
       _NavItem(
@@ -656,7 +667,8 @@ class _SpotifyBottomNav extends StatelessWidget {
           icon: Icons.library_music_outlined,
           activeIcon: Icons.library_music,
           label: 'Your Library'),
-      _NavItem(
+      if (!guestMode)
+        _NavItem(
           icon: Icons.people_outline,
           activeIcon: Icons.people,
           label: 'Friends'),
@@ -740,10 +752,12 @@ class _NavItem {
 class _CreateBottomSheet extends StatelessWidget {
   final VoidCallback onCreatePlaylist;
   final VoidCallback onCreateParty;
+  final bool showParty;
 
   const _CreateBottomSheet({
     required this.onCreatePlaylist,
     required this.onCreateParty,
+    required this.showParty,
   });
 
   @override
@@ -794,7 +808,7 @@ class _CreateBottomSheet extends StatelessWidget {
             ),
 
             // Party option
-            ListTile(
+            if (showParty) ListTile(
               contentPadding:
                   const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
               leading: Container(

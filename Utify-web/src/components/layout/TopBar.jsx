@@ -525,6 +525,8 @@ function AvatarButton({ onClick, buttonRef }) {
 
 export default function TopBar() {
   const navigate          = useNavigate()
+  const isGuest = useAuthStore((s) => s.isGuest)
+  const leaveGuest = useAuthStore((s) => s.leaveGuest)
   const { canGoBack, canGoForward, goBack, goForward } = useNavigationContext()
 
   // Search state
@@ -548,6 +550,17 @@ export default function TopBar() {
     setSearchValue('')
     searchRef.current?.focus()
   }, [])
+
+  const handleProfileClick = async () => {
+    if (isGuest) {
+      if (window.confirm('Leave guest mode and go to the sign-in page?')) {
+        leaveGuest()
+        navigate('/login', { replace: true })
+      }
+      return
+    }
+    setDropdownOpen((value) => !value)
+  }
 
   const handleSearchKeyDown = useCallback((e) => {
     if (e.key === 'Enter' && searchValue.trim()) {
@@ -738,7 +751,7 @@ export default function TopBar() {
       <div style={{ position: 'relative', flexShrink: 0 }}>
         <AvatarButton
           buttonRef={avatarBtnRef}
-          onClick={() => setDropdownOpen((v) => !v)}
+          onClick={handleProfileClick}
         />
         {dropdownOpen && (
           <ProfileDropdown

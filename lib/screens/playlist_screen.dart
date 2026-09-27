@@ -12,6 +12,7 @@ import '../providers/auth_provider.dart';
 import '../providers/player_provider.dart';
 import '../providers/download_provider.dart';
 import '../providers/library_provider.dart';
+import '../providers/guest_session_provider.dart';
 import '../services/firestore_service.dart';
 import '../screens/library_screen.dart';
 import '../screens/now_playing_screen.dart';
@@ -191,7 +192,7 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
                 _showVisibilityMenu(playlist);
               },
             ),
-            if (isOwner)
+            if (isOwner && !ref.read(guestSessionProvider))
               ListTile(
               leading:
                   const Icon(Icons.group_add_outlined, color: Colors.white),

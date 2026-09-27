@@ -11,6 +11,7 @@ import 'dart:async';
 import '../../models/song.dart';
 import '../../providers/player_provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/guest_session_provider.dart';
 import '../../providers/search_history_provider.dart';
 import '../../providers/youtube_provider.dart';
 import '../theme/desktop_theme.dart';
@@ -186,6 +187,7 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
 
   @override
   Widget build(BuildContext context) {
+    final guestMode = ref.watch(guestSessionProvider);
     final theme = context.appTheme;
     final currentUser = ref.watch(authStateProvider).asData?.value;
 
@@ -232,15 +234,17 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
           ),
 
           // ── Right: party invite + friends + avatar ─────────────────────
-          const PartyInviteButton(),
-          SizedBox(width: 4),
-          _iconBtn(
-            Icons.people_outline,
-            color: widget.currentView == 3 ? theme.accent : theme.textSecondary,
-            onPressed: widget.onFriendsTap,
-            tooltip: 'Friends',
-          ),
-          SizedBox(width: 8),
+          if (!guestMode) ...[
+            const PartyInviteButton(),
+            SizedBox(width: 4),
+            _iconBtn(
+              Icons.people_outline,
+              color: widget.currentView == 3 ? theme.accent : theme.textSecondary,
+              onPressed: widget.onFriendsTap,
+              tooltip: 'Friends',
+            ),
+            SizedBox(width: 8),
+          ],
           Tooltip(
             message: 'Edit profile and account',
             child: InkWell(

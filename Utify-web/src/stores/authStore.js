@@ -27,16 +27,41 @@ const friendlyMessage = (code) => {
   return map[code] || 'Authentication failed. Please try again.'
 }
 
+const guestModeKey = 'utify_guest_session_active'
+const guestUser = { uid: null, displayName: 'Guest', email: null, photoURL: null, isGuest: true }
+const savedGuestMode = () => {
+  try { return localStorage.getItem(guestModeKey) === 'true' } catch { return false }
+}
+
 export const useAuthStore = create((set, get) => ({
-  user: null,
+  user: savedGuestMode() ? guestUser : null,
+  isGuest: savedGuestMode(),
   loading: true,
   error: null,
 
   // Called once from main.jsx to subscribe to auth state
   init() {
     return onAuthStateChanged(auth, (user) => {
-      set({ user, loading: false })
+      if (user) {
+        localStorage.removeItem(guestModeKey)
+        set({ user, isGuest: false, loading: false })
+      } else if (savedGuestMode()) {
+        set({ user: guestUser, isGuest: true, loading: false })
+      } else {
+        set({ user: null, isGuest: false, loading: false })
+      }
     })
+  },
+
+  async enterGuest() {
+    await signOut(auth).catch(() => {})
+    localStorage.setItem(guestModeKey, 'true')
+    set({ user: guestUser, isGuest: true, loading: false, error: null })
+  },
+
+  leaveGuest() {
+    localStorage.removeItem(guestModeKey)
+    set({ user: null, isGuest: false, loading: false })
   },
 
   async signInWithEmail(email, password) {

@@ -71,6 +71,7 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
       likedSongs: _hive.getLikedSongs(),
       recentlyPlayed: _hive.getRecentlyPlayed(),
       playlists: _hive.getPlaylists(),
+      folders: _hive.getFolders(),
     );
   }
 
@@ -78,6 +79,7 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
 
   void initForUser(String uid) {
     if (_uid == uid) return;
+    LibraryService.setGuestMode(false);
     _uid = uid;
     // Do not keep the unauthenticated Hive cache visible while the account
     // streams are loading. Those local-only objects can be stale ghosts from
@@ -112,6 +114,23 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     _fs.ensurePlaylistVisibilityDefaults(uid).catchError((_) {});
   }
 
+  void initForGuest() {
+    if (_uid == null) {
+      LibraryService.setGuestMode(true);
+      _loadLocal();
+      return;
+    }
+    _playlistsSub?.cancel();
+    _sharedPlaylistsSub?.cancel();
+    _foldersSub?.cancel();
+    _likesSub?.cancel();
+    _uid = null;
+    _ownedPlaylists = const [];
+    _sharedPlaylists = const [];
+    LibraryService.setGuestMode(true);
+    _loadLocal();
+  }
+
   List<Playlist> _mergePlaylists() {
     final merged = <Playlist>[];
     final seenShared = <String>{};
@@ -139,6 +158,7 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     _ownedPlaylists = const [];
     _sharedPlaylists = const [];
     _uid = null;
+    LibraryService.setGuestMode(false);
     _loadLocal();
   }
 
@@ -291,13 +311,26 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
   }
 
   Future<void> createFolder(String name) async {
-    if (_uid == null || name.trim().isEmpty) return;
+    if (name.trim().isEmpty) return;
+    if (_uid == null) {
+      await _hive.addFolder(name.trim());
+      state = state.copyWith(folders: _hive.getFolders());
+      return;
+    }
     await _fs.createFolder(_uid!, name.trim());
   }
 
   Future<void> renameFolder(String oldName, String newName) async {
     final next = newName.trim();
-    if (_uid == null || next.isEmpty || oldName == next) return;
+    if (next.isEmpty || oldName == next) return;
+    if (_uid == null) {
+      await _hive.renameFolder(oldName, next);
+      state = state.copyWith(folders: _hive.getFolders());
+      for (final playlist in state.playlists.where((p) => p.folderId == oldName)) {
+        await organizePlaylist(playlist, folderId: next, changeFolder: true);
+      }
+      return;
+    }
     await _fs.renameFolder(_uid!, oldName, next);
     for (final playlist
         in state.playlists.where((p) => p.folderId == oldName)) {
@@ -306,7 +339,15 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
   }
 
   Future<void> deleteFolder(String name) async {
-    if (_uid == null) return;
+    if (_uid == null) {
+      await _hive.deleteFolder(name);
+      state = state.copyWith(folders: _hive.getFolders());
+      final affected = state.playlists.where((p) => p.folderId == name).toList();
+      for (final playlist in affected) {
+        await organizePlaylist(playlist, folderId: null, changeFolder: true);
+      }
+      return;
+    }
     await _fs.deleteFolder(_uid!, name);
     final affected =
         state.playlists.where((playlist) => playlist.folderId == name).toList();

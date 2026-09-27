@@ -8,6 +8,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'dart:io';
 
@@ -21,6 +22,7 @@ import 'services/library_service.dart';
 import 'services/audio_player_service.dart';
 import 'services/audio_handler.dart';
 import 'providers/player_provider.dart';
+import 'providers/guest_session_provider.dart';
 import 'desktop/theme/app_theme.dart';
 
 /// Global handler — initialised once in main(), shared via provider.
@@ -35,6 +37,9 @@ Future<void> _initializeHive() async {
     Hive.openBox<Song>('liked_songs'),
     Hive.openBox<Song>('recently_played'),
     Hive.openBox<Playlist>('playlists'),
+    Hive.openBox<Song>('guest_liked_songs'),
+    Hive.openBox<Song>('guest_recently_played'),
+    Hive.openBox<Playlist>('guest_playlists'),
     Hive.openBox('settings'),
     Hive.openBox('stream_url_cache'),
   ]);
@@ -59,6 +64,9 @@ Future<void> main() async {
   );
 
   await hiveInit;
+  final preferences = await SharedPreferences.getInstance();
+  final guestMode = preferences.getBool('guest_session_active') ?? false;
+  LibraryService.setGuestMode(guestMode);
   if (Platform.isWindows) {
     await AppThemeNotifier.restoreSavedTheme();
   }
@@ -127,6 +135,9 @@ Future<void> main() async {
       // Give every provider in the tree the same handler instance that
       // audio_service registered — this is how playerProvider gets it.
       audioHandlerProvider.overrideWithValue(audioHandler),
+      guestSessionProvider.overrideWith(
+        (ref) => GuestSessionNotifier(guestMode),
+      ),
     ],
     child: const TuneifyApp(),
   ));

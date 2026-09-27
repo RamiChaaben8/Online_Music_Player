@@ -812,6 +812,11 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     }
   }
 
+  Future<void> restoreGuestSession() async {
+    final doc = await _sync.service.getCachedGuestLastState();
+    if (doc != null) _applyRestoredState(doc, loadAudio: false);
+  }
+
   void toggleLoopMode() {
     _service.toggleLoopMode();
     state = state.copyWith(loopMode: _service.loopMode);

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../providers/auth_provider.dart';
+import '../../providers/guest_session_provider.dart';
 import 'signup_screen.dart';
 import 'forgot_password_screen.dart';
 
@@ -205,6 +206,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                   fontWeight: FontWeight.w600)),
                         ),
                       ],
+                    ),
+                    const SizedBox(height: 8),
+                    TextButton.icon(
+                      onPressed: isLoading
+                          ? null
+                          : () async {
+                              await ref
+                                  .read(guestSessionProvider.notifier)
+                                  .enterGuest();
+                            },
+                      icon: const Icon(Icons.person_outline),
+                      label: const Text('Continue as guest'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFFB3B3B3),
+                      ),
                     ),
                   ],
                 ),

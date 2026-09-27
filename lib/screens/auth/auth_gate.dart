@@ -18,6 +18,7 @@ import '../../providers/player_provider.dart';
 import '../../providers/sync_provider.dart';
 import '../../providers/presence_provider.dart';
 import '../../providers/friends_provider.dart';
+import '../../providers/guest_session_provider.dart';
 import '../../widgets/migration_dialog.dart';
 import '../profile_setup_screen.dart';
 import 'login_screen.dart';
@@ -25,6 +26,7 @@ import 'login_screen.dart';
 class AuthGate extends ConsumerWidget {
   final Widget child;
   static final Set<String> _initializingUsers = <String>{};
+  static bool _guestInitialized = false;
 
   const AuthGate({super.key, required this.child});
 
@@ -32,6 +34,7 @@ class AuthGate extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final authAsync = ref.watch(authStateProvider);
     final authIsLoading = ref.watch(authNotifierProvider).isLoading;
+    final guestMode = ref.watch(guestSessionProvider);
 
     return authAsync.when(
       loading: () => const _SplashScreen(),
@@ -65,6 +68,22 @@ class AuthGate extends ConsumerWidget {
         }
 
         if (user == null) {
+          if (guestMode) {
+            if (!_guestInitialized) {
+              _guestInitialized = true;
+              WidgetsBinding.instance.addPostFrameCallback((_) async {
+                if (!context.mounted || !ref.read(guestSessionProvider)) return;
+                ref.read(presenceProvider.notifier).stop();
+                ref.read(syncProvider.notifier).reset();
+                ref.read(syncProvider.notifier).service.setGuestMode(true);
+                ref.read(friendsProvider.notifier).reset();
+                ref.read(libraryProvider.notifier).initForGuest();
+                await ref.read(playerProvider.notifier).restoreGuestSession();
+              });
+            }
+            return child;
+          }
+          _guestInitialized = false;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             ref.read(presenceProvider.notifier).stop();
             ref.read(libraryProvider.notifier).resetForLogout();
@@ -77,6 +96,7 @@ class AuthGate extends ConsumerWidget {
           return const LoginScreen();
         }
 
+        _guestInitialized = false;
         WidgetsBinding.instance.addPostFrameCallback((_) async {
           // Prevent re-initialising on every rebuild (e.g. keyboard popups, resizes)
           final syncState = ref.read(syncProvider);
@@ -86,6 +106,7 @@ class AuthGate extends ConsumerWidget {
           }
 
           try {
+            ref.read(syncProvider.notifier).service.setGuestMode(false);
             ref.read(libraryProvider.notifier).initForUser(user.uid);
             await ref
                 .read(playerProvider.notifier)

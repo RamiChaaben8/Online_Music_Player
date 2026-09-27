@@ -50,6 +50,7 @@ function totalDuration(songs) {
 // ── ContextMenu (track-level) ─────────────────────────────────────────────────
 
 function TrackContextMenu({ x, y, song, onClose, playlists, uid }) {
+  const isGuest = useAuthStore((s) => s.isGuest)
   const playSong      = usePlayerStore((s) => s.playSong)
   const addToQueue    = usePlayerStore((s) => s.addToQueue)
   const toggleLike    = useLibraryStore((s) => s.toggleLike)
@@ -108,7 +109,7 @@ function TrackContextMenu({ x, y, song, onClose, playlists, uid }) {
                     key={pl.id}
                     role="menuitem"
                     style={styles.ctxItem}
-                    onClick={act(() => uid && addToPlaylist(uid, pl.id, song))}
+                    onClick={act(() => (uid || isGuest) && addToPlaylist(uid, pl.id, song))}
                   >
                     {pl.name}
                   </button>
@@ -120,7 +121,7 @@ function TrackContextMenu({ x, y, song, onClose, playlists, uid }) {
 
       <div style={styles.ctxDivider} />
 
-      <button role="menuitem" style={styles.ctxItem} onClick={act(() => uid && toggleLike(uid, song))}>
+      <button role="menuitem" style={styles.ctxItem} onClick={act(() => (uid || isGuest) && toggleLike(uid, song))}>
         <HeartIcon size={14} filled={liked} />
         {liked ? 'Unlike' : 'Like'}
       </button>
@@ -281,6 +282,7 @@ export default function PlaylistView() {
   const { id }     = useParams()
   const navigate   = useNavigate()
   const user       = useAuthStore((s) => s.user)
+  const isGuest    = useAuthStore((s) => s.isGuest)
 
   const playlists         = useLibraryStore((s) => s.playlists)
   const updatePlaylist    = useLibraryStore((s) => s.updatePlaylist)
@@ -554,7 +556,7 @@ export default function PlaylistView() {
         <div style={{ flex: 1 }} />
 
         {/* Invite collaborator */}
-        {isOwner && (
+        {isOwner && !isGuest && (
           <button
             style={styles.btnIconAction}
             onClick={() => setShowInviteDialog(true)}
@@ -665,7 +667,7 @@ export default function PlaylistView() {
                   <button
                     style={{ ...styles.rowIconBtn, opacity: (hovered || liked) ? 1 : 0 }}
                     aria-label={liked ? 'Unlike song' : 'Like song'}
-                    onClick={() => user?.uid && toggleLike(user.uid, song)}
+                    onClick={() => (user?.uid || isGuest) && toggleLike(user?.uid, song)}
                     tabIndex={hovered ? 0 : -1}
                   >
                     <HeartIcon size={15} filled={liked} />

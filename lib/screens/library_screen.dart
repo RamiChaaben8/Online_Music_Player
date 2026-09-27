@@ -9,6 +9,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/library_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/local_music_provider.dart';
+import '../providers/guest_session_provider.dart';
 import '../models/playlist.dart';
 import '../models/song.dart';
 import '../screens/playlist_screen.dart';
@@ -63,6 +64,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   @override
   Widget build(BuildContext context) {
     final library = ref.watch(libraryProvider);
+    final isGuest = ref.watch(guestSessionProvider);
     final localState = ref.watch(localMusicProvider);
 
     return Scaffold(
@@ -96,7 +98,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                     onPressed: () => showImportPlaylistDialog(context, ref),
                     tooltip: 'Import playlist',
                   ),
-                  const PartyInviteButton(),
+                  if (!isGuest) const PartyInviteButton(),
                   IconButton(
                     icon: const Icon(Icons.create_new_folder_outlined,
                         color: Colors.white, size: 25),
@@ -656,7 +658,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 _showCopyPlaylistDialog(context, pl);
               },
             ),
-            if (isOwner)
+            if (isOwner && !ref.read(guestSessionProvider))
               ListTile(
               leading:
                   const Icon(Icons.group_add_outlined, color: Colors.white70),
