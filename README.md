@@ -1,97 +1,116 @@
-# Tuneify — Spotify-like YouTube Audio Streamer
+# Utify
 
-A Flutter app that streams audio from YouTube, styled like Spotify.  
-Supports **Windows desktop** and **Android mobile**, with Firebase Auth + Firestore cross-device sync.
+Utify is a YouTube-powered music player for Windows, Android, and the web. It brings search, playback, playlists, lyrics, and a cross-device listening session into one app. You can explore it in Guest mode without signing in; account features require an access code.
 
-## Run It
+[Browse releases](https://github.com/RamiChaaben8/Online_Music_Player/releases) · [Request account access](mailto:rami.chaaben@iit.ens.tn)
 
-```bash
+## What it can do
+
+- Search and play music from YouTube, with a queue, shuffle, repeat, and lyrics where available.
+- Create playlists and save liked tracks. Guest libraries stay on the current device; signed-in libraries sync through Firestore.
+- Continue a listening session on another signed-in device. Utify restores remote playback paused and lets you choose when to resume.
+- Use local music files and download tracks in the Flutter desktop/mobile app.
+- Use friends, presence, playlist collaboration, and listening parties in the Flutter app. The web client includes friends and profile views.
+- Choose from multiple themes. The web client saves the selected theme in the browser.
+
+The web and Flutter clients share the Firebase project and Firestore data model, but their features are not identical. Browser file-system and background-audio support is more limited than the desktop/mobile app.
+
+## Try Utify
+
+The simplest way to try the app is to download a build from [GitHub Releases](https://github.com/RamiChaaben8/Online_Music_Player/releases/latest) and choose **Continue as guest** on the sign-in screen. Guest playlists, liked tracks, and playback state are stored locally on that device and do not sync to other devices.
+
+To use account features, request an access code by [contacting Rami](mailto:rami.chaaben@iit.ens.tn). Account creation requires a one-time code.
+
+## Clients and stack
+
+| Client | Main technologies | Notes |
+| --- | --- | --- |
+| Windows and Android | Flutter, Dart, Riverpod, just_audio, Hive | YouTube search/playback, local music, downloads, and account features |
+| Web | React, Vite, Zustand, Firebase | YouTube IFrame playback, browser-local guest library, and Firebase-backed account features |
+| Backend | Firebase Auth, Cloud Firestore, Cloud Functions | Shared account/library data; Functions query YouTube InnerTube for web search and related data |
+| Lyrics | LRCLIB and YouTube captions | Timed lyrics when available, with plain lyrics as a fallback |
+
+## Run locally
+
+### Flutter app
+
+Install the Flutter SDK (including Dart 3.5 or newer) and the platform tooling for Windows desktop or Android. From the repository root:
+
+```sh
 flutter pub get
 flutter run
 ```
 
----
+Build a release package locally with:
 
-## Firebase Setup
-
-### 1. Create / open your Firebase project
-
-Go to [https://console.firebase.google.com](https://console.firebase.google.com) and open project **ytspotify-aa97c**.
-
-### 2. Enable Authentication providers
-
-Firebase Console → Authentication → Sign-in method → enable:
-- **Email/Password**
-- **Google**
-
-### 3. Register your Android app
-
-Firebase Console → Project Settings → Your apps → Add app → Android  
-Package name: `com.example.testf`
-
-Download **`google-services.json`** and place it at:
-```
-android/app/google-services.json
+```sh
+flutter build windows --release
+flutter build apk --release
 ```
 
-### 4. Fill in `lib/firebase_options.dart`
+### Web app
 
-Open `lib/firebase_options.dart` and replace every `TODO_*` placeholder with the real values from:
+Install Node.js and npm, then run:
 
-Firebase Console → Project Settings → General → Your apps
+```sh
+cd Utify-web
+npm install
+npm run dev
+```
 
-| Placeholder | Where to find it |
-|---|---|
-| `TODO_ANDROID_API_KEY` | `google-services.json` → `client[0].api_key[0].current_key` |
-| `TODO_ANDROID_APP_ID` | `google-services.json` → `client[0].client_info.mobilesdk_app_id` |
-| `TODO_SENDER_ID` | `google-services.json` → `project_number` |
-| `TODO_WEB_API_KEY` | Web app config → `apiKey` |
-| `TODO_WEB_APP_ID` | Web app config → `appId` |
+Vite prints the local development URL (usually `http://localhost:5173`). The web client uses Firebase for sign-in and cloud-backed features. Web search and other deployed backend features require the project's Cloud Functions; the Vite config also provides development proxies for YouTube requests.
 
-> **Tip:** Run `flutterfire configure --project=ytspotify-aa97c` to generate `firebase_options.dart` automatically with all values filled in.
+### Cloud Functions
 
-### 5. Deploy Firestore security rules
+The Functions package uses Node.js 20. To install its dependencies and start the Firebase emulators, run from the repository root:
 
-```bash
-npm install -g firebase-tools   # once
+```sh
+cd Utify-web/functions
+npm install
+cd ../..
+firebase emulators:start --only auth,firestore,functions
+```
+
+## Use your own Firebase project
+
+The checked-in Firebase configuration points to the project's existing Firebase project. For your own deployment, create a Firebase project and register Android and web apps, then replace the project-specific configuration in:
+
+- `android/app/google-services.json`
+- `lib/firebase_options.dart`
+- `Utify-web/src/firebase.js`
+
+Enable Email/Password sign-in and, if desired, Google sign-in. Set up Firestore and deploy the repository's rules and Functions from the project root:
+
+```sh
 firebase login
-firebase deploy --only firestore:rules
+firebase use <your-project-id>
+firebase deploy --only firestore:rules,functions
 ```
 
-This deploys `firestore.rules` which restricts each user to their own data only.
+Signup requires a one-time code document in `signupCodes/{CODE}` with `{ "enabled": true }`. Create and distribute codes only to people you intend to grant account access. The signup code is an app-level gate; it is not a substitute for securing Firebase Auth, Firestore rules, or backend services.
 
-### 6. Secrets and git
+## Project layout
 
-`firebase_options.dart` and `google-services.json` contain API keys.  
-They are already listed in `.gitignore`. **Never commit them to a public repository.**
+```text
+lib/                    Flutter app, providers, screens, and services
+android/                Android platform project
+windows/                Windows desktop runner
+Utify-web/src/          React web client
+Utify-web/functions/    Firebase Cloud Functions
+firestore.rules         Firestore access rules
+.github/workflows/      Windows and Android release builds
+```
 
-For CI/CD, inject them as build secrets and write them to the correct paths before building.
+## Configuration and security
 
----
+Firebase client configuration and Firebase API keys are included in the source because client apps need them. They identify the Firebase project; protect data with Firebase Authentication, Firestore Security Rules, and appropriate API-key restrictions. The checked-in configuration belongs to the existing project, so replace it before deploying your own copy.
 
-## What syncs across devices
+Never add service-account keys, private signing keystores, passwords, or other server credentials to the repository. Use GitHub Actions secrets for release signing; without signing secrets, the Android release workflow produces a debug-signed APK.
 
-| Data | Sync method |
-|---|---|
-| Playlists | Live (Firestore onSnapshot) |
-| Liked songs | Live (Firestore onSnapshot) |
-| Playback position | Written every 10 s while playing; immediately on pause/seek/track change/background |
-| Queue | Written alongside playback state |
-| Currently playing song | Written alongside playback state |
+## Tests
 
-When you open the app on a second device it restores your last position **paused** so you choose when to resume. If the other device is still playing, a small banner appears: **"Playing on [device] — Continue here?"**
+The repository currently contains a placeholder Flutter widget smoke test, not a comprehensive automated test suite.
 
-## Offline support
+## License
 
-Firestore offline persistence is enabled (`persistenceEnabled: true`). All reads/writes work offline and sync automatically when connectivity is restored. An orange banner shows at the bottom of the screen while offline.
-
-## Sign out / Delete account
-
-- **Mobile**: Library tab → account icon (top right) → Sign Out or Delete Account
-- **Desktop**: Sidebar → logout icon (top right of panel) → Sign Out or Delete Account
-
-Deleting an account removes all Firestore data first, then deletes the Firebase Auth record. This is irreversible.
-
----
-
-See the full setup guide for iOS instructions and troubleshooting.
+There is no license file in this repository yet. Contact the author before redistributing or reusing the code beyond trying it locally.
