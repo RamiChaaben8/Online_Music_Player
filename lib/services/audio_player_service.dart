@@ -123,7 +123,14 @@ class AudioPlayerService {
         _currentIndex = 0;
       }
       if (_shuffle) {
+        // Capture the incoming order as the baseline before anything is
+        // reshuffled, so turning shuffle off restores the real playlist order.
         _reconcileShuffleBaseline(_queue);
+        // Jumping into the middle of a list would otherwise strand everything
+        // above the picked track behind the playhead, where it can never show
+        // up as "Next Up". Move those tracks to the end of the queue instead.
+        _rotateStrandedToEnd();
+        _shuffleAhead();
       } else {
         _unshuffledQueue = null;
       }
@@ -231,17 +238,38 @@ class AudioPlayerService {
     await _loadAndPlay(_currentIndex);
   }
 
+  /// Shuffle everything still ahead of the current track.
+  ///
+  /// The track that is playing keeps its position so enabling shuffle never
+  /// interrupts it.
+  void _shuffleAhead() {
+    for (var i = _queue.length - 1; i > _currentIndex + 1; i--) {
+      final j = _currentIndex + 1 + _random.nextInt(i - _currentIndex);
+      final song = _queue[i];
+      _queue[i] = _queue[j];
+      _queue[j] = song;
+    }
+  }
+
+  /// Move every track above the current one to the end of the queue.
+  ///
+  /// The queue panel only lists [currentIndex + 1 .. end] as "Next Up", so
+  /// anything before the current track is invisible and unplayable unless it is
+  /// relocated. After this the picked track is first and everything else — the
+  /// songs that were "missed" as well as the ones ahead — sits ahead of it,
+  /// ready to be shuffled in.
+  void _rotateStrandedToEnd() {
+    if (_currentIndex <= 0) return;
+    final stranded = _queue.sublist(0, _currentIndex);
+    _queue.removeRange(0, _currentIndex);
+    _queue.addAll(stranded);
+    _currentIndex = 0;
+  }
+
   void toggleShuffle() {
     if (!_shuffle) {
       _unshuffledQueue = List<Song>.from(_queue);
-      // Keep the current track where it is and shuffle only what is still
-      // ahead, so enabling shuffle never interrupts the song already playing.
-      for (var i = _queue.length - 1; i > _currentIndex + 1; i--) {
-        final j = _currentIndex + 1 + _random.nextInt(i - _currentIndex);
-        final song = _queue[i];
-        _queue[i] = _queue[j];
-        _queue[j] = song;
-      }
+      _shuffleAhead();
       _shuffle = true;
     } else {
       final currentId = currentSong?.id;

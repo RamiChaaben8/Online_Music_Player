@@ -49,8 +49,10 @@ class _DesktopSearchViewState extends ConsumerState<DesktopSearchView> {
 
     return Container(
       decoration: BoxDecoration(
-        color: context.appTheme.main,
-        borderRadius: BorderRadius.all(Radius.circular(12)),
+        color: context.appTheme.panelSurfaceColor,
+        borderRadius: BorderRadius.all(
+          Radius.circular(context.appTheme.layout.panelRadius),
+        ),
       ),
       child: _buildBody(searchState),
     );
@@ -59,7 +61,10 @@ class _DesktopSearchViewState extends ConsumerState<DesktopSearchView> {
   Widget _buildBody(SearchState searchState) {
     if (searchState.isLoading) {
       return Center(
-        child: CircularProgressIndicator(color: context.appTheme.button),
+        child: CircularProgressIndicator(
+            color: context.appTheme.isVerdantNightDesktop
+                ? context.appTheme.subtext
+                : context.appTheme.button),
       );
     }
 
@@ -170,9 +175,9 @@ class _SearchResultRowState extends ConsumerState<_SearchResultRow> {
         child: InkWell(
           borderRadius: BorderRadius.circular(8),
           onTap: () => ref.read(playerProvider.notifier).playSong(
-                widget.song,
-                queue: [widget.song],
-              ),
+            widget.song,
+            queue: [widget.song],
+          ),
           child: Padding(
             padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Row(
@@ -183,7 +188,8 @@ class _SearchResultRowState extends ConsumerState<_SearchResultRow> {
                   child: isCurrent
                       ? Icon(
                           isPlaying ? Icons.volume_up : Icons.volume_mute,
-                          color: context.appTheme.button,
+                          color: context.appTheme
+                              .iconColor(context.appTheme.button),
                           size: 16,
                         )
                       : Text(
@@ -240,7 +246,7 @@ class _SearchResultRowState extends ConsumerState<_SearchResultRow> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: isCurrent
+                          color: isCurrent && !context.appTheme.isVerdantNightDesktop
                               ? context.appTheme.button
                               : context.appTheme.text,
                           fontSize: 14,
@@ -253,7 +259,7 @@ class _SearchResultRowState extends ConsumerState<_SearchResultRow> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: isCurrent
+                          color: isCurrent && !context.appTheme.isVerdantNightDesktop
                               ? context.appTheme.button.withValues(alpha: 0.7)
                               : context.appTheme.subtext,
                           fontSize: 12,
@@ -270,7 +276,7 @@ class _SearchResultRowState extends ConsumerState<_SearchResultRow> {
                     child: Text(
                       widget.durationStr,
                       style: TextStyle(
-                        color: isCurrent
+                        color: isCurrent && !context.appTheme.isVerdantNightDesktop
                             ? context.appTheme.button.withValues(alpha: 0.7)
                             : context.appTheme.subtext,
                         fontSize: 13,
@@ -300,9 +306,9 @@ class _SearchResultRowState extends ConsumerState<_SearchResultRow> {
                       ref.read(playerProvider.notifier).togglePlayPause();
                     } else {
                       ref.read(playerProvider.notifier).playSong(
-                            widget.song,
-                            queue: [widget.song],
-                          );
+                        widget.song,
+                        queue: [widget.song],
+                      );
                     }
                   },
                   padding: EdgeInsets.zero,

@@ -412,14 +412,7 @@ function PrivacySection({ user, onToast }) {
 const THEME_PREVIEWS = {
   'green':                  { bg: '#0F0F0F', accent: '#1DB954', text: '#FFFFFF' },
   'red':                    { bg: '#0D0808', accent: '#E8173A', text: '#FFFFFF' },
-  'dribbblish-white':       { bg: '#F5F7FA', accent: '#2E7DDE', text: '#17202A' },
-  'catppuccin-latte':       { bg: '#EFF1F5', accent: '#1E66F5', text: '#4C4F69' },
-  'nord':                   { bg: '#2E3440', accent: '#88C0D0', text: '#ECEFF4' },
-  'dracula':                { bg: '#282A36', accent: '#BD93F9', text: '#F8F8F2' },
-  'dreary-bib':             { bg: '#202020', accent: '#537B25', text: '#8BC34A' },
-  'dreary-deeper':          { bg: '#040614', accent: '#0D3A2E', text: '#4F9A87' },
-  'gruvbox-material-dark':  { bg: '#1D2021', accent: '#98971A', text: '#FFDAB9' },
-  'onepunch-dark':          { bg: '#1D2021', accent: '#8EC07C', text: '#D5C4A1' },
+  'verdant-night':          { bg: '#0A0A0A', accent: '#1ED760', text: '#7FD13B' },
 }
 
 function ThemeSection() {

@@ -7,6 +7,7 @@ import '../providers/auth_provider.dart';
 import '../providers/friends_provider.dart';
 import '../services/firestore_service.dart';
 import 'friend_profile_screen.dart';
+import '../desktop/theme/desktop_theme.dart';
 
 class FriendsScreen extends ConsumerStatefulWidget {
   const FriendsScreen({super.key});
@@ -361,6 +362,8 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen>
   }
 
   Widget _avatar(PublicProfile? profile) {
+    final theme = context.appTheme;
+    final verdant = theme.isVerdantNightDesktop;
     if (profile?.photoURL.isNotEmpty == true) {
       return CircleAvatar(
         child: ClipOval(
@@ -369,12 +372,16 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen>
             width: 40,
             height: 40,
             fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => const Icon(Icons.person_outline),
+            errorBuilder: (_, __, ___) => Icon(Icons.person_outline,
+                color: verdant ? theme.button : null),
           ),
         ),
       );
     }
-    return const CircleAvatar(child: Icon(Icons.person_outline));
+    return CircleAvatar(
+      backgroundColor: verdant ? theme.tabActive : null,
+      child: Icon(Icons.person_outline, color: verdant ? theme.button : null),
+    );
   }
 }
 

@@ -56,7 +56,7 @@ Future<String?> showCollaboratorInviteDialog(
           shrinkWrap: true,
           itemCount: friends.length,
           separatorBuilder: (_, __) =>
-              Divider(color: context.appTheme.shadow, height: 1),
+              Divider(color: context.appTheme.dividerColor, height: 1),
           itemBuilder: (_, index) {
             final friend = friends[index];
             final profile = friend.profile;
@@ -93,8 +93,8 @@ Future<String?> showCollaboratorInviteDialog(
                   ? Text('@$subtitle',
                       style: TextStyle(color: context.appTheme.subtext))
                   : null,
-              trailing:
-                  Icon(Icons.person_add_alt_1, color: context.appTheme.button),
+              trailing: Icon(Icons.person_add_alt_1,
+                  color: context.appTheme.iconColor(context.appTheme.button)),
               onTap: () => Navigator.pop(dialogContext, friend.otherUid),
             );
           },
@@ -103,8 +103,9 @@ Future<String?> showCollaboratorInviteDialog(
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(dialogContext),
-          child:
-              Text('Cancel', style: TextStyle(color: context.appTheme.button)),
+          child: Text('Cancel',
+              style: TextStyle(
+                  color: context.appTheme.iconColor(context.appTheme.button))),
         ),
       ],
     ),

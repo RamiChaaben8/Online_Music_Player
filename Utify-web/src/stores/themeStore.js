@@ -2,16 +2,9 @@
 import { create } from 'zustand'
 
 export const THEMES = [
-  { id: 'green',                name: 'Green' },
-  { id: 'red',                  name: 'Red' },
-  { id: 'dribbblish-white',     name: 'Dribbblish White' },
-  { id: 'catppuccin-latte',     name: 'Catppuccin Latte' },
-  { id: 'nord',                 name: 'Nord' },
-  { id: 'dracula',              name: 'Dracula' },
-  { id: 'dreary-bib',           name: 'Dreary BIB' },
-  { id: 'dreary-deeper',        name: 'Dreary Deeper' },
-  { id: 'gruvbox-material-dark',name: 'Gruvbox Material Dark' },
-  { id: 'onepunch-dark',        name: 'Onepunch Dark' },
+  { id: 'green',         name: 'Green' },
+  { id: 'red',           name: 'Red' },
+  { id: 'verdant-night', name: 'Verdant Night' },
 ]
 
 const STORAGE_KEY = 'utify_theme'
@@ -21,7 +14,10 @@ const applyTheme = (id) => {
   localStorage.setItem(STORAGE_KEY, id)
 }
 
-const savedTheme = localStorage.getItem(STORAGE_KEY) || 'green'
+// A theme saved by an older version may no longer exist, so only honour a
+// stored id that is still in THEMES. Otherwise fall back to the default.
+const storedId = localStorage.getItem(STORAGE_KEY)
+const savedTheme = THEMES.some((t) => t.id === storedId) ? storedId : 'green'
 applyTheme(savedTheme)
 
 export const useThemeStore = create((set) => ({

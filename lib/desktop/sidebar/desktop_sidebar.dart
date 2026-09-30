@@ -18,6 +18,7 @@ import '../../services/firestore_service.dart';
 import '../../providers/player_provider.dart';
 import '../../providers/guest_session_provider.dart';
 import '../theme/desktop_theme.dart';
+import '../theme/ui_sizes.dart';
 import '../widgets/invite_collaborator_dialog.dart';
 import '../../widgets/import_playlist_dialog.dart';
 
@@ -25,20 +26,42 @@ class DesktopSidebar extends ConsumerStatefulWidget {
   final Playlist? selectedPlaylist;
   final void Function(Playlist?) onPlaylistSelected;
 
+  /// Width to render at. When null the theme default for the current window
+  /// is used instead.
+  final double? width;
+
+  /// Whether the sidebar is showing its collapsed icon rail. Driven by the
+  /// shell so that dragging the divider narrower than the minimum expanded
+  /// width collapses it, and so the choice is remembered alongside the width.
+  final bool collapsed;
+
+  /// Called when the user taps the collapse/expand control in the header or on
+  /// the rail.
+  final ValueChanged<bool> onCollapsedChanged;
+
   const DesktopSidebar({
     super.key,
     required this.selectedPlaylist,
     required this.onPlaylistSelected,
+    this.width,
+    this.collapsed = false,
+    this.onCollapsedChanged = _ignoreCollapsedChanged,
   });
+
+  static void _ignoreCollapsedChanged(bool _) {}
 
   @override
   ConsumerState<DesktopSidebar> createState() => _DesktopSidebarState();
 }
 
 class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
-  bool _collapsed = false;
   final Set<String> _expandedFolders = <String>{};
 
+  /// The shell owns the collapsed state so it can be driven by the resize
+  /// divider as well as the header button.
+  bool get _collapsed => widget.collapsed;
+
+  /// Rail width, shared with the shell so the two never disagree.
   static const double _kCollapsedWidth = 64.0;
 
   /// Returns true if [a] and [b] refer to the same playlist.
@@ -56,6 +79,7 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
   @override
   Widget build(BuildContext context) {
     final library = ref.watch(libraryProvider);
+    final layout = context.appTheme.layout;
 
     final likedPlaylist = library.likedSongs.isNotEmpty
         ? Playlist(name: 'Liked Songs', songs: library.likedSongs)
@@ -64,13 +88,18 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeInOut,
-      width: _collapsed ? _kCollapsedWidth : kSidebarWidth,
+      width: _collapsed
+          ? _kCollapsedWidth
+          : (widget.width ??
+              layout.sidebarWidthFor(MediaQuery.sizeOf(context).width)),
       decoration: BoxDecoration(
         color: context.appTheme.sidebar,
-        borderRadius: BorderRadius.only(
-          topRight: Radius.circular(12),
-          bottomRight: Radius.circular(12),
-        ),
+        borderRadius: context.appTheme.isVerdantNightDesktop
+            ? BorderRadius.circular(layout.panelRadius)
+            : BorderRadius.only(
+                topRight: Radius.circular(layout.panelRadius),
+                bottomRight: Radius.circular(layout.panelRadius),
+              ),
       ),
       clipBehavior: Clip.antiAlias,
       child: _collapsed
@@ -91,17 +120,19 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
           message: 'Expand library',
           child: InkWell(
             borderRadius: BorderRadius.circular(8),
-            onTap: () => setState(() => _collapsed = false),
+            onTap: () => widget.onCollapsedChanged(false),
             child: Padding(
               padding: EdgeInsets.all(8),
               child: Icon(Icons.library_music,
-                  color: context.appTheme.button, size: 24),
+                  color: context.appTheme.iconColor(context.appTheme.button),
+                  size: 24),
             ),
           ),
         ),
 
         SizedBox(height: 8),
-        Divider(color: context.appTheme.shadow, height: 1, thickness: 0.5),
+        Divider(
+            color: context.appTheme.dividerColor, height: 1, thickness: 0.5),
         SizedBox(height: 8),
 
         // Liked Songs icon
@@ -192,30 +223,43 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
                 message: 'Collapse library',
                 child: InkWell(
                   borderRadius: BorderRadius.circular(8),
-                  onTap: () => setState(() => _collapsed = true),
+                  onTap: () => widget.onCollapsedChanged(true),
                   child: Padding(
                     padding: EdgeInsets.all(4),
                     child: Icon(Icons.library_music,
-                        color: context.appTheme.button, size: 22),
+                        color:
+                            context.appTheme.iconColor(context.appTheme.button),
+                        size: 22),
                   ),
                 ),
               ),
               SizedBox(width: 8),
-              Text(
-                'Your Library',
-                style: TextStyle(
-                  color: context.appTheme.button,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
+              // Flexible so a narrow sidebar ellipsises the title instead of
+              // overflowing — the header also holds three action buttons.
+              Flexible(
+                child: Text(
+                  'Your Library',
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                  style: TextStyle(
+                    color: context.appTheme.isVerdantNightDesktop
+                        ? context.appTheme.text
+                        : context.appTheme.button,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
+              const SizedBox(width: 4),
               const Spacer(),
               Tooltip(
                 message: 'Create playlist',
                 child: IconButton(
                   onPressed: () => _showCreatePlaylistDialog(context),
-                  icon:
-                      Icon(Icons.add, size: 18, color: context.appTheme.button),
+                  icon: Icon(Icons.add,
+                      size: 18,
+                      color:
+                          context.appTheme.iconColor(context.appTheme.button)),
                   padding: EdgeInsets.all(6),
                   constraints:
                       const BoxConstraints(minWidth: 30, minHeight: 30),
@@ -227,7 +271,9 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
                 child: IconButton(
                   onPressed: () => showImportPlaylistDialog(context, ref),
                   icon: Icon(Icons.playlist_add,
-                      size: 18, color: context.appTheme.button),
+                      size: 18,
+                      color:
+                          context.appTheme.iconColor(context.appTheme.button)),
                   padding: EdgeInsets.all(6),
                   constraints:
                       const BoxConstraints(minWidth: 30, minHeight: 30),
@@ -239,7 +285,9 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
                 child: IconButton(
                   onPressed: () => _showCreateFolderDialog(context),
                   icon: Icon(Icons.create_new_folder_outlined,
-                      size: 18, color: context.appTheme.button),
+                      size: 18,
+                      color:
+                          context.appTheme.iconColor(context.appTheme.button)),
                   padding: EdgeInsets.all(6),
                   constraints:
                       const BoxConstraints(minWidth: 30, minHeight: 30),
@@ -262,15 +310,16 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
             child: Text(
               'Playlists',
               style: TextStyle(
-                color: context.appTheme.button,
-                fontSize: 13,
+                color: context.appTheme.text,
+                fontSize: 15,
                 fontWeight: FontWeight.w600,
               ),
             ),
           ),
         ),
 
-        Divider(color: context.appTheme.shadow, height: 16, thickness: 0.5),
+        Divider(
+            color: context.appTheme.dividerColor, height: 16, thickness: 0.5),
 
         // ── List ───────────────────────────────────────────────────
         Expanded(
@@ -289,7 +338,9 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
                 ),
               if (likedPlaylist != null)
                 Divider(
-                    color: context.appTheme.shadow, height: 16, thickness: 0.5),
+                    color: context.appTheme.dividerColor,
+                    height: 16,
+                    thickness: 0.5),
               if (library.playlists.isEmpty && library.folders.isEmpty)
                 Padding(
                   padding: EdgeInsets.all(16),
@@ -360,12 +411,17 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
                           horizontal: 12, vertical: 2),
                       decoration: BoxDecoration(
                         color: active
-                            ? context.appTheme.button.withValues(alpha: 0.15)
+                            ? (context.appTheme.isVerdantNightDesktop
+                                ? context.appTheme.selectedRow
+                                    .withValues(alpha: 0.6)
+                                : context.appTheme.button
+                                    .withValues(alpha: 0.15))
                             : Colors.transparent,
                         borderRadius: BorderRadius.circular(8),
                         border: active
                             ? Border.all(
-                                color: context.appTheme.button
+                                color: context.appTheme
+                                    .iconColor(context.appTheme.text)
                                     .withValues(alpha: 0.5),
                                 width: 1.5,
                               )
@@ -376,7 +432,7 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
                               child: Text(
                                 'Drop here to remove from folder',
                                 style: TextStyle(
-                                  color: context.appTheme.button,
+                                  color: context.appTheme.text,
                                   fontSize: 12,
                                   fontWeight: FontWeight.w600,
                                 ),
@@ -456,18 +512,19 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
               ],
               onChanged: (value) => visibility = value ?? 'private',
             ),
-            if (!ref.read(guestSessionProvider)) StatefulBuilder(
-              builder: (context, setDialogState) => CheckboxListTile(
-                contentPadding: EdgeInsets.zero,
-                value: collaborative,
-                title: Text('Collaborative playlist',
-                    style: TextStyle(color: context.appTheme.text)),
-                subtitle: Text('Invite friends to add songs',
-                    style: TextStyle(color: context.appTheme.subtext)),
-                onChanged: (value) =>
-                    setDialogState(() => collaborative = value ?? false),
+            if (!ref.read(guestSessionProvider))
+              StatefulBuilder(
+                builder: (context, setDialogState) => CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: collaborative,
+                  title: Text('Collaborative playlist',
+                      style: TextStyle(color: context.appTheme.text)),
+                  subtitle: Text('Invite friends to add songs',
+                      style: TextStyle(color: context.appTheme.subtext)),
+                  onChanged: (value) =>
+                      setDialogState(() => collaborative = value ?? false),
+                ),
               ),
-            ),
           ],
         ),
         actions: [
@@ -478,7 +535,12 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-                backgroundColor: context.appTheme.button),
+                backgroundColor: context.appTheme.isVerdantNightDesktop
+                    ? context.appTheme.text
+                    : context.appTheme.button,
+                foregroundColor: context.appTheme.isVerdantNightDesktop
+                    ? context.appTheme.main
+                    : context.appTheme.text),
             onPressed: () {
               final name = controller.text.trim();
               if (name.isNotEmpty) {
@@ -730,7 +792,9 @@ class _FolderSection extends StatelessWidget {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                color: theme.button,
+                                color: theme.isVerdantNightDesktop
+                                    ? theme.text
+                                    : theme.button,
                                 fontSize: 16,
                                 fontWeight: FontWeight.w500,
                               ),
@@ -816,7 +880,9 @@ class _IconOnlyTileState extends State<_IconOnlyTile> {
             borderRadius: BorderRadius.circular(8),
             border: widget.isActive
                 ? Border.all(
-                    color: context.appTheme.button.withValues(alpha: 0.5),
+                    color: context.appTheme
+                        .iconColor(context.appTheme.text)
+                        .withValues(alpha: 0.5),
                     width: 1)
                 : null,
           ),
@@ -895,6 +961,7 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
   }
 
   Widget _buildTile(BuildContext context, String thumbUrl) {
+    final layout = context.appTheme.layout;
     return MouseRegion(
       child: GestureDetector(
         // Right-click opens context menu
@@ -903,21 +970,26 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
           color: widget.isActive
               ? context.appTheme.selectedRow
               : context.appTheme.main.withValues(alpha: 0),
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(layout.cardRadius),
           child: InkWell(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(layout.cardRadius),
             onTap: widget.onTap,
             child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical:
+                    (layout.libraryRowHeight - layout.libraryThumbnailSize) / 2,
+              ),
               child: Row(
                 children: [
                   // Thumbnail
                   ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
+                    borderRadius:
+                        BorderRadius.circular(layout.libraryThumbnailRadius),
                     child: thumbUrl.isEmpty
                         ? Container(
-                            width: 48,
-                            height: 48,
+                            width: layout.libraryThumbnailSize,
+                            height: layout.libraryThumbnailSize,
                             color: context.appTheme.misc.withValues(alpha: 0.7),
                             child: Icon(Icons.queue_music,
                                 color: context.appTheme.subtext
@@ -926,17 +998,17 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
                           )
                         : CachedNetworkImage(
                             imageUrl: thumbUrl,
-                            width: 48,
-                            height: 48,
+                            width: layout.libraryThumbnailSize,
+                            height: layout.libraryThumbnailSize,
                             fit: BoxFit.cover,
                             placeholder: (_, __) => Container(
-                                width: 48,
-                                height: 48,
+                                width: layout.libraryThumbnailSize,
+                                height: layout.libraryThumbnailSize,
                                 color: context.appTheme.misc
                                     .withValues(alpha: 0.7)),
                             errorWidget: (_, __, ___) => Container(
-                              width: 48,
-                              height: 48,
+                              width: layout.libraryThumbnailSize,
+                              height: layout.libraryThumbnailSize,
                               color:
                                   context.appTheme.misc.withValues(alpha: 0.7),
                               child: Icon(Icons.queue_music,
@@ -958,10 +1030,11 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            color: widget.isActive
+                            color: widget.isActive &&
+                                    !context.appTheme.isVerdantNightDesktop
                                 ? context.appTheme.button
                                 : context.appTheme.text,
-                            fontSize: 14,
+                            fontSize: PlaylistSizes.libraryTitle,
                             fontWeight: FontWeight.w500,
                           ),
                         ),
@@ -971,14 +1044,17 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                              color: context.appTheme.subtext, fontSize: 12),
+                              color: context.appTheme.subtext,
+                              fontSize: PlaylistSizes.librarySubtitle),
                         ),
                       ],
                     ),
                   ),
                   if (widget.playlist.pinned)
                     Icon(Icons.push_pin,
-                        color: context.appTheme.button, size: 16),
+                        color:
+                            context.appTheme.iconColor(context.appTheme.button),
+                        size: 16),
                   IconButton(
                     tooltip: 'Playlist options',
                     icon: Icon(Icons.more_horiz,
@@ -1012,7 +1088,7 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
       color: context.appTheme.card,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
-        side: BorderSide(color: context.appTheme.shadow),
+        side: BorderSide(color: context.appTheme.dividerColor),
       ),
       items: [
         _menuItem(
@@ -1140,7 +1216,9 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('${widget.playlist.songs.length} songs added to queue'),
-        backgroundColor: context.appTheme.button,
+        backgroundColor: context.appTheme.isVerdantNightDesktop
+            ? context.appTheme.highlightElevated
+            : context.appTheme.button,
         duration: const Duration(seconds: 2),
       ),
     );
@@ -1178,7 +1256,12 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-                backgroundColor: context.appTheme.button),
+                backgroundColor: context.appTheme.isVerdantNightDesktop
+                    ? context.appTheme.text
+                    : context.appTheme.button,
+                foregroundColor: context.appTheme.isVerdantNightDesktop
+                    ? context.appTheme.main
+                    : context.appTheme.text),
             onPressed: () => Navigator.pop(ctx, controller.text.trim()),
             child: Text('Save', style: TextStyle(color: context.appTheme.text)),
           ),
@@ -1257,7 +1340,10 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
           SimpleDialogOption(
             onPressed: () => Navigator.pop(ctx, '__new__'),
             child: Text('New folder…',
-                style: TextStyle(color: context.appTheme.button)),
+                style: TextStyle(
+                    color: context.appTheme.isVerdantNightDesktop
+                        ? context.appTheme.text
+                        : context.appTheme.button)),
           ),
         ],
       ),
@@ -1494,7 +1580,8 @@ class _LikedSongsTileState extends State<_LikedSongsTile> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: widget.isActive
+                        color: widget.isActive &&
+                                !context.appTheme.isVerdantNightDesktop
                             ? context.appTheme.button
                             : context.appTheme.text,
                         fontSize: 14,

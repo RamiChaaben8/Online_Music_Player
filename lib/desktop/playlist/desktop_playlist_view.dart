@@ -20,7 +20,9 @@ import '../../providers/download_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/song_context_menu.dart';
 import '../theme/desktop_theme.dart';
+import '../theme/ui_sizes.dart';
 import '../widgets/invite_collaborator_dialog.dart';
+import '../widgets/song_leading_indicator.dart';
 
 class DesktopPlaylistView extends ConsumerStatefulWidget {
   final Playlist playlist;
@@ -61,8 +63,10 @@ class _DesktopPlaylistViewState extends ConsumerState<DesktopPlaylistView> {
 
     return Container(
       decoration: BoxDecoration(
-        color: context.appTheme.main,
-        borderRadius: BorderRadius.all(Radius.circular(12)),
+        color: context.appTheme.panelSurfaceColor,
+        borderRadius: BorderRadius.all(
+          Radius.circular(context.appTheme.layout.panelRadius),
+        ),
       ),
       child: CustomScrollView(
         slivers: [
@@ -105,7 +109,7 @@ class _DesktopPlaylistViewState extends ConsumerState<DesktopPlaylistView> {
 
           SliverToBoxAdapter(
             child: Divider(
-                color: context.appTheme.shadow,
+                color: context.appTheme.dividerColor,
                 height: 1,
                 thickness: 0.5,
                 indent: 24,
@@ -130,6 +134,30 @@ class _DesktopPlaylistViewState extends ConsumerState<DesktopPlaylistView> {
                     ),
                   ],
                 ),
+              ),
+            )
+          else if (_query.trim().isEmpty)
+            // Drag-to-reorder is only offered on the unfiltered list: while a
+            // search is active the row indices no longer line up with the
+            // playlist's real order, so a drop would move the wrong song.
+            SliverReorderableList(
+              itemCount: songs.length,
+              onReorder: (oldIndex, newIndex) => ref
+                  .read(libraryProvider.notifier)
+                  .reorderPlaylistSongs(live, oldIndex, newIndex),
+              proxyDecorator: (child, index, animation) => Material(
+                color: context.appTheme.card,
+                elevation: 6,
+                borderRadius: BorderRadius.circular(6),
+                child: child,
+              ),
+              itemBuilder: (ctx, i) => _SongRow(
+                key: ValueKey(songs[i].id),
+                song: songs[i],
+                index: i,
+                playlist: live,
+                allSongs: songs,
+                reorderable: true,
               ),
             )
           else
@@ -178,38 +206,32 @@ class _PlaylistHeader extends ConsumerWidget {
     final totalDuration = songs.fold<Duration>(
         Duration.zero, (total, song) => total + song.duration);
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(38, 28, 38, 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              // Art
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: thumb.isEmpty
-                    ? Container(
-                        width: 232,
-                        height: 232,
-                        color: context.appTheme.misc.withValues(alpha: 0.35),
-                        child: Icon(Icons.queue_music,
-                            color: context.appTheme.subtext
-                                .withValues(alpha: 0.38),
-                            size: 72),
-                      )
-                    : CachedNetworkImage(
-                        imageUrl: thumb,
-                        width: 232,
-                        height: 232,
-                        fit: BoxFit.cover,
-                        placeholder: (_, __) => Container(
-                            width: 232,
-                            height: 232,
-                            color:
-                                context.appTheme.misc.withValues(alpha: 0.35)),
-                        errorWidget: (_, __, ___) => Container(
+    return Container(
+      decoration: context.appTheme.isVerdantNightDesktop
+          ? BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  context.appTheme.headerGradientColor,
+                  context.appTheme.main.withValues(alpha: 0),
+                ],
+              ),
+            )
+          : null,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(38, 28, 38, 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                // Art
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: thumb.isEmpty
+                      ? Container(
                           width: 232,
                           height: 232,
                           color: context.appTheme.misc.withValues(alpha: 0.35),
@@ -217,159 +239,194 @@ class _PlaylistHeader extends ConsumerWidget {
                               color: context.appTheme.subtext
                                   .withValues(alpha: 0.38),
                               size: 72),
+                        )
+                      : CachedNetworkImage(
+                          imageUrl: thumb,
+                          width: 232,
+                          height: 232,
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) => Container(
+                              width: 232,
+                              height: 232,
+                              color: context.appTheme.misc
+                                  .withValues(alpha: 0.35)),
+                          errorWidget: (_, __, ___) => Container(
+                            width: 232,
+                            height: 232,
+                            color:
+                                context.appTheme.misc.withValues(alpha: 0.35),
+                            child: Icon(Icons.queue_music,
+                                color: context.appTheme.subtext
+                                    .withValues(alpha: 0.38),
+                                size: 72),
+                          ),
+                        ),
+                ),
+
+                const SizedBox(width: 28),
+
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                              color: context.appTheme.isVerdantNightDesktop
+                                  ? context.appTheme.text
+                                  : context.appTheme.button,
+                              width: context.appTheme.isVerdantNightDesktop
+                                  ? 1
+                                  : 1.5),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          '${playlist.visibility[0].toUpperCase()}${playlist.visibility.substring(1)} Playlist',
+                          style: TextStyle(
+                            color: context.appTheme.isVerdantNightDesktop
+                                ? context.appTheme.text
+                                : context.appTheme.button,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
-              ),
-
-              const SizedBox(width: 28),
-
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        border: Border.all(
-                            color: context.appTheme.button, width: 1.5),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        '${playlist.visibility[0].toUpperCase()}${playlist.visibility.substring(1)} Playlist',
+                      const SizedBox(height: 14),
+                      Text(
+                        playlist.name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          color: context.appTheme.button,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
+                          color: context.appTheme.isVerdantNightDesktop
+                              ? context.appTheme.text
+                              : context.appTheme.button,
+                          fontSize: PlaylistSizes.headerTitle,
+                          height: 0.98,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 14),
-                    Text(
-                      playlist.name,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: context.appTheme.button,
-                        fontSize: 56,
-                        height: 0.98,
-                        fontWeight: FontWeight.bold,
+                      const SizedBox(height: 18),
+                      Row(
+                        children: [
+                          IconButton(
+                            tooltip: 'Invite to playlist',
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                            onPressed: () => _invite(context, ref),
+                            icon: Icon(Icons.add_circle_outline,
+                                size: 18, color: context.appTheme.subtext),
+                          ),
+                          const SizedBox(width: 4),
+                          CircleAvatar(
+                            radius: 12,
+                            backgroundColor: context.appTheme.card,
+                            child: Icon(Icons.person,
+                                size: 15, color: context.appTheme.subtext),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            creatorName,
+                            style: TextStyle(
+                                color: context.appTheme.subtext,
+                                fontSize: PlaylistSizes.headerSubtitle),
+                          ),
+                          Text(
+                            '  •  ${songs.length} songs  •  ${_formatDuration(totalDuration)}',
+                            style: TextStyle(
+                                color: context.appTheme.subtext,
+                                fontSize: PlaylistSizes.headerSubtitle),
+                          ),
+                        ],
                       ),
-                    ),
-                    const SizedBox(height: 18),
-                    Row(
-                      children: [
-                        IconButton(
-                          tooltip: 'Invite to playlist',
-                          visualDensity: VisualDensity.compact,
-                          padding: EdgeInsets.zero,
-                          onPressed: () => _invite(context, ref),
-                          icon: Icon(Icons.add_circle_outline,
-                              size: 18, color: context.appTheme.subtext),
-                        ),
-                        const SizedBox(width: 4),
-                        CircleAvatar(
-                          radius: 12,
-                          backgroundColor: context.appTheme.card,
-                          child: Icon(Icons.person,
-                              size: 15, color: context.appTheme.subtext),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          creatorName,
-                          style: TextStyle(
-                              color: context.appTheme.subtext, fontSize: 13),
-                        ),
-                        Text(
-                          '  •  ${songs.length} songs  •  ${_formatDuration(totalDuration)}',
-                          style: TextStyle(
-                              color: context.appTheme.subtext, fontSize: 13),
-                        ),
-                      ],
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 22),
-          Row(
-            children: [
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: context.appTheme.button,
-                  foregroundColor: context.appTheme.text,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                  shape: const StadiumBorder(),
-                  elevation: 0,
+              ],
+            ),
+            const SizedBox(height: 22),
+            Row(
+              children: [
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: context.appTheme.button,
+                    foregroundColor: context.appTheme.isVerdantNightDesktop
+                        ? context.appTheme.playIconColor
+                        : context.appTheme.text,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 14),
+                    shape: const StadiumBorder(),
+                    elevation: 0,
+                  ),
+                  onPressed: songs.isEmpty
+                      ? null
+                      : () => ref
+                          .read(playerProvider.notifier)
+                          .playSong(songs.first, queue: songs),
+                  icon: const Icon(Icons.play_arrow, size: 22),
+                  label: const Text('Play All',
+                      style:
+                          TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
                 ),
-                onPressed: songs.isEmpty
-                    ? null
-                    : () => ref
-                        .read(playerProvider.notifier)
-                        .playSong(songs.first, queue: songs),
-                icon: const Icon(Icons.play_arrow, size: 22),
-                label: const Text('Play All',
-                    style:
-                        TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
-              ),
-              const SizedBox(width: 12),
-              OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: context.appTheme.text,
-                  side: BorderSide(color: context.appTheme.shadow),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                  shape: const StadiumBorder(),
+                const SizedBox(width: 12),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor:
+                        context.appTheme.iconColor(context.appTheme.text),
+                    side: BorderSide(color: context.appTheme.dividerColor),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 14),
+                    shape: const StadiumBorder(),
+                  ),
+                  onPressed: songs.isEmpty
+                      ? null
+                      : () {
+                          ref.read(playerProvider.notifier).toggleShuffle();
+                          ref
+                              .read(playerProvider.notifier)
+                              .playSong(songs.first, queue: songs);
+                        },
+                  icon: const Icon(Icons.shuffle, size: 18),
+                  label: const Text('Shuffle'),
                 ),
-                onPressed: songs.isEmpty
-                    ? null
-                    : () {
-                        ref.read(playerProvider.notifier).toggleShuffle();
-                        ref
-                            .read(playerProvider.notifier)
-                            .playSong(songs.first, queue: songs);
-                      },
-                icon: const Icon(Icons.shuffle, size: 18),
-                label: const Text('Shuffle'),
-              ),
-              const SizedBox(width: 8),
-              _DownloadButton(songs: songs),
-              IconButton(
-                tooltip: 'Invite collaborator',
-                onPressed: () => _invite(context, ref),
-                icon: const Icon(Icons.person_add_alt_1),
-              ),
-              IconButton(
-                tooltip: 'Name & details',
-                onPressed: () => _rename(context, ref),
-                icon: const Icon(Icons.more_horiz),
-              ),
-              const SizedBox(width: 12),
-              SizedBox(
-                width: 360,
-                child: TextField(
-                  onChanged: onSearchChanged,
-                  style: TextStyle(color: context.appTheme.text),
-                  decoration: InputDecoration(
-                    hintText: 'Search in this playlist',
-                    hintStyle: TextStyle(color: context.appTheme.subtext),
-                    prefixIcon:
-                        Icon(Icons.search, color: context.appTheme.subtext),
-                    filled: true,
-                    fillColor: context.appTheme.card,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(24),
-                      borderSide: BorderSide.none,
+                const SizedBox(width: 8),
+                _DownloadButton(songs: songs),
+                IconButton(
+                  tooltip: 'Invite collaborator',
+                  onPressed: () => _invite(context, ref),
+                  icon: const Icon(Icons.person_add_alt_1),
+                ),
+                IconButton(
+                  tooltip: 'Name & details',
+                  onPressed: () => _rename(context, ref),
+                  icon: const Icon(Icons.more_horiz),
+                ),
+                const SizedBox(width: 12),
+                SizedBox(
+                  width: 360,
+                  child: TextField(
+                    onChanged: onSearchChanged,
+                    style: TextStyle(color: context.appTheme.text),
+                    decoration: InputDecoration(
+                      hintText: 'Search in this playlist',
+                      hintStyle: TextStyle(color: context.appTheme.subtext),
+                      prefixIcon:
+                          Icon(Icons.search, color: context.appTheme.subtext),
+                      filled: true,
+                      fillColor: context.appTheme.card,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(24),
+                        borderSide: BorderSide.none,
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -482,7 +539,9 @@ class _DownloadButton extends ConsumerWidget {
                 child: CircularProgressIndicator(
                   value: avgProgress,
                   strokeWidth: 2.5,
-                  color: context.appTheme.button,
+                  color: context.appTheme.isVerdantNightDesktop
+                      ? context.appTheme.subtext
+                      : context.appTheme.button,
                   backgroundColor:
                       context.appTheme.subtext.withValues(alpha: 0.2),
                 ),
@@ -507,9 +566,9 @@ class _DownloadButton extends ConsumerWidget {
                         ? Icons.downloading
                         : Icons.download_outlined,
                 color: allDone
-                    ? context.appTheme.button
+                    ? context.appTheme.iconColor(context.appTheme.button)
                     : anyDownloading
-                        ? context.appTheme.button.withValues(alpha: 0.7)
+                        ? context.appTheme.subtext
                         : context.appTheme.subtext,
                 size: 22,
               ),
@@ -529,11 +588,16 @@ class _SongRow extends ConsumerStatefulWidget {
   final Playlist playlist;
   final List<Song> allSongs;
 
+  /// False on the filtered (searching) list, which is not reorderable.
+  final bool reorderable;
+
   const _SongRow({
+    super.key,
     required this.song,
     required this.index,
     required this.playlist,
     required this.allSongs,
+    this.reorderable = false,
   });
 
   @override
@@ -553,7 +617,19 @@ class _SongRowState extends ConsumerState<_SongRow> {
   @override
   Widget build(BuildContext context) {
     final ps = ref.watch(playerProvider);
-    final isPlaying = ps.currentSong?.id == widget.song.id;
+    final isCurrent = ps.currentSong?.id == widget.song.id;
+    final notifier = ref.read(playerProvider.notifier);
+
+    // Play this song, or toggle the current one, without leaving the row.
+    void toggleFromIndicator() {
+      if (!isCurrent) {
+        notifier.playSong(widget.song, queue: widget.allSongs);
+      } else if (ps.isPlaying) {
+        notifier.pause();
+      } else {
+        notifier.play();
+      }
+    }
 
     return SongContextMenu(
       song: widget.song,
@@ -564,29 +640,24 @@ class _SongRowState extends ConsumerState<_SongRow> {
         child: Material(
           color: _hovered
               ? context.appTheme.highlight
-              : isPlaying
+              : isCurrent
                   ? context.appTheme.selectedRow
                   : context.appTheme.main.withValues(alpha: 0),
           child: InkWell(
-            onTap: () => ref
-                .read(playerProvider.notifier)
-                .playSong(widget.song, queue: widget.allSongs),
+            onTap: () => notifier.playSong(widget.song, queue: widget.allSongs),
             child: Padding(
               padding: EdgeInsets.symmetric(horizontal: 24, vertical: 10),
               child: Row(
                 children: [
-                  // Index / equaliser
-                  SizedBox(
-                    width: 28,
-                    child: isPlaying
-                        ? Icon(Icons.graphic_eq,
-                            color: context.appTheme.button, size: 18)
-                        : Text(
-                            '${widget.index + 1}',
-                            style: TextStyle(
-                                color: context.appTheme.subtext, fontSize: 13),
-                            textAlign: TextAlign.right,
-                          ),
+                  // Index → play/pause → animated equalizer, fixed slot.
+                  SongLeadingIndicator(
+                    number: widget.index + 1,
+                    isCurrent: isCurrent,
+                    isPlaying: ps.isPlaying,
+                    hovered: _hovered,
+                    accent: context.appTheme.nowPlayingAccent,
+                    numberColor: context.appTheme.subtext,
+                    onTap: toggleFromIndicator,
                   ),
                   SizedBox(width: 16),
 
@@ -635,11 +706,12 @@ class _SongRowState extends ConsumerState<_SongRow> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            color: isPlaying
-                                ? context.appTheme.button
+                            color: isCurrent
+                                ? context.appTheme.nowPlayingAccent
                                 : context.appTheme.text,
                             fontSize: 14,
-                            fontWeight: FontWeight.w500,
+                            fontWeight:
+                                isCurrent ? FontWeight.w600 : FontWeight.w500,
                           ),
                         ),
                         SizedBox(height: 2),
@@ -671,11 +743,33 @@ class _SongRowState extends ConsumerState<_SongRow> {
 
                   // ··· button (visible on hover)
                   AnimatedOpacity(
-                    opacity: _hovered || isPlaying ? 1.0 : 0.0,
+                    opacity: _hovered || isCurrent ? 1.0 : 0.0,
                     duration: const Duration(milliseconds: 150),
                     child: SongMenuButton(
                       song: widget.song,
                       currentPlaylist: widget.playlist,
+                    ),
+                  ),
+
+                  // Drag handle (visible on hover) — reorders songs inside the
+                  // playlist. Fixed slot so the row never shifts.
+                  SizedBox(
+                    width: widget.reorderable ? 28 : 0,
+                    height: 28,
+                    child: AnimatedOpacity(
+                      opacity: _hovered ? 1.0 : 0.0,
+                      duration: const Duration(milliseconds: 150),
+                      child: ReorderableDragStartListener(
+                        index: widget.index,
+                        child: MouseRegion(
+                          cursor: SystemMouseCursors.grab,
+                          child: Icon(
+                            Icons.drag_handle,
+                            color: context.appTheme.subtext,
+                            size: 20,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -687,7 +781,6 @@ class _SongRowState extends ConsumerState<_SongRow> {
     );
   }
 }
-
 
 // ─── Per-song download indicator ─────────────────────────────────────────────
 
@@ -717,7 +810,9 @@ class _SongDownloadIndicator extends ConsumerWidget {
               child: CircularProgressIndicator(
                 value: progress > 0 ? progress : null,
                 strokeWidth: 2,
-                color: context.appTheme.button,
+                color: context.appTheme.isVerdantNightDesktop
+                    ? context.appTheme.subtext
+                    : context.appTheme.button,
                 backgroundColor:
                     context.appTheme.subtext.withValues(alpha: 0.2),
               ),
@@ -726,7 +821,7 @@ class _SongDownloadIndicator extends ConsumerWidget {
             Icon(
               Icons.check_circle,
               size: 18,
-              color: context.appTheme.button,
+              color: context.appTheme.iconColor(context.appTheme.button),
             ),
         ],
       ),

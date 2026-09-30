@@ -41,10 +41,24 @@ const int _kAnimMs = 150;
 const int _kPauseMs = 3000;
 const String _kPrefKey = 'now_playing_video_height';
 
+/// Every theme remembers its own video card height, so resizing the card in
+/// one theme never changes the size in another.
+String _heightKey(String themeName) {
+  final slug = themeName
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
+      .replaceAll(RegExp(r'^_+|_+$'), '');
+  return '${_kPrefKey}_$slug';
+}
+
 // ─── Panel ───────────────────────────────────────────────────────────────────
 
 class DesktopNowPlayingPanel extends ConsumerStatefulWidget {
-  const DesktopNowPlayingPanel({super.key});
+  /// Width to render at. When null the theme default for the current window
+  /// is used instead.
+  final double? width;
+
+  const DesktopNowPlayingPanel({super.key, this.width});
 
   @override
   ConsumerState<DesktopNowPlayingPanel> createState() =>
@@ -59,6 +73,7 @@ class _DesktopNowPlayingPanelState
   // Video resize
   double _videoHeight = _kVideoMin;
   double _videoMax = _kVideoMin;
+  String? _heightThemeName;
   bool _isDragging = false;
   double _dragStartThumbOffset = 0;
 
@@ -74,7 +89,19 @@ class _DesktopNowPlayingPanelState
   void initState() {
     super.initState();
     _lyricsScroll.addListener(_onLyricsScroll);
-    _loadHeight();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Reload the stored height whenever the active theme changes so each
+    // theme keeps its own video card size.
+    final themeName = context.appTheme.name;
+    if (_heightThemeName == themeName) return;
+
+    _heightThemeName = themeName;
+    _videoHeight = _kVideoMin;
+    unawaited(_loadHeight(themeName));
   }
 
   @override
@@ -88,18 +115,24 @@ class _DesktopNowPlayingPanelState
 
   // ── Persistence ──────────────────────────────────────────────────────────
 
-  Future<void> _loadHeight() async {
+  Future<void> _loadHeight(String themeName) async {
     final prefs = await SharedPreferences.getInstance();
-    if (!mounted) return;
-    final saved = prefs.getDouble(_kPrefKey);
+    if (!mounted || _heightThemeName != themeName) return;
+    // Fall back to the pre-per-theme value so existing sizes are not lost.
+    final saved = prefs.getDouble(_heightKey(themeName)) ??
+        prefs.getDouble(_kPrefKey);
     if (saved != null && saved >= _kVideoMin) {
-      setState(() => _videoHeight = saved);
+      setState(() {
+        _videoHeight = saved;
+      });
     }
   }
 
   Future<void> _saveHeight(double h) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble(_kPrefKey, h);
+    final themeName = _heightThemeName;
+    if (themeName == null) return;
+    await prefs.setDouble(_heightKey(themeName), h);
   }
 
   // ── Height helpers ────────────────────────────────────────────────────────
@@ -118,7 +151,9 @@ class _DesktopNowPlayingPanelState
     double next = _clamp(h);
     if (snap) next = _snapIfClose(next);
     if (next == _videoHeight) return;
-    setState(() => _videoHeight = next);
+    setState(() {
+      _videoHeight = next;
+    });
     _saveHeight(next);
   }
 
@@ -244,15 +279,19 @@ class _DesktopNowPlayingPanelState
     }
 
     if (lyrics.hasLyrics) _syncActive(lyrics.lines, ps.position);
+    final layout = context.appTheme.layout;
 
     return Container(
-      width: kNowPlayingWidth,
+      width: widget.width ??
+          layout.nowPlayingWidthFor(MediaQuery.of(context).size.width),
       decoration: BoxDecoration(
-        color: context.appTheme.main,
-        borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(12),
-          bottomLeft: Radius.circular(12),
-        ),
+        color: context.appTheme.panelSurfaceColor,
+        borderRadius: context.appTheme.isVerdantNightDesktop
+            ? BorderRadius.circular(layout.panelRadius)
+            : BorderRadius.only(
+                topLeft: Radius.circular(12),
+                bottomLeft: Radius.circular(12),
+              ),
       ),
       clipBehavior: Clip.antiAlias,
       child: song == null || song.isLocal
@@ -264,8 +303,10 @@ class _DesktopNowPlayingPanelState
   Widget _buildPanel(dynamic song, LyricsState lyrics) {
     return LayoutBuilder(builder: (context, constraints) {
       final panelH = constraints.maxHeight;
+      final layout = context.appTheme.layout;
       const double kLyricsMinH = 160.0;
-      _videoMax = (panelH - kLyricsMinH).clamp(_kVideoMin, double.infinity);
+      _videoMax =
+          (panelH - kLyricsMinH).clamp(_kVideoMin, double.infinity).toDouble();
       if (_videoHeight > _videoMax) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted && _videoHeight > _videoMax) {
@@ -277,7 +318,7 @@ class _DesktopNowPlayingPanelState
       final dur =
           _isDragging ? Duration.zero : const Duration(milliseconds: _kAnimMs);
 
-      final safeVideoH = _videoHeight.clamp(_kVideoMin, _videoMax);
+      final safeVideoH = _videoHeight.clamp(_kVideoMin, _videoMax).toDouble();
 
       return Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -297,7 +338,10 @@ class _DesktopNowPlayingPanelState
                       duration: dur,
                       curve: Curves.easeOut,
                       height: safeVideoH,
-                      child: _VideoCard(song: song),
+                      child: _VideoCard(
+                        song: song,
+                        animationDuration: dur,
+                      ),
                     ),
                   ),
 
@@ -309,11 +353,12 @@ class _DesktopNowPlayingPanelState
                         _scrollLyricsBy(event.scrollDelta.dy);
                       },
                       child: Padding(
-                        padding: EdgeInsets.fromLTRB(10, 10, 10, 16),
+                        padding: const EdgeInsets.fromLTRB(10, 10, 10, 16),
                         child: Container(
                           decoration: BoxDecoration(
-                            color: context.appTheme.card,
-                            borderRadius: BorderRadius.circular(12),
+                            color: context.appTheme.lyricsCardColor,
+                            borderRadius:
+                                BorderRadius.circular(layout.lyricsCardRadius),
                           ),
                           clipBehavior: Clip.antiAlias,
                           child: Column(
@@ -323,8 +368,10 @@ class _DesktopNowPlayingPanelState
                               Expanded(
                                 child: _ThinScrollbar(
                                   controller: _lyricsScroll,
-                                  child: _buildLyricsInner(lyrics,
-                                      ref.watch(playerProvider).position),
+                                  child: _buildLyricsInner(
+                                    lyrics,
+                                    ref.watch(playerProvider).position,
+                                  ),
                                 ),
                               ),
                             ],
@@ -341,27 +388,28 @@ class _DesktopNowPlayingPanelState
           // ── Resize drag bar ──────────────────────────────────────
           _DragBar(
             panelHeight: panelH,
-            videoHeight: _videoHeight,
-            videoMin: _kVideoMin,
-            videoMax: _videoMax,
-            isDragging: _isDragging,
-            onDragStart: (_, thumbOffset) => setState(() {
-              _isDragging = true;
-              _dragStartThumbOffset = thumbOffset;
-            }),
-            onDragUpdate: (dy, trackH) {
-              final newOffset = (_dragStartThumbOffset + dy).clamp(0.0, trackH);
-              _setHeight(_thumbOffsetToHeight(newOffset, trackH));
-            },
-            onDragEnd: () {
-              setState(() => _isDragging = false);
-              _setHeight(_videoHeight, snap: true);
-            },
-            onTrackTap: (frac) => _setHeight(
-              _kVideoMin + frac * (_videoMax - _kVideoMin),
-              snap: true,
+            videoHeight: safeVideoH,
+              videoMin: _kVideoMin,
+              videoMax: _videoMax,
+              isDragging: _isDragging,
+              onDragStart: (_, thumbOffset) => setState(() {
+                _isDragging = true;
+                _dragStartThumbOffset = thumbOffset;
+              }),
+              onDragUpdate: (dy, trackH) {
+                final newOffset =
+                    (_dragStartThumbOffset + dy).clamp(0.0, trackH);
+                _setHeight(_thumbOffsetToHeight(newOffset, trackH));
+              },
+              onDragEnd: () {
+                setState(() => _isDragging = false);
+                _setHeight(_videoHeight, snap: true);
+              },
+              onTrackTap: (frac) => _setHeight(
+                _kVideoMin + frac * (_videoMax - _kVideoMin),
+                snap: true,
+              ),
             ),
-          ),
         ],
       );
     });
@@ -370,42 +418,39 @@ class _DesktopNowPlayingPanelState
   // The inner scrollable widget that holds only the lyric lines.
   Widget _buildLyricsInner(LyricsState lyrics, Duration position) {
     if (lyrics.isLoading) {
-      return SizedBox.expand(
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(
-                  color: context.appTheme.button, strokeWidth: 2),
-              SizedBox(height: 10),
-              Text('Loading lyrics…',
-                  style:
-                      TextStyle(color: context.appTheme.subtext, fontSize: 13)),
-            ],
-          ),
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(
+                color: context.appTheme.isVerdantNightDesktop
+                    ? context.appTheme.subtext
+                    : context.appTheme.button,
+                strokeWidth: 2),
+            SizedBox(height: 10),
+            Text('Loading lyrics…',
+                style:
+                    TextStyle(color: context.appTheme.subtext, fontSize: 13)),
+          ],
         ),
       );
     }
 
     if (!lyrics.hasLyrics) {
-      return SizedBox.expand(
-        child: Center(
-          child: Padding(
-            padding: EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.music_off,
-                    color: context.appTheme.subtext, size: 36),
-                SizedBox(height: 10),
-                Text(
-                  lyrics.error ?? 'No lyrics available for this song.',
-                  textAlign: TextAlign.center,
-                  style:
-                      TextStyle(color: context.appTheme.subtext, fontSize: 13),
-                ),
-              ],
-            ),
+      return Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.music_off, color: context.appTheme.subtext, size: 36),
+              SizedBox(height: 10),
+              Text(
+                lyrics.error ?? 'No lyrics available for this song.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: context.appTheme.subtext, fontSize: 13),
+              ),
+            ],
           ),
         ),
       );
@@ -419,7 +464,7 @@ class _DesktopNowPlayingPanelState
       child: ListView.builder(
         controller: _lyricsScroll,
         physics: const NeverScrollableScrollPhysics(),
-        padding: EdgeInsets.fromLTRB(14, 0, 14, 16),
+        padding: const EdgeInsets.fromLTRB(14, 0, 14, 16),
         itemCount: lyrics.lines.length + 1, // +1 for footer
         itemBuilder: (context, i) {
           if (i == lyrics.lines.length) {
@@ -468,12 +513,13 @@ class _LyricsHeader extends ConsumerWidget {
             children: [
               // "Lyrics" label
               Icon(Icons.lyrics_outlined,
-                  color: context.appTheme.button, size: 13),
+                  color: context.appTheme.iconColor(context.appTheme.button),
+                  size: 13),
               SizedBox(width: 5),
               Text(
                 'Lyrics',
                 style: TextStyle(
-                  color: context.appTheme.button,
+                  color: context.appTheme.lyricsLabelColor,
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0.5,
@@ -489,10 +535,10 @@ class _LyricsHeader extends ConsumerWidget {
         ),
         Padding(
           padding: EdgeInsets.symmetric(horizontal: 14),
-          child:
-              Divider(color: context.appTheme.shadow, height: 1, thickness: 1),
+          child: Divider(
+              color: context.appTheme.dividerColor, height: 1, thickness: 1),
         ),
-        SizedBox(height: 8),
+        const SizedBox(height: 8),
       ],
     );
   }
@@ -523,25 +569,27 @@ class _TrackSelectorButton extends ConsumerWidget {
         decoration: BoxDecoration(
           color: context.appTheme.card,
           borderRadius: BorderRadius.circular(5),
-          border: Border.all(color: context.appTheme.shadow, width: 1),
+          border: Border.all(color: context.appTheme.dividerColor, width: 1),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.subtitles_outlined,
-                color: context.appTheme.button, size: 11),
+                color: context.appTheme.iconColor(context.appTheme.button),
+                size: 11),
             SizedBox(width: 4),
             Text(
               shortLabel,
               style: TextStyle(
-                color: context.appTheme.button,
+                color: context.appTheme.iconColor(context.appTheme.button),
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
               ),
             ),
             SizedBox(width: 3),
             Icon(Icons.arrow_drop_down,
-                color: context.appTheme.button, size: 14),
+                color: context.appTheme.iconColor(context.appTheme.button),
+                size: 14),
           ],
         ),
       ),
@@ -559,7 +607,12 @@ class _TrackSelectorButton extends ConsumerWidget {
             SizedBox(
               width: 18,
               child: isSelected
-                  ? Icon(Icons.check, color: context.appTheme.button, size: 14)
+                  ? Icon(
+                      Icons.check,
+                      color:
+                          context.appTheme.iconColor(context.appTheme.button),
+                      size: 14,
+                    )
                   : null,
             ),
             SizedBox(width: 4),
@@ -568,7 +621,7 @@ class _TrackSelectorButton extends ConsumerWidget {
                 track.label,
                 style: TextStyle(
                   color: isSelected
-                      ? context.appTheme.button
+                      ? context.appTheme.iconColor(context.appTheme.button)
                       : context.appTheme.text,
                   fontSize: 13,
                   fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
@@ -591,7 +644,7 @@ class _TrackSelectorButton extends ConsumerWidget {
       color: context.appTheme.card,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(8),
-        side: BorderSide(color: context.appTheme.shadow),
+        side: BorderSide(color: context.appTheme.dividerColor),
       ),
       items: items,
     ).then((code) {
@@ -741,10 +794,14 @@ class _ThinScrollbarState extends State<_ThinScrollbar> {
                       thumbH: _thumbH(trackH),
                       thumbW: _kThumbW,
                       barW: _kBarW,
-                      thumbColor: (_hovering || _dragging)
-                          ? context.appTheme.buttonActive
-                          : context.appTheme.button,
-                      trackColor: context.appTheme.main,
+                      thumbColor: context.appTheme.isVerdantNightDesktop
+                          ? context.appTheme.scrollbarThumbColor
+                          : (_hovering || _dragging)
+                              ? context.appTheme.buttonActive
+                              : context.appTheme.button,
+                      trackColor: context.appTheme.isVerdantNightDesktop
+                          ? Colors.transparent
+                          : context.appTheme.main,
                     ),
                   ),
                 ),
@@ -907,7 +964,12 @@ class _DragBarState extends State<_DragBar> {
 
 class _VideoCard extends StatelessWidget {
   final dynamic song;
-  const _VideoCard({required this.song});
+  final Duration animationDuration;
+
+  const _VideoCard({
+    required this.song,
+    this.animationDuration = const Duration(milliseconds: _kAnimMs),
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -982,7 +1044,8 @@ class _VideoCard extends StatelessWidget {
               ),
               SizedBox(width: 10),
               Icon(Icons.check_circle,
-                  color: context.appTheme.button, size: 20),
+                  color: context.appTheme.iconColor(context.appTheme.button),
+                  size: 20),
             ],
           ),
         ),
@@ -1032,11 +1095,14 @@ class _LyricLineState extends State<_LyricLine> {
   @override
   Widget build(BuildContext context) {
     final isSynced = widget.line.start != Duration.zero;
-    final dimColor = context.appTheme.text.withValues(alpha: 0.38);
+    final verdantDesktop = context.appTheme.isVerdantNightDesktop;
+    final dimColor = verdantDesktop
+        ? context.appTheme.lyricsInactiveLineColor
+        : context.appTheme.text.withValues(alpha: 0.38);
     final baseColor = widget.isActive
-        ? context.appTheme.text
+        ? context.appTheme.lyricsActiveLineColor
         : _hovered && isSynced
-            ? context.appTheme.text
+            ? context.appTheme.lyricsActiveLineColor
             : dimColor;
     final fontSize = widget.isActive ? 22.0 : 18.0;
     final fontWeight = widget.isActive ? FontWeight.w700 : FontWeight.w500;
@@ -1069,8 +1135,12 @@ class _LyricLineState extends State<_LyricLine> {
                       fontWeight: fontWeight,
                       height: 1.35,
                       color: lit
-                          ? context.appTheme.button
-                          : context.appTheme.text.withValues(alpha: 0.55),
+                          ? (verdantDesktop
+                              ? context.appTheme.lyricsActiveLineColor
+                              : context.appTheme.button)
+                          : (verdantDesktop
+                              ? context.appTheme.lyricsInactiveLineColor
+                              : context.appTheme.text.withValues(alpha: 0.55)),
                     ),
                     child: Text(
                       '${word.text} ',
@@ -1110,8 +1180,7 @@ class _LyricLineState extends State<_LyricLine> {
               child: Text(
                 widget.line.text,
                 softWrap: true,
-                textAlign:
-                    widget.isRtl ? TextAlign.right : TextAlign.left,
+                textAlign: widget.isRtl ? TextAlign.right : TextAlign.left,
               ),
             ),
           ),

@@ -16,10 +16,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/song.dart';
 import '../../providers/player_provider.dart';
 import '../theme/desktop_theme.dart';
+import '../theme/ui_sizes.dart';
+import '../widgets/song_leading_indicator.dart';
 
 class QueuePanel extends ConsumerWidget {
   final VoidCallback onClose;
-  QueuePanel({super.key, required this.onClose});
+
+  /// Width to render at. When null the theme default for the current window
+  /// is used instead. Shares the now-playing panel's width so switching
+  /// between the two does not jump.
+  final double? width;
+
+  QueuePanel({super.key, required this.onClose, this.width});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -30,12 +38,19 @@ class QueuePanel extends ConsumerWidget {
     final hasCurrent = currentIndex >= 0 && currentIndex < queue.length;
     final currentSong = hasCurrent ? queue[currentIndex] : null;
     final upNext = hasCurrent ? queue.sublist(currentIndex + 1) : <Song>[];
+    final layout = context.appTheme.layout;
 
     return Container(
-      width: 320,
+      width: width ??
+          (layout.squareNowPlayingArt
+              ? layout.nowPlayingWidthFor(MediaQuery.of(context).size.width)
+              : 320),
       decoration: BoxDecoration(
-        color: context.appTheme.main,
-        border: Border(left: BorderSide(color: context.appTheme.shadow)),
+        color: context.appTheme.panelSurfaceColor,
+        border: Border(left: BorderSide(color: context.appTheme.dividerColor)),
+        borderRadius: layout.squareNowPlayingArt
+            ? BorderRadius.circular(layout.panelRadius)
+            : null,
       ),
       child: Column(
         children: [
@@ -90,61 +105,72 @@ class _Header extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: EdgeInsets.symmetric(
+          horizontal: 12, vertical: QueueSizes.of.headerPadV),
       decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: context.appTheme.shadow)),
+        border:
+            Border(bottom: BorderSide(color: context.appTheme.dividerColor)),
       ),
-      child: Row(
-        children: [
-          Icon(Icons.queue_music, color: context.appTheme.button, size: 18),
-          SizedBox(width: 8),
-          Text(
-            'Queue',
-            style: TextStyle(
-              color: context.appTheme.text,
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          SizedBox(width: 8),
-          Container(
-            padding: EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-            decoration: BoxDecoration(
-              color: context.appTheme.button.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Text(
-              '$queueLength',
+      // The taller title row drives its own height, so let it grow instead of
+      // forcing the header back to the old compact height.
+      child: IntrinsicHeight(
+        child: Row(
+          children: [
+            Icon(Icons.queue_music,
+                color: context.appTheme.iconColor(context.appTheme.button),
+                size: 26),
+            SizedBox(width: 8),
+            Text(
+              'Queue',
               style: TextStyle(
-                color: context.appTheme.button,
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
+                color: context.appTheme.text,
+                fontSize: 24,
+                height: 1.2,
+                fontWeight: FontWeight.bold,
               ),
             ),
-          ),
-          Spacer(),
-          if (hasUpNext)
+            SizedBox(width: 8),
+            Container(
+              padding: EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+              decoration: BoxDecoration(
+                color: context.appTheme.isVerdantNightDesktop
+                    ? context.appTheme.highlight
+                    : context.appTheme.button.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                '$queueLength',
+                style: TextStyle(
+                  color: context.appTheme.subtext,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            Spacer(),
+            if (hasUpNext)
+              Tooltip(
+                message: 'Clear queue',
+                child: IconButton(
+                  icon: Icon(Icons.clear_all,
+                      color: context.appTheme.subtext, size: 18),
+                  onPressed: onClear,
+                  padding: EdgeInsets.zero,
+                  constraints: BoxConstraints(minWidth: 28, minHeight: 28),
+                ),
+              ),
             Tooltip(
-              message: 'Clear queue',
+              message: 'Close queue',
               child: IconButton(
-                icon: Icon(Icons.clear_all,
+                icon: Icon(Icons.close,
                     color: context.appTheme.subtext, size: 18),
-                onPressed: onClear,
+                onPressed: onClose,
                 padding: EdgeInsets.zero,
                 constraints: BoxConstraints(minWidth: 28, minHeight: 28),
               ),
             ),
-          Tooltip(
-            message: 'Close queue',
-            child: IconButton(
-              icon:
-                  Icon(Icons.close, color: context.appTheme.subtext, size: 18),
-              onPressed: onClose,
-              padding: EdgeInsets.zero,
-              constraints: BoxConstraints(minWidth: 28, minHeight: 28),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -269,9 +295,9 @@ class _SectionHeaderDelegate extends SliverPersistentHeaderDelegate {
   _SectionHeaderDelegate({required this.label});
 
   @override
-  double get minExtent => 34;
+  double get minExtent => QueueSizes.of.sectionHeight;
   @override
-  double get maxExtent => 34;
+  double get maxExtent => QueueSizes.of.sectionHeight;
 
   @override
   Widget build(BuildContext ctx, double shrinkOffset, bool overlaps) {
@@ -282,8 +308,10 @@ class _SectionHeaderDelegate extends SliverPersistentHeaderDelegate {
       child: Text(
         label,
         style: TextStyle(
-          color: ctx.appTheme.button,
-          fontSize: 10,
+          color: ctx.appTheme.isVerdantNightDesktop
+              ? ctx.appTheme.text
+              : ctx.appTheme.button,
+          fontSize: QueueSizes.of.sectionLabel,
           fontWeight: FontWeight.w700,
           letterSpacing: 1.5,
         ),
@@ -297,42 +325,58 @@ class _SectionHeaderDelegate extends SliverPersistentHeaderDelegate {
 
 // ─── NOW PLAYING tile ─────────────────────────────────────────────────────────
 
-class _NowPlayingTile extends StatelessWidget {
+class _NowPlayingTile extends ConsumerWidget {
   final Song song;
   _NowPlayingTile({required this.song});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    const s = QueueSizes.of;
+    final isPlaying = ref.watch(playerProvider.select((p) => p.isPlaying));
     return Container(
       margin: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: context.appTheme.button.withValues(alpha: 0.08),
+        color: context.appTheme.isVerdantNightDesktop
+            ? context.appTheme.highlight
+            : context.appTheme.button.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(10),
-        border:
-            Border.all(color: context.appTheme.button.withValues(alpha: 0.25)),
+        border: Border.all(
+            color: context.appTheme.isVerdantNightDesktop
+                ? context.appTheme.highlight
+                : context.appTheme.button.withValues(alpha: 0.25)),
       ),
       child: ListTile(
         dense: true,
-        contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-        leading: _Thumb(url: song.thumbnailUrl, playing: true, size: 40),
+        contentPadding:
+            EdgeInsets.symmetric(horizontal: s.rowPadH, vertical: s.rowPadV),
+        leading: _Thumb(
+          url: song.thumbnailUrl,
+          playing: true,
+          isPlaying: isPlaying,
+          size: s.thumb,
+        ),
         title: Text(
           song.title,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            color: context.appTheme.button,
+            color: context.appTheme.nowPlayingAccent,
             fontWeight: FontWeight.bold,
-            fontSize: 12,
+            fontSize: s.songTitle,
           ),
         ),
         subtitle: Text(
           song.channelName,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: TextStyle(color: context.appTheme.subtext, fontSize: 10),
+          style: TextStyle(
+              color: context.appTheme.subtext, fontSize: s.songSubtitle),
         ),
-        trailing:
-            Icon(Icons.graphic_eq, color: context.appTheme.button, size: 18),
+        trailing: EqualizerBars(
+          color: context.appTheme.nowPlayingAccent,
+          size: s.equalizer,
+          animating: isPlaying,
+        ),
       ),
     );
   }
@@ -361,6 +405,7 @@ class _UpNextTileState extends ConsumerState<_UpNextTile> {
 
   @override
   Widget build(BuildContext context) {
+    const s = QueueSizes.of;
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
@@ -376,20 +421,23 @@ class _UpNextTileState extends ConsumerState<_UpNextTile> {
           ),
           child: ListTile(
             dense: true,
-            contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 1),
-            leading:
-                _Thumb(url: widget.song.thumbnailUrl, playing: false, size: 38),
+            contentPadding: EdgeInsets.symmetric(
+                horizontal: s.rowPadH, vertical: s.rowPadV),
+            leading: _Thumb(
+                url: widget.song.thumbnailUrl, playing: false, size: s.thumb),
             title: Text(
               widget.song.title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: context.appTheme.text, fontSize: 12),
+              style: TextStyle(
+                  color: context.appTheme.text, fontSize: s.songTitle),
             ),
             subtitle: Text(
               widget.song.channelName,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: context.appTheme.subtext, fontSize: 10),
+              style: TextStyle(
+                  color: context.appTheme.subtext, fontSize: s.songSubtitle),
             ),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
@@ -400,12 +448,13 @@ class _UpNextTileState extends ConsumerState<_UpNextTile> {
                   duration: Duration(milliseconds: 150),
                   child: IconButton(
                     icon: Icon(Icons.close,
-                        color: context.appTheme.subtext, size: 15),
+                        color: context.appTheme.subtext, size: s.rowActionIcon),
                     onPressed: () => ref
                         .read(playerProvider.notifier)
                         .removeFromQueue(widget.queueIndex),
                     padding: EdgeInsets.zero,
-                    constraints: BoxConstraints(minWidth: 24, minHeight: 24),
+                    constraints: BoxConstraints(
+                        minWidth: s.rowActionTap, minHeight: s.rowActionTap),
                   ),
                 ),
                 // Context menu (visible on hover)
@@ -414,7 +463,7 @@ class _UpNextTileState extends ConsumerState<_UpNextTile> {
                   duration: Duration(milliseconds: 150),
                   child: IconButton(
                     icon: Icon(Icons.more_horiz,
-                        color: context.appTheme.subtext, size: 15),
+                        color: context.appTheme.subtext, size: s.rowActionIcon),
                     onPressed: () {
                       final box = context.findRenderObject() as RenderBox?;
                       if (box == null) return;
@@ -425,7 +474,8 @@ class _UpNextTileState extends ConsumerState<_UpNextTile> {
                               pos.dy + box.size.height / 2));
                     },
                     padding: EdgeInsets.zero,
-                    constraints: BoxConstraints(minWidth: 24, minHeight: 24),
+                    constraints: BoxConstraints(
+                        minWidth: s.rowActionTap, minHeight: s.rowActionTap),
                   ),
                 ),
                 // Drag handle
@@ -434,7 +484,7 @@ class _UpNextTileState extends ConsumerState<_UpNextTile> {
                   child: Padding(
                     padding: EdgeInsets.only(left: 2),
                     child: Icon(Icons.drag_handle,
-                        color: context.appTheme.shadow, size: 16),
+                        color: context.appTheme.shadow, size: s.dragHandle),
                   ),
                 ),
               ],
@@ -510,10 +560,21 @@ class _UpNextTileState extends ConsumerState<_UpNextTile> {
 
 class _Thumb extends StatelessWidget {
   final String url;
+
+  /// Draw the "now playing" overlay on the artwork.
   final bool playing;
+
+  /// Whether the bars inside the overlay should animate. When false they
+  /// rest low and static.
+  final bool isPlaying;
   final double size;
 
-  _Thumb({required this.url, required this.playing, this.size = 40});
+  _Thumb({
+    required this.url,
+    required this.playing,
+    this.isPlaying = true,
+    this.size = 40,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -541,8 +602,13 @@ class _Thumb extends StatelessWidget {
               color: context.appTheme.shadow.withValues(alpha: 0.45),
               borderRadius: BorderRadius.circular(6),
             ),
-            child: Icon(Icons.graphic_eq,
-                color: context.appTheme.button, size: 18),
+            child: Center(
+              child: EqualizerBars(
+                color: context.appTheme.nowPlayingAccent,
+                size: size * 0.55,
+                animating: isPlaying,
+              ),
+            ),
           ),
       ],
     );
@@ -552,6 +618,7 @@ class _Thumb extends StatelessWidget {
         width: size,
         height: size,
         color: context.appTheme.card,
-        child: Icon(Icons.music_note, color: context.appTheme.shadow, size: 16),
+        child: Icon(Icons.music_note,
+            color: context.appTheme.shadow, size: size * 0.42),
       );
 }

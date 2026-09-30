@@ -202,7 +202,7 @@ Utify-web/
 |---|---|
 | Email/Password auth | Full sign-up, login, forgot password |
 | Google Sign-In | Popup flow |
-| 10 themes | Green, Red, Nord, Dracula, Catppuccin, and more — persisted |
+| 3 themes | Green, Red, Verdant Night — persisted |
 | YouTube search | Via InnerTube Cloud Function — unlimited, no API key |
 | Trending music | InnerTube music charts |
 | Audio playback | YouTube IFrame API — play, pause, seek, volume, mute |

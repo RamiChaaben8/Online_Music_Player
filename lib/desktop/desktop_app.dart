@@ -30,17 +30,17 @@ class DesktopApp extends StatelessWidget {
       scaffoldBackgroundColor: t.main,
       colorScheme: ColorScheme(
         brightness: t.brightness,
-        primary: t.button,
+        primary: t.isVerdantNightDesktop ? t.text : t.button,
         secondary: t.button,
         surface: t.main,
         onSurface: t.text,
-        onPrimary: t.text,
+        onPrimary: t.isVerdantNightDesktop ? t.main : t.text,
         onSecondary: t.text,
         error: t.notificationError,
         onError: t.text,
       ),
       cardColor: t.card,
-      dividerColor: t.shadow,
+      dividerColor: t.dividerColor,
       textTheme: TextTheme(
         displayLarge: TextStyle(color: t.text, fontWeight: FontWeight.bold),
         displayMedium: TextStyle(color: t.text, fontWeight: FontWeight.bold),
@@ -62,8 +62,20 @@ class DesktopApp extends StatelessWidget {
         ),
         contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       ),
-      iconTheme: IconThemeData(color: t.text),
-      progressIndicatorTheme: ProgressIndicatorThemeData(color: t.button),
+      iconTheme: IconThemeData(
+          color: t.isVerdantNightDesktop ? t.iconDefault : t.text),
+      iconButtonTheme: t.isVerdantNightDesktop
+          ? IconButtonThemeData(style: t.iconButtonStyle)
+          : const IconButtonThemeData(),
+      tabBarTheme: t.isVerdantNightDesktop
+          ? TabBarThemeData(
+              labelColor: t.text,
+              unselectedLabelColor: t.subtext,
+              indicatorColor: t.text,
+            )
+          : const TabBarThemeData(),
+      progressIndicatorTheme: ProgressIndicatorThemeData(
+          color: t.isVerdantNightDesktop ? t.subtext : t.button),
       sliderTheme: SliderThemeData(
         activeTrackColor: t.button,
         inactiveTrackColor: t.shadow,
@@ -73,7 +85,8 @@ class DesktopApp extends StatelessWidget {
         thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
       ),
       scrollbarTheme: ScrollbarThemeData(
-        thumbColor: WidgetStateProperty.all(t.button),
+        thumbColor: WidgetStateProperty.all(
+            t.isVerdantNightDesktop ? t.scrollbarThumbColor : t.button),
         thickness: WidgetStateProperty.all(4),
         radius: const Radius.circular(2),
       ),

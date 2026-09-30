@@ -3,6 +3,8 @@
 // Main 3-column layout shell for Windows.
 // ============================================================
 
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -26,6 +28,7 @@ import '../player/lyrics_panel.dart';
 import '../player/queue_panel.dart';
 import '../playlist/desktop_playlist_view.dart';
 import '../sidebar/desktop_sidebar.dart';
+import '../shell/panel_widths.dart';
 import '../theme/desktop_theme.dart';
 import '../desktop_search_view.dart';
 import 'desktop_title_bar.dart';
@@ -48,6 +51,9 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
   final List<int> _history = [0];
   int _historyIndex = 0;
   Playlist? _viewedPlaylist;
+
+  /// Spotify-style draggable widths for the sidebar and the right-hand panel.
+  final PanelWidthStore _panelWidths = PanelWidthStore();
 
   int get _currentView => _history[_historyIndex];
   bool get _canGoBack => _historyIndex > 0;
@@ -95,6 +101,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _panelWidths.addListener(_onPanelWidthsChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(localMusicProvider.notifier).scan();
       final uid = ref.read(authServiceProvider).currentUser?.uid;
@@ -121,7 +128,21 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _panelWidths
+      ..removeListener(_onPanelWidthsChanged)
+      ..dispose();
     super.dispose();
+  }
+
+  void _onPanelWidthsChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Each theme remembers its own panel widths, so swap them on theme change.
+    _panelWidths.bindTheme(context.appTheme.name);
   }
 
   @override
@@ -201,7 +222,8 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
             mainAxisSize: MainAxisSize.min,
             children: [
               ListTile(
-                leading: Icon(Icons.person_outline, color: currentTheme.button),
+                leading: Icon(Icons.person_outline,
+                    color: currentTheme.iconColor(currentTheme.button)),
                 title:
                     Text('Profile', style: TextStyle(color: currentTheme.text)),
                 subtitle: Text(user?.email ?? 'Signed-in account',
@@ -211,7 +233,8 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
               ),
               ListTile(
                 leading:
-                    Icon(Icons.palette_outlined, color: currentTheme.button),
+                    Icon(Icons.palette_outlined,
+                        color: currentTheme.iconColor(currentTheme.button)),
                 title:
                     Text('Theme', style: TextStyle(color: currentTheme.text)),
                 subtitle: DropdownButton<AppThemeData>(
@@ -224,7 +247,22 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
                       .map(
                         (theme) => DropdownMenuItem<AppThemeData>(
                           value: theme,
-                          child: Text(theme.name),
+                          child: theme == AppThemeData.verdantNight
+                              ? Row(
+                                  children: [
+                                    Container(
+                                      width: 12,
+                                      height: 12,
+                                      decoration: BoxDecoration(
+                                        color: theme.button,
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(theme.name),
+                                  ],
+                                )
+                              : Text(theme.name),
                         ),
                       )
                       .toList(),
@@ -237,15 +275,17 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
               ),
               ListTile(
                 leading:
-                    Icon(Icons.settings_outlined, color: currentTheme.text),
+                    Icon(Icons.settings_outlined,
+                        color: currentTheme.iconColor(currentTheme.text)),
                 title: Text('Settings',
                     style: TextStyle(color: currentTheme.text)),
                 onTap: () =>
                     Navigator.pop(dialogContext, _AccountAction.settings),
               ),
               ListTile(
-                leading: Icon(Icons.system_update_alt,
-                    color: currentTheme.button),
+                leading:
+                    Icon(Icons.system_update_alt,
+                        color: currentTheme.iconColor(currentTheme.button)),
                 title: Text('Check for Updates',
                     style: TextStyle(color: currentTheme.text)),
                 onTap: () => Navigator.pop(
@@ -253,7 +293,9 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
               ),
               ListTile(
                 leading:
-                    Icon(Icons.logout, color: currentTheme.notificationError),
+                    Icon(Icons.logout,
+                        color: currentTheme.iconColor(
+                            currentTheme.notificationError)),
                 title: Text('Sign out',
                     style: TextStyle(color: currentTheme.notificationError)),
                 onTap: () =>
@@ -287,8 +329,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
   Future<void> _showEditProfileDialog(User user) async {
     final displayNameController =
         TextEditingController(text: user.displayName ?? '');
-    final photoUrlController =
-        TextEditingController(text: user.photoURL ?? '');
+    final photoUrlController = TextEditingController(text: user.photoURL ?? '');
     final formKey = GlobalKey<FormState>();
     var saving = false;
     String? error;
@@ -407,6 +448,53 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
       body: LayoutBuilder(
         builder: (context, constraints) {
           final wideEnough = constraints.maxWidth >= 1100;
+          final layout = context.appTheme.layout;
+          final screenW = constraints.maxWidth;
+
+          // ── Panel widths (Spotify-style, user draggable) ─────────
+          // Each panel may grow up to its own limit, but never far enough to
+          // squeeze the centre view out of the window.
+          final gapTotal = layout.panelGap * (wideEnough ? 2 : 1);
+          final sidebarBase = resolvePanelWidth(
+            layout: layout,
+            screenWidth: screenW,
+            override: _panelWidths.sidebar,
+            isNowPlaying: false,
+          );
+          final nowPlayingBase = resolvePanelWidth(
+            layout: layout,
+            screenWidth: screenW,
+            override: _panelWidths.nowPlaying,
+            isNowPlaying: true,
+          );
+          // A width saved on a wider window must not squeeze the centre view
+          // out of a narrower one, so cap what is actually rendered by what the
+          // current window can spare. The stored width is left untouched, so
+          // the panel springs back once the window is wide enough again.
+          final maxSidebar = math.min(
+            kSidebarResizeMax,
+            math.max(
+              kSidebarResizeMin,
+              screenW - gapTotal - kCenterMinWidth - nowPlayingBase,
+            ),
+          );
+          final maxNowPlaying = math.min(
+            kNowPlayingResizeMax,
+            math.max(
+              kNowPlayingResizeMin,
+              screenW - gapTotal - kCenterMinWidth - sidebarBase,
+            ),
+          );
+          final sidebarCollapsed = _panelWidths.sidebar != null &&
+              _panelWidths.sidebar! <= kSidebarCollapsed;
+
+          // The collapsed rail has a fixed width and must not be clamped back
+          // up to the minimum expanded width.
+          final sidebarW = sidebarCollapsed
+              ? kSidebarCollapsedWidth
+              : sidebarBase.clamp(kSidebarResizeMin, maxSidebar);
+          final nowPlayingW =
+              nowPlayingBase.clamp(kNowPlayingResizeMin, maxNowPlaying);
 
           // Full-screen lyrics overlay sits on top of the entire shell
           // (above the player bar too) when PanelMode.lyrics is active.
@@ -438,6 +526,10 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     DesktopSidebar(
+                      width: sidebarW,
+                      collapsed: sidebarCollapsed,
+                      onCollapsedChanged: (c) => _panelWidths.setSidebar(
+                          c ? kSidebarCollapsed : null),
                       selectedPlaylist:
                           _currentView == 2 ? _viewedPlaylist : null,
                       onPlaylistSelected: (p) {
@@ -448,7 +540,21 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
                         }
                       },
                     ),
-                    SizedBox(width: 8),
+                    // Drag the divider to resize the sidebar. Dragging past the
+                    // minimum expanded width snaps it to the icon rail, and
+                    // dragging back out expands it again.
+                    SizedBox(
+                      width: layout.panelGap,
+                      child: PanelResizeHandle(
+                        onLeftEdge: false,
+                        min: kSidebarCollapsed,
+                        max: maxSidebar,
+                        value: sidebarW,
+                        onChanged: (w) =>
+                            _panelWidths.setSidebar(storedSidebarWidth(w)),
+                        onReset: () => _panelWidths.setSidebar(null),
+                      ),
+                    ),
                     Expanded(
                       child: ClipRect(
                         child: AnimatedSwitcher(
@@ -460,13 +566,25 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
                     // Right panel — always NowPlaying or Queue.
                     // LyricsPanel is a separate fullscreen overlay (below).
                     if (wideEnough) ...[
-                      SizedBox(width: 8),
+                      // Drag the divider to resize the video + lyrics card panel.
+                      SizedBox(
+                        width: layout.panelGap,
+                        child: PanelResizeHandle(
+                          onLeftEdge: true,
+                          min: kNowPlayingResizeMin,
+                          max: maxNowPlaying,
+                          value: nowPlayingW,
+                          onChanged: _panelWidths.setNowPlaying,
+                          onReset: () => _panelWidths.setNowPlaying(null),
+                        ),
+                      ),
                       Stack(
                         children: [
                           Offstage(
                             offstage: panelMode != PanelMode.queue,
                             child: QueuePanel(
                               key: const ValueKey('queue'),
+                              width: nowPlayingW,
                               onClose: () => ref
                                   .read(panelModeProvider.notifier)
                                   .state = PanelMode.none,
@@ -474,8 +592,9 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
                           ),
                           Offstage(
                             offstage: panelMode == PanelMode.queue,
-                            child: const DesktopNowPlayingPanel(
-                              key: ValueKey('nowplaying'),
+                            child: DesktopNowPlayingPanel(
+                              key: const ValueKey('nowplaying'),
+                              width: nowPlayingW,
                             ),
                           ),
                         ],
@@ -485,7 +604,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell>
                 ),
               ),
 
-              SizedBox(height: 8),
+              SizedBox(height: layout.panelGap),
 
               // ── Offline indicator ─────────────────────────────────
               const OfflineIndicator(),

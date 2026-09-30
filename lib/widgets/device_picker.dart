@@ -24,19 +24,30 @@ import '../desktop/theme/desktop_theme.dart';
 class DevicePickerButton extends ConsumerWidget {
   /// Size of the icon. Defaults to 20.
   final double size;
-  const DevicePickerButton({super.key, this.size = 20});
+
+  /// Glyph to show. Defaults to a cast icon; the Verdant Night player bar
+  /// passes a device glyph instead.
+  final IconData icon;
+
+  const DevicePickerButton({
+    super.key,
+    this.size = 20,
+    this.icon = Icons.cast,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isActive = ref.watch(playerProvider.select((s) => s.isActiveDevice));
     final theme = AppThemeScope.maybeOf(context);
     // Green = another device owns playback; white = we own it (or no active device)
-    final color = isActive
-        ? theme?.text ?? Colors.white
-        : theme?.button ?? const Color(0xFF1DB954);
+    final color = theme?.isVerdantNightDesktop == true
+        ? theme!.iconDefault
+        : isActive
+            ? theme?.text ?? Colors.white
+            : theme?.button ?? const Color(0xFF1DB954);
 
     return IconButton(
-      icon: Icon(Icons.cast, color: color, size: size),
+      icon: Icon(icon, color: color, size: size),
       tooltip: isActive ? 'Listening here' : 'Playing on another device',
       padding: EdgeInsets.zero,
       constraints: BoxConstraints(minWidth: size + 16, minHeight: size + 16),

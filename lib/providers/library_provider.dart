@@ -326,7 +326,8 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     if (_uid == null) {
       await _hive.renameFolder(oldName, next);
       state = state.copyWith(folders: _hive.getFolders());
-      for (final playlist in state.playlists.where((p) => p.folderId == oldName)) {
+      for (final playlist
+          in state.playlists.where((p) => p.folderId == oldName)) {
         await organizePlaylist(playlist, folderId: next, changeFolder: true);
       }
       return;
@@ -342,7 +343,8 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     if (_uid == null) {
       await _hive.deleteFolder(name);
       state = state.copyWith(folders: _hive.getFolders());
-      final affected = state.playlists.where((p) => p.folderId == name).toList();
+      final affected =
+          state.playlists.where((p) => p.folderId == name).toList();
       for (final playlist in affected) {
         await organizePlaylist(playlist, folderId: null, changeFolder: true);
       }
@@ -631,6 +633,59 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     }
   }
 
+  /// Reorder the songs inside a playlist (drag handle in the playlist view).
+  ///
+  /// State is updated first so the list settles immediately, then persisted to
+  /// Hive and Firestore. A failure on the remote write is swallowed, matching
+  /// the other playlist mutations.
+  Future<void> reorderPlaylistSongs(
+    Playlist playlist,
+    int oldIndex,
+    int newIndex,
+  ) async {
+    final current = state.playlists.where((p) => _matchesPlaylist(p, playlist));
+    if (current.isEmpty) return;
+
+    // ReorderableListView reports the drop index before the item is removed.
+    if (newIndex > oldIndex) newIndex--;
+
+    final reordered = List<Song>.from(current.first.songs);
+    if (oldIndex < 0 || oldIndex >= reordered.length) return;
+    if (newIndex < 0 || newIndex >= reordered.length) return;
+
+    final song = reordered.removeAt(oldIndex);
+    reordered.insert(newIndex, song);
+
+    state = state.copyWith(
+      playlists: state.playlists.map((p) {
+        if (!_matchesPlaylist(p, playlist)) return p;
+        return Playlist(
+            name: p.name,
+            songs: reordered,
+            createdAt: p.createdAt,
+            description: p.description,
+            visibility: p.visibility,
+            pinned: p.pinned,
+            folderId: p.folderId,
+            sharedId: p.sharedId);
+      }).toList(),
+    );
+
+    final hiveKey = playlist.key as int?;
+    if (hiveKey != null) {
+      await _hive.updatePlaylistSongs(hiveKey, reordered).catchError((_) {});
+    }
+    if (_uid != null && playlist.sharedId != null) {
+      await _fs
+          .updateSharedPlaylistSongsOrder(playlist.sharedId!, reordered)
+          .catchError((_) {});
+    } else if (_uid != null && playlist.firestoreId != null) {
+      await _fs
+          .updatePlaylistSongsOrder(_uid!, playlist.firestoreId!, reordered)
+          .catchError((_) {});
+    }
+  }
+
   /// Remove a song from a playlist — takes the Playlist object directly.
   Future<void> removeSongFromPlaylistObj(
       Playlist playlist, String songId) async {
@@ -718,8 +773,10 @@ class LibraryNotifier extends StateNotifier<LibraryState> {
     }
     if (target.key != null && p.key == target.key) return true;
     // Last resort: same name + createdAt — only for local-only playlists.
-    if (target.firestoreId == null && target.sharedId == null &&
-        p.firestoreId == null && p.sharedId == null) {
+    if (target.firestoreId == null &&
+        target.sharedId == null &&
+        p.firestoreId == null &&
+        p.sharedId == null) {
       return p.name == target.name && p.createdAt == target.createdAt;
     }
     return false;

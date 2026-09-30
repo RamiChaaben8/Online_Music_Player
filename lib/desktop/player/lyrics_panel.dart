@@ -116,7 +116,7 @@ class _LyricsPanelState extends ConsumerState<LyricsPanel> {
     if (lyrics.hasLyrics) _syncActive(lyrics.lines, ps.position);
 
     return Material(
-      color: context.appTheme.main,
+      color: context.appTheme.panelSurfaceColor,
       child: Stack(
         children: [
           // ── Side-by-side layout ───────────────────────────────────
@@ -174,21 +174,24 @@ class _LyricsPanelState extends ConsumerState<LyricsPanel> {
                               padding: EdgeInsets.symmetric(
                                   horizontal: 10, vertical: 4),
                               decoration: BoxDecoration(
-                                color: context.appTheme.card,
+                                color: context.appTheme.lyricsCardColor,
                                 borderRadius: BorderRadius.circular(6),
                                 border: Border.all(
-                                    color: context.appTheme.shadow, width: 1),
+                                    color: context.appTheme.dividerColor,
+                                    width: 1),
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Icon(Icons.lyrics_outlined,
-                                      color: context.appTheme.button, size: 14),
+                                      color: context.appTheme
+                                          .iconColor(context.appTheme.button),
+                                      size: 14),
                                   SizedBox(width: 5),
                                   Text(
                                     'Lyrics',
                                     style: TextStyle(
-                                      color: context.appTheme.button,
+                                      color: context.appTheme.lyricsLabelColor,
                                       fontSize: 12,
                                       fontWeight: FontWeight.w700,
                                     ),
@@ -203,7 +206,11 @@ class _LyricsPanelState extends ConsumerState<LyricsPanel> {
 
                     // Thin separator
                     Divider(
-                        height: 1, thickness: 1, color: context.appTheme.main),
+                        height: 1,
+                        thickness: 1,
+                        color: context.appTheme.isVerdantNightDesktop
+                            ? context.appTheme.dividerColor
+                            : context.appTheme.main),
 
                     // Scrollable lyrics box
                     Expanded(
@@ -263,7 +270,10 @@ class _LyricsPanelState extends ConsumerState<LyricsPanel> {
             mainAxisSize: MainAxisSize.min,
             children: [
               CircularProgressIndicator(
-                  color: context.appTheme.button, strokeWidth: 2),
+                  color: context.appTheme.isVerdantNightDesktop
+                      ? context.appTheme.subtext
+                      : context.appTheme.button,
+                  strokeWidth: 2),
               SizedBox(height: 12),
               Text('Loading lyrics…',
                   style:
@@ -490,9 +500,13 @@ class _LyricLineState extends State<_LyricLine> {
                       fontSize: 22,
                       fontWeight: FontWeight.w800,
                       height: 1.3,
-                      color: lit
-                          ? context.appTheme.button
-                          : context.appTheme.text.withValues(alpha: 0.45),
+                      color: context.appTheme.isVerdantNightDesktop
+                          ? (lit
+                              ? context.appTheme.lyricsActiveLineColor
+                              : context.appTheme.lyricsInactiveLineColor)
+                          : (lit
+                              ? context.appTheme.button
+                              : context.appTheme.text.withValues(alpha: 0.45)),
                     ),
                     child: Text('${word.text} '),
                   );

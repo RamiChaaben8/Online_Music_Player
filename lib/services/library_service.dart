@@ -18,19 +18,19 @@ class LibraryService {
 
   static void setGuestMode(bool enabled) => _guestMode = enabled;
 
-  Box<Song> get _likedBox => Hive.box<Song>(
-      _guestMode ? 'guest_liked_songs' : 'liked_songs');
-  Box<Song> get _recentBox => Hive.box<Song>(
-      _guestMode ? 'guest_recently_played' : 'recently_played');
-  Box<Playlist> get _playlistsBox => Hive.box<Playlist>(
-      _guestMode ? 'guest_playlists' : 'playlists');
+  Box<Song> get _likedBox =>
+      Hive.box<Song>(_guestMode ? 'guest_liked_songs' : 'liked_songs');
+  Box<Song> get _recentBox =>
+      Hive.box<Song>(_guestMode ? 'guest_recently_played' : 'recently_played');
+  Box<Playlist> get _playlistsBox =>
+      Hive.box<Playlist>(_guestMode ? 'guest_playlists' : 'playlists');
   Box<dynamic> get _settingsBox => Hive.box<dynamic>('settings');
 
   String get _foldersKey => _guestMode ? 'guest_folders' : 'local_folders';
 
   List<String> getFolders() =>
       (_settingsBox.get(_foldersKey) as List?)?.cast<String>().toList() ??
-          <String>[];
+      <String>[];
 
   Future<void> addFolder(String name) async {
     final folders = getFolders().toSet()..add(name);
@@ -38,7 +38,8 @@ class LibraryService {
   }
 
   Future<void> renameFolder(String oldName, String newName) async {
-    final folders = getFolders().map((name) => name == oldName ? newName : name).toSet();
+    final folders =
+        getFolders().map((name) => name == oldName ? newName : name).toSet();
     await _settingsBox.put(_foldersKey, folders.toList());
   }
 
@@ -72,7 +73,8 @@ class LibraryService {
 
   // ── Recently played ───────────────────────────────────────────────────────
 
-  List<Song> getRecentlyPlayed() => _recentBox.values.toList().reversed.toList();
+  List<Song> getRecentlyPlayed() =>
+      _recentBox.values.toList().reversed.toList();
 
   Future<void> addToRecentlyPlayed(Song song) async {
     // Remove if already present (to move it to front)
@@ -93,8 +95,8 @@ class LibraryService {
 
   Future<void> createPlaylist(String name,
       {String? description, String visibility = 'private'}) async {
-    final playlist = Playlist(
-        name: name, description: description, visibility: visibility);
+    final playlist =
+        Playlist(name: name, description: description, visibility: visibility);
     await _playlistsBox.add(playlist);
   }
 
@@ -120,6 +122,17 @@ class LibraryService {
     final playlist = _playlistsBox.get(playlistKey);
     if (playlist != null) {
       playlist.songs.removeWhere((s) => s.id == songId);
+      await playlist.save();
+    }
+  }
+
+  /// Persist a new song order for a playlist (drag-to-reorder).
+  Future<void> updatePlaylistSongs(int playlistKey, List<Song> songs) async {
+    final playlist = _playlistsBox.get(playlistKey);
+    if (playlist != null) {
+      // Re-clone so the rebuilt list doesn't share Song instances with the
+      // caller's list, which would trip Hive's object-ownership check.
+      playlist.songs = songs.map(_clone).toList();
       await playlist.save();
     }
   }

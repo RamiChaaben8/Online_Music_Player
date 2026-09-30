@@ -66,8 +66,8 @@ class FirestoreService {
     }
 
     await user.updateDisplayName(normalizedName);
-    await user.updatePhotoURL(
-        normalizedPhotoURL.isEmpty ? null : normalizedPhotoURL);
+    await user
+        .updatePhotoURL(normalizedPhotoURL.isEmpty ? null : normalizedPhotoURL);
     final savedPhotoURL = normalizedPhotoURL;
 
     final profileRef = _db.collection('publicProfiles').doc(user.uid);
@@ -90,7 +90,8 @@ class FirestoreService {
         final profile = PublicProfile.fromMap(uid, doc.data()!);
         _profileCache[uid] = profile;
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('friend_profile_$uid', jsonEncode(profile.toMap()));
+        await prefs.setString(
+            'friend_profile_$uid', jsonEncode(profile.toMap()));
         return profile;
       }
     } catch (_) {
@@ -168,7 +169,8 @@ class FirestoreService {
     final profileRef = _db.collection('publicProfiles').doc(user.uid);
     final profile = await profileRef.get();
     final currentName = profile.data()?['displayName'];
-    if (profile.exists && (currentName is! String || currentName.trim().isEmpty)) {
+    if (profile.exists &&
+        (currentName is! String || currentName.trim().isEmpty)) {
       await profileRef.update({'displayName': authDisplayName});
     }
   }
@@ -876,6 +878,36 @@ class FirestoreService {
     await ref.update({
       'trackIds': FieldValue.arrayRemove([songId]),
       'tracks': tracks,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Overwrite a playlist's track order after a drag-to-reorder.
+  ///
+  /// `trackIds` and `tracks` are rewritten wholesale rather than patched with
+  /// arrayUnion, because reordering changes positions and not just membership.
+  Future<void> updatePlaylistSongsOrder(
+    String uid,
+    String playlistId,
+    List<Song> songs,
+  ) async {
+    final ref = _userCol(uid, 'playlists').doc(playlistId);
+    await ref.update({
+      'trackIds': songs.map((s) => s.id).toList(),
+      'tracks': songs.map(_songToMap).toList(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Same as [updatePlaylistSongsOrder] but for a collaborative playlist.
+  Future<void> updateSharedPlaylistSongsOrder(
+    String sharedPlaylistId,
+    List<Song> songs,
+  ) async {
+    final ref = _db.collection('sharedPlaylists').doc(sharedPlaylistId);
+    await ref.update({
+      'trackIds': songs.map((s) => s.id).toList(),
+      'tracks': songs.map(_songToMap).toList(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
   }

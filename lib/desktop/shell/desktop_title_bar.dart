@@ -192,7 +192,7 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
     final currentUser = ref.watch(authStateProvider).asData?.value;
 
     return Container(
-      height: kTopBarHeight,
+      height: theme.layout.topBarHeight,
       color: theme.sidebar,
       padding: EdgeInsets.symmetric(horizontal: 16),
       child: Row(
@@ -221,9 +221,11 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
               children: [
                 _iconBtn(
                   Icons.home,
-                  color: widget.currentView == 0
-                      ? theme.accent
-                      : theme.textSecondary,
+                  color: theme.isVerdantNightDesktop
+                      ? theme.iconDefault
+                      : widget.currentView == 0
+                          ? theme.accent
+                          : theme.textSecondary,
                   onPressed: widget.onHome,
                   tooltip: 'Home',
                 ),
@@ -239,7 +241,11 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
             SizedBox(width: 4),
             _iconBtn(
               Icons.people_outline,
-              color: widget.currentView == 3 ? theme.accent : theme.textSecondary,
+              color: theme.isVerdantNightDesktop
+                  ? theme.iconDefault
+                  : widget.currentView == 3
+                      ? theme.accent
+                      : theme.textSecondary,
               onPressed: widget.onFriendsTap,
               tooltip: 'Friends',
             ),
@@ -303,12 +309,23 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
           child: CompositedTransformTarget(
             link: _searchLink,
             child: Container(
-              height: 40,
+              height: theme.layout.searchHeight,
               decoration: BoxDecoration(
-                color: theme.cardColor,
-                borderRadius: BorderRadius.circular(_searchExpanded ? 8 : 999),
+                color: theme.isVerdantNightDesktop
+                    ? theme.highlightElevated
+                    : theme.cardColor,
+                borderRadius: BorderRadius.circular(
+                  theme.isVerdantNightDesktop
+                      ? theme.layout.searchRadius
+                      : (_searchExpanded ? 8 : 999),
+                ),
                 border: _searchExpanded
-                    ? Border.all(color: theme.accent, width: 1.5)
+                    ? Border.all(
+                        color: theme.isVerdantNightDesktop
+                            ? theme.text
+                            : theme.accent,
+                        width: 1.5,
+                      )
                     : null,
               ),
               child: Row(
@@ -399,8 +416,10 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
             padding: EdgeInsets.fromLTRB(16, 14, 16, 6),
             child: Text(
               'Suggestions',
-              style:
-                  TextStyle(color: theme.accent, fontWeight: FontWeight.w700),
+              style: TextStyle(
+                  color:
+                      theme.isVerdantNightDesktop ? theme.text : theme.accent,
+                  fontWeight: FontWeight.w700),
             ),
           ),
           ListView.separated(
@@ -410,7 +429,9 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
             itemCount: suggestions.length,
             separatorBuilder: (_, __) => Divider(
               height: 1,
-              color: theme.textSecondary.withValues(alpha: 0.1),
+              color: theme.isVerdantNightDesktop
+                  ? theme.dividerColor
+                  : theme.textSecondary.withValues(alpha: 0.1),
             ),
             itemBuilder: (_, i) {
               final song = suggestions[i];
@@ -467,7 +488,10 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
                 Text(
                   'Recent searches',
                   style: TextStyle(
-                      color: theme.accent, fontWeight: FontWeight.w700),
+                      color: theme.isVerdantNightDesktop
+                          ? theme.text
+                          : theme.accent,
+                      fontWeight: FontWeight.w700),
                 ),
                 const Spacer(),
                 TextButton(
@@ -540,7 +564,9 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
       icon: Icon(
         icon,
         color: enabled
-            ? theme.textPrimary
+            ? (theme.isVerdantNightDesktop
+                ? theme.iconDefault
+                : theme.textPrimary)
             : theme.textSecondary.withValues(alpha: 0.4),
         size: size,
       ),
@@ -560,7 +586,11 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
     final theme = context.appTheme;
     return IconButton(
       onPressed: onPressed ?? () {},
-      icon: Icon(icon, color: color ?? theme.textSecondary, size: size),
+      icon: Icon(icon,
+          color: theme.isVerdantNightDesktop
+              ? theme.iconDefault
+              : color ?? theme.textSecondary,
+          size: size),
       splashRadius: 18,
       padding: EdgeInsets.zero,
       constraints: const BoxConstraints(minWidth: 32, minHeight: 32),

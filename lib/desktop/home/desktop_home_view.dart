@@ -25,11 +25,14 @@ class _DesktopHomeViewState extends ConsumerState<DesktopHomeView> {
   @override
   Widget build(BuildContext context) {
     final homeState = ref.watch(homeProvider);
+    final layout = context.appTheme.layout;
 
     return Container(
       decoration: BoxDecoration(
-        color: context.appTheme.main,
-        borderRadius: BorderRadius.all(Radius.circular(12)),
+        color: context.appTheme.panelSurfaceColor,
+        borderRadius: BorderRadius.all(
+          Radius.circular(context.appTheme.layout.panelRadius),
+        ),
       ),
       child: CustomScrollView(
         slivers: [
@@ -40,7 +43,10 @@ class _DesktopHomeViewState extends ConsumerState<DesktopHomeView> {
                 child: Padding(
                   padding: EdgeInsets.all(40),
                   child:
-                      CircularProgressIndicator(color: context.appTheme.button),
+                      CircularProgressIndicator(
+                          color: context.appTheme.isVerdantNightDesktop
+                              ? context.appTheme.subtext
+                              : context.appTheme.button),
                 ),
               ),
             )
@@ -54,7 +60,7 @@ class _DesktopHomeViewState extends ConsumerState<DesktopHomeView> {
                   subtitle: section.subtitle,
                   isLoading: section.isLoading,
                   child: SizedBox(
-                    height: 260,
+                    height: layout.homeCardSize + 88,
                     child: section.isLoading
                         ? _buildSkeletonRow()
                         : ListView.builder(
@@ -64,7 +70,8 @@ class _DesktopHomeViewState extends ConsumerState<DesktopHomeView> {
                             padding: EdgeInsets.symmetric(horizontal: 20),
                             itemCount: section.songs.length,
                             itemBuilder: (ctx, j) => Padding(
-                              padding: EdgeInsets.only(right: 16),
+                              padding:
+                                  EdgeInsets.only(right: layout.homeCardGap),
                               child: DesktopMusicCard(
                                 song: section.songs[j],
                                 showBadge: i == 0,
@@ -90,7 +97,12 @@ class _DesktopHomeViewState extends ConsumerState<DesktopHomeView> {
     bool isLoading = false,
   }) {
     return Padding(
-      padding: EdgeInsets.fromLTRB(20, 24, 20, 0),
+      padding: EdgeInsets.fromLTRB(
+        20,
+        context.appTheme.layout.sectionGap,
+        20,
+        0,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -106,21 +118,22 @@ class _DesktopHomeViewState extends ConsumerState<DesktopHomeView> {
   }
 
   Widget _buildSkeletonRow() {
+    final layout = context.appTheme.layout;
     return ListView.builder(
       scrollDirection: Axis.horizontal,
       padding: EdgeInsets.symmetric(horizontal: 20),
       itemCount: 5,
       itemBuilder: (_, __) => Padding(
-        padding: EdgeInsets.only(right: 16),
+        padding: EdgeInsets.only(right: layout.homeCardGap),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
-              width: 172,
-              height: 172,
+              width: layout.homeCardSize,
+              height: layout.homeCardSize,
               decoration: BoxDecoration(
                 color: context.appTheme.card,
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(layout.cardRadius),
               ),
             ),
             SizedBox(height: 8),
@@ -159,7 +172,9 @@ class _SectionHeader extends StatelessWidget {
             Text(
               title,
               style: TextStyle(
-                color: context.appTheme.button,
+                color: context.appTheme.isVerdantNightDesktop
+                    ? context.appTheme.text
+                    : context.appTheme.button,
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
               ),
@@ -198,6 +213,7 @@ class _DesktopMusicCardState extends ConsumerState<DesktopMusicCard> {
 
   @override
   Widget build(BuildContext context) {
+    final layout = context.appTheme.layout;
     return SongContextMenu(
       song: widget.song,
       currentPlaylist: widget.playlist,
@@ -207,7 +223,7 @@ class _DesktopMusicCardState extends ConsumerState<DesktopMusicCard> {
         child: GestureDetector(
           onTap: () => ref.read(playerProvider.notifier).playSong(widget.song),
           child: SizedBox(
-            width: 172,
+            width: layout.homeCardSize,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -216,11 +232,11 @@ class _DesktopMusicCardState extends ConsumerState<DesktopMusicCard> {
                   children: [
                     // Album art
                     ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(layout.cardRadius),
                       child: widget.song.thumbnailUrl.isEmpty
                           ? Container(
-                              width: 172,
-                              height: 172,
+                              width: layout.homeCardSize,
+                              height: layout.homeCardSize,
                               color: context.appTheme.card,
                               child: Icon(Icons.music_note,
                                   color: context.appTheme.subtext
@@ -229,16 +245,16 @@ class _DesktopMusicCardState extends ConsumerState<DesktopMusicCard> {
                             )
                           : CachedNetworkImage(
                               imageUrl: widget.song.thumbnailUrl,
-                              width: 172,
-                              height: 172,
+                              width: layout.homeCardSize,
+                              height: layout.homeCardSize,
                               fit: BoxFit.cover,
                               placeholder: (_, __) => Container(
-                                  width: 172,
-                                  height: 172,
+                                  width: layout.homeCardSize,
+                                  height: layout.homeCardSize,
                                   color: context.appTheme.card),
                               errorWidget: (_, __, ___) => Container(
-                                width: 172,
-                                height: 172,
+                                width: layout.homeCardSize,
+                                height: layout.homeCardSize,
                                 color: context.appTheme.card,
                                 child: Icon(Icons.music_note,
                                     color: context.appTheme.subtext
@@ -251,7 +267,7 @@ class _DesktopMusicCardState extends ConsumerState<DesktopMusicCard> {
                     // Gradient overlay
                     Positioned.fill(
                       child: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(layout.cardRadius),
                         child: Container(
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
@@ -277,13 +293,15 @@ class _DesktopMusicCardState extends ConsumerState<DesktopMusicCard> {
                           padding:
                               EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
-                            color: context.appTheme.button,
+                            color: layout.dailyMixBadgeBackground ??
+                                context.appTheme.button,
                             borderRadius: BorderRadius.circular(999),
                           ),
                           child: Text(
                             widget.badgeText,
                             style: TextStyle(
-                              color: context.appTheme.text,
+                              color: layout.dailyMixBadgeForeground ??
+                                  context.appTheme.text,
                               fontSize: 11,
                               fontWeight: FontWeight.bold,
                             ),
@@ -297,8 +315,8 @@ class _DesktopMusicCardState extends ConsumerState<DesktopMusicCard> {
                         right: 8,
                         bottom: 8,
                         child: Container(
-                          width: 46,
-                          height: 46,
+                          width: layout.homeCardPlayButtonSize,
+                          height: layout.homeCardPlayButtonSize,
                           decoration: BoxDecoration(
                             color: context.appTheme.button,
                             shape: BoxShape.circle,
@@ -311,8 +329,11 @@ class _DesktopMusicCardState extends ConsumerState<DesktopMusicCard> {
                               ),
                             ],
                           ),
-                          child: Icon(Icons.play_arrow,
-                              color: context.appTheme.text, size: 26),
+                          child: Icon(
+                            Icons.play_arrow,
+                            color: context.appTheme.playIconColor,
+                            size: 26,
+                          ),
                         ),
                       ),
                       Positioned(
@@ -327,7 +348,8 @@ class _DesktopMusicCardState extends ConsumerState<DesktopMusicCard> {
                           child: SongMenuButton(
                             song: widget.song,
                             currentPlaylist: widget.playlist,
-                            color: context.appTheme.text,
+                            color: context.appTheme
+                                .iconColor(context.appTheme.text),
                             size: 18,
                           ),
                         ),
@@ -348,12 +370,15 @@ class _DesktopMusicCardState extends ConsumerState<DesktopMusicCard> {
                         children: [
                           Text(
                             widget.song.title,
-                            maxLines: 1,
+                            maxLines:
+                                context.appTheme.isVerdantNightDesktop ? 2 : 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               color: context.appTheme.text,
                               fontSize: 14,
-                              fontWeight: FontWeight.w500,
+                              fontWeight: context.appTheme.isVerdantNightDesktop
+                                  ? FontWeight.w600
+                                  : FontWeight.w500,
                             ),
                           ),
                           SizedBox(height: 2),

@@ -16,6 +16,7 @@
 import { useEffect, useRef, useState, useCallback, forwardRef } from 'react'
 import { Mic2, ChevronDown, Check, Music2 } from 'lucide-react'
 import { usePlayerStore } from '../../stores/playerStore'
+import { useThemeStore } from '../../stores/themeStore'
 import { useSyncStore } from '../../hooks/useSyncSession'
 import { getCaptionTracks, getCaptionTrack } from '../../services/youtubeService'
 import { fetchLyricsForSong } from '../../services/lyricsService'
@@ -30,18 +31,35 @@ const ANIM_MS      = 150
 const PAUSE_MS     = 3000
 const STORAGE_KEY  = 'utify_now_playing_video_h'
 
+// Every theme remembers its own video card height, so resizing the card in
+// one theme never changes the size in another.
+const heightKey = (themeId) => `${STORAGE_KEY}_${themeId}`
+
+const readHeight = (themeId) => {
+  // Fall back to the pre-per-theme value so existing sizes are not lost.
+  const raw = localStorage.getItem(heightKey(themeId)) ?? localStorage.getItem(STORAGE_KEY)
+  const saved = parseFloat(raw)
+  return isNaN(saved) || saved < VIDEO_MIN ? VIDEO_MIN : saved
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function NowPlayingPanel() {
   const currentSong = usePlayerStore((s) => s.currentSong)
   const position    = usePlayerStore((s) => s.position)
+  const themeId     = useThemeStore((s) => s.themeId)
   const panelRef    = useRef(null)
 
   // ── Video height ──────────────────────────────────────────────────────────
-  const [videoH, setVideoH] = useState(() => {
-    const saved = parseFloat(localStorage.getItem(STORAGE_KEY))
-    return isNaN(saved) || saved < VIDEO_MIN ? VIDEO_MIN : saved
-  })
+  // Each theme stores its own height, so reset it during render when the
+  // active theme changes.
+  const [videoH, setVideoH] = useState(() => readHeight(themeId))
+  const [heightThemeId, setHeightThemeId] = useState(themeId)
+  if (heightThemeId !== themeId) {
+    const h = readHeight(themeId)
+    setHeightThemeId(themeId)
+    setVideoH(h)
+  }
   const videoHRef = useRef(videoH)
   videoHRef.current = videoH
 
@@ -62,8 +80,8 @@ export default function NowPlayingPanel() {
     }
     setVideoH(next)
     videoHRef.current = next
-    localStorage.setItem(STORAGE_KEY, String(next))
-  }, [getVideoMax])
+    localStorage.setItem(heightKey(themeId), String(next))
+  }, [getVideoMax, themeId])
 
   // ── Drag bar ──────────────────────────────────────────────────────────────
   const [dragging, setDragging] = useState(false)

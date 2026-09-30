@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /* ── Utify Theme CSS Variables ────────────────────────────────────────────── */
-/* Maps directly from app_theme.dart — all 10 themes                          */
+/* Maps directly from app_theme.dart — all 11 themes                          */
 
 :root,
 [data-theme="green"] {
@@ -42,156 +42,23 @@
   --color-misc: #E08A3E;
 }
 
-[data-theme="dribbblish-white"] {
-  --color-main: #F5F7FA;
-  --color-sidebar: #E9EDF2;
-  --color-player: #FFFFFF;
-  --color-card: #FFFFFF;
-  --color-text: #17202A;
-  --color-subtext: #5D6B78;
-  --color-button: #2E7DDE;
-  --color-button-active: #1F63B5;
-  --color-selected-row: #DCEAFA;
-  --color-highlight: #E8EEF5;
-  --color-highlight-elevated: #D7E0EA;
-  --color-shadow: #B9C5D1;
-  --color-notification: #2E7DDE;
-  --color-error: #D64545;
-  --color-tab-active: #D9E9FA;
-  --color-misc: #7A56C2;
-}
-
-[data-theme="catppuccin-latte"] {
-  --color-main: #EFF1F5;
-  --color-sidebar: #E6E9EF;
-  --color-player: #DCE0E8;
-  --color-card: #FFFFFF;
-  --color-text: #4C4F69;
-  --color-subtext: #6C6F85;
-  --color-button: #1E66F5;
-  --color-button-active: #1554D1;
-  --color-selected-row: #D9E5FF;
-  --color-highlight: #E1E5EC;
-  --color-highlight-elevated: #CCD2DC;
-  --color-shadow: #BCC3D0;
-  --color-notification: #1E66F5;
-  --color-error: #D20F39;
-  --color-tab-active: #DCE7FF;
-  --color-misc: #8839EF;
-}
-
-[data-theme="nord"] {
-  --color-main: #2E3440;
-  --color-sidebar: #272C36;
-  --color-player: #242933;
-  --color-card: #3B4252;
-  --color-text: #ECEFF4;
-  --color-subtext: #D8DEE9;
-  --color-button: #88C0D0;
-  --color-button-active: #8FBCBB;
-  --color-selected-row: #3D5664;
-  --color-highlight: #434C5E;
-  --color-highlight-elevated: #4C566A;
-  --color-shadow: #596579;
-  --color-notification: #88C0D0;
-  --color-error: #BF616A;
-  --color-tab-active: #3C5965;
-  --color-misc: #B48EAD;
-}
-
-[data-theme="dracula"] {
-  --color-main: #282A36;
-  --color-sidebar: #21222C;
-  --color-player: #191A21;
-  --color-card: #44475A;
-  --color-text: #F8F8F2;
-  --color-subtext: #BFBFB2;
-  --color-button: #BD93F9;
-  --color-button-active: #FF79C6;
-  --color-selected-row: #493F62;
-  --color-highlight: #3B3D4B;
-  --color-highlight-elevated: #505365;
-  --color-shadow: #6272A4;
-  --color-notification: #50FA7B;
-  --color-error: #FF5555;
-  --color-tab-active: #443C5B;
-  --color-misc: #8BE9FD;
-}
-
-[data-theme="dreary-bib"] {
-  --color-main: #202020;
-  --color-sidebar: #202020;
-  --color-player: #242424;
-  --color-card: #242424;
-  --color-text: #8BC34A;
-  --color-subtext: #B4B4B4;
-  --color-button: #537B25;
-  --color-button-active: #98DA4B;
-  --color-selected-row: #2A3C17;
-  --color-highlight: #303030;
-  --color-highlight-elevated: #353535;
-  --color-shadow: #000000;
-  --color-notification: #242424;
-  --color-error: #242424;
-  --color-tab-active: #303030;
-  --color-misc: #8BC34A;
-}
-
-[data-theme="dreary-deeper"] {
-  --color-main: #040614;
-  --color-sidebar: #0F111A;
-  --color-player: #0F111A;
-  --color-card: #0F1118;
-  --color-text: #4F9A87;
-  --color-subtext: #406560;
-  --color-button: #0D3A2E;
-  --color-button-active: #106165;
-  --color-selected-row: #040614;
-  --color-highlight: #0A1527;
-  --color-highlight-elevated: #0F1118;
-  --color-shadow: #406560;
-  --color-notification: #051024;
-  --color-error: #051024;
-  --color-tab-active: #0A1527;
-  --color-misc: #406560;
-}
-
-[data-theme="gruvbox-material-dark"] {
-  --color-main: #1D2021;
-  --color-sidebar: #282828;
-  --color-player: #282828;
-  --color-card: #504945;
-  --color-text: #FFDAB9;
-  --color-subtext: #B8BBC2;
-  --color-button: #98971A;
-  --color-button-active: #B8BB26;
-  --color-selected-row: #7C6F64;
-  --color-highlight: #3C3836;
-  --color-highlight-elevated: #665C54;
-  --color-shadow: #3C3836;
-  --color-notification: #282828;
-  --color-error: #CC241D;
-  --color-tab-active: #504945;
-  --color-misc: #D8A657;
-}
-
-[data-theme="onepunch-dark"] {
-  --color-main: #1D2021;
-  --color-sidebar: #1D2021;
-  --color-player: #1D2021;
-  --color-card: #32302F;
-  --color-text: #D5C4A1;
-  --color-subtext: #B8BB26;
-  --color-button: #8EC07C;
-  --color-button-active: #8EC07C;
-  --color-selected-row: #D3869B;
-  --color-highlight: #32302F;
-  --color-highlight-elevated: #32302F;
-  --color-shadow: #1D2021;
-  --color-notification: #FB4934;
-  --color-error: #CC2418;
-  --color-tab-active: #FB4934;
-  --color-misc: #83A598;
+[data-theme="verdant-night"] {
+  --color-main: #0A0A0A;
+  --color-sidebar: #121212;
+  --color-player: #121212;
+  --color-card: #121212;
+  --color-text: #7FD13B;
+  --color-subtext: #B3B3B3;
+  --color-button: #1ED760;
+  --color-button-active: #1ED760;
+  --color-selected-row: #2A3D22;
+  --color-highlight: #1F1F1F;
+  --color-highlight-elevated: #282828;
+  --color-shadow: #333333;
+  --color-notification: #1ED760;
+  --color-error: #E8173A;
+  --color-tab-active: #2A3D22;
+  --color-misc: #6B1A24;
 }
 
 /* ── Utility classes using theme variables ────────────────────────────────── */
@@ -219,6 +86,131 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-subtext);
+}
+
+/* Verdant Night desktop sizing overrides. Inline component styles are
+   intentionally overridden only while this theme is active. */
+@media (min-width: 1200px) {
+  [data-theme="verdant-night"] body {
+    font-family: Inter, "Segoe UI", sans-serif;
+  }
+
+  [data-theme="verdant-night"] nav[aria-label="Library navigation"]:has(> div:first-child > span) {
+    width: clamp(360px, 22vw, 430px) !important;
+    min-width: clamp(360px, 22vw, 430px) !important;
+    max-width: clamp(360px, 22vw, 430px) !important;
+    border-radius: 8px !important;
+  }
+
+  [data-theme="verdant-night"] nav[aria-label="Library navigation"] [role="button"] {
+    height: 64px !important;
+    min-height: 64px !important;
+    box-sizing: border-box !important;
+    border-radius: 4px !important;
+  }
+
+  [data-theme="verdant-night"] nav[aria-label="Library navigation"] [role="button"] > div:first-child {
+    width: 48px !important;
+    height: 48px !important;
+    border-radius: 4px !important;
+  }
+
+  [data-theme="verdant-night"] #main-content {
+    border-radius: 8px !important;
+  }
+
+  [data-theme="verdant-night"] #main-content ~ aside {
+    width: clamp(360px, 22vw, 430px) !important;
+    min-width: clamp(360px, 22vw, 430px) !important;
+    max-width: clamp(360px, 22vw, 430px) !important;
+    border-radius: 8px !important;
+  }
+
+  /* Lyrics card: colour only. Card size and scrolling match every other
+     theme, and the video card above stays drag-resizable. */
+  [data-theme="verdant-night"] #main-content ~ aside > div:nth-child(2) > div:first-child {
+    background: #6B1A24 !important;
+  }
+
+  [data-theme="verdant-night"] #main-content ~ aside > div:nth-child(2) > div:first-child [style*="font-size: 22px"] {
+    color: #FFFFFF !important;
+  }
+
+  [data-theme="verdant-night"] #main-content ~ aside > div:nth-child(2) > div:first-child [style*="font-size: 18px"] {
+    color: rgba(255, 255, 255, 0.55) !important;
+  }
+
+  [data-theme="verdant-night"] header[role="banner"] {
+    height: 62px !important;
+    min-height: 62px !important;
+  }
+
+  [data-theme="verdant-night"] header[role="banner"] input[role="searchbox"] {
+    height: 40px !important;
+    border-radius: 999px !important;
+    background: #1F1F1F !important;
+  }
+
+  [data-theme="verdant-night"] footer[aria-label="Player controls"] {
+    height: 90px !important;
+    min-height: 90px !important;
+    border-radius: 8px 8px 0 0 !important;
+  }
+
+  [data-theme="verdant-night"] footer[aria-label="Player controls"] button[aria-label="Play"],
+  [data-theme="verdant-night"] footer[aria-label="Player controls"] button[aria-label="Pause"] {
+    width: 48px !important;
+    height: 48px !important;
+  }
+
+  [data-theme="verdant-night"] footer[aria-label="Player controls"] button[aria-label="Play"] svg,
+  [data-theme="verdant-night"] footer[aria-label="Player controls"] button[aria-label="Pause"] svg {
+    fill: #000000 !important;
+  }
+
+  [data-theme="verdant-night"] input.utify-seek-range::-webkit-slider-runnable-track {
+    height: 4px !important;
+    border-radius: 2px !important;
+  }
+
+  [data-theme="verdant-night"] #main-content div:has(> [role="button"][aria-label^="Play "]) {
+    gap: 24px !important;
+  }
+
+  [data-theme="verdant-night"] #main-content [role="button"][aria-label^="Play "] {
+    width: 172px !important;
+    border-radius: 8px !important;
+  }
+
+  [data-theme="verdant-night"] #main-content [role="button"][aria-label^="Play "] p:first-of-type {
+    display: -webkit-box !important;
+    -webkit-box-orient: vertical !important;
+    -webkit-line-clamp: 2 !important;
+    white-space: normal !important;
+    font-weight: 600 !important;
+  }
+
+  [data-theme="verdant-night"] #main-content [role="button"][aria-label^="Play "] > div:first-child {
+    width: 172px !important;
+    height: 172px !important;
+    border-radius: 8px !important;
+  }
+
+  [data-theme="verdant-night"] #main-content [role="button"][aria-label^="Play "] button[aria-label^="Play "] {
+    width: 48px !important;
+    height: 48px !important;
+    background: #1ED760 !important;
+  }
+
+  [data-theme="verdant-night"] #main-content [role="button"][aria-label^="Play "] button[aria-label^="Play "] svg {
+    color: #000000 !important;
+    fill: #000000 !important;
+  }
+
+  [data-theme="verdant-night"] #main-content [role="button"][aria-label^="Play "] > div:first-child > div:nth-child(3) {
+    background: rgba(0, 0, 0, 0.7) !important;
+    color: #FFFFFF !important;
+  }
 }
 
 /* Range input (seek bar / volume) */

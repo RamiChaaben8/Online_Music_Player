@@ -76,7 +76,7 @@ class TuneifyApp extends StatelessWidget {
         onSurface: t.text,
       ),
       cardColor: t.card,
-      dividerColor: t.shadow,
+      dividerColor: t.dividerColor,
       textTheme: TextTheme(
         displayLarge: TextStyle(color: t.text, fontWeight: FontWeight.bold),
         displayMedium: TextStyle(color: t.text, fontWeight: FontWeight.bold),
@@ -94,7 +94,18 @@ class TuneifyApp extends StatelessWidget {
         hintStyle: TextStyle(color: t.subtext),
         border: const OutlineInputBorder(borderSide: BorderSide.none),
       ),
-      iconTheme: IconThemeData(color: t.text),
+      iconTheme: IconThemeData(
+          color: t.isVerdantNightDesktop ? t.iconDefault : t.text),
+      iconButtonTheme: t.isVerdantNightDesktop
+          ? IconButtonThemeData(style: t.iconButtonStyle)
+          : const IconButtonThemeData(),
+      tabBarTheme: t.isVerdantNightDesktop
+          ? TabBarThemeData(
+              labelColor: t.text,
+              unselectedLabelColor: t.subtext,
+              indicatorColor: t.text,
+            )
+          : const TabBarThemeData(),
       progressIndicatorTheme: ProgressIndicatorThemeData(color: t.button),
       sliderTheme: SliderThemeData(
         activeTrackColor: t.button,
@@ -105,7 +116,8 @@ class TuneifyApp extends StatelessWidget {
         thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
       ),
       scrollbarTheme: ScrollbarThemeData(
-        thumbColor: WidgetStatePropertyAll(t.button),
+        thumbColor: WidgetStatePropertyAll(
+            t.isVerdantNightDesktop ? t.scrollbarThumbColor : t.button),
         thickness: const WidgetStatePropertyAll(4),
         radius: const Radius.circular(2),
       ),
@@ -450,14 +462,15 @@ class _AppShellState extends ConsumerState<AppShell>
                     .toList(),
                 onChanged: (v) => setState(() => visibility = v ?? 'private'),
               ),
-              if (!isGuest) CheckboxListTile(
-                contentPadding: EdgeInsets.zero,
-                value: collaborative,
-                title: const Text('Collaborative',
-                    style: TextStyle(color: Colors.white)),
-                onChanged: (value) =>
-                    setState(() => collaborative = value ?? false),
-              ),
+              if (!isGuest)
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: collaborative,
+                  title: const Text('Collaborative',
+                      style: TextStyle(color: Colors.white)),
+                  onChanged: (value) =>
+                      setState(() => collaborative = value ?? false),
+                ),
             ],
           ),
           actions: [
@@ -590,9 +603,7 @@ class _AppShellState extends ConsumerState<AppShell>
       playerProvider.select((playerState) => playerState.currentSong != null),
     );
     final isGuest = ref.watch(guestSessionProvider);
-    final screens = isGuest
-        ? _screens.take(3).toList()
-        : _screens;
+    final screens = isGuest ? _screens.take(3).toList() : _screens;
 
     return Scaffold(
       body: Stack(
@@ -669,9 +680,9 @@ class _SpotifyBottomNav extends StatelessWidget {
           label: 'Your Library'),
       if (!guestMode)
         _NavItem(
-          icon: Icons.people_outline,
-          activeIcon: Icons.people,
-          label: 'Friends'),
+            icon: Icons.people_outline,
+            activeIcon: Icons.people,
+            label: 'Friends'),
       _NavItem(
           icon: Icons.add,
           activeIcon: Icons.add,
@@ -808,31 +819,33 @@ class _CreateBottomSheet extends StatelessWidget {
             ),
 
             // Party option
-            if (showParty) ListTile(
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
-              leading: Container(
-                width: 52,
-                height: 52,
-                decoration: const BoxDecoration(
-                  color: Color(0xFF3A3A3A),
-                  shape: BoxShape.circle,
+            if (showParty)
+              ListTile(
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+                leading: Container(
+                  width: 52,
+                  height: 52,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF3A3A3A),
+                    shape: BoxShape.circle,
+                  ),
+                  child:
+                      const Icon(Icons.people, color: Colors.white, size: 26),
                 ),
-                child: const Icon(Icons.people, color: Colors.white, size: 26),
+                title: const Text(
+                  'Party',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16),
+                ),
+                subtitle: const Text(
+                  'Listen together with friends in real time',
+                  style: TextStyle(color: Color(0xFFB3B3B3), fontSize: 13),
+                ),
+                onTap: onCreateParty,
               ),
-              title: const Text(
-                'Party',
-                style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16),
-              ),
-              subtitle: const Text(
-                'Listen together with friends in real time',
-                style: TextStyle(color: Color(0xFFB3B3B3), fontSize: 13),
-              ),
-              onTap: onCreateParty,
-            ),
           ],
         ),
       ),

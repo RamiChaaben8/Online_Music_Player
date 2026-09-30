@@ -1,5 +1,158 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
+
+bool get isDesktopLayout =>
+    !kIsWeb &&
+    (defaultTargetPlatform == TargetPlatform.windows ||
+        defaultTargetPlatform == TargetPlatform.linux ||
+        defaultTargetPlatform == TargetPlatform.macOS);
+
+class AppLayoutTokens {
+  final double sidebarWidth;
+  final double sidebarWidthRatio;
+  final double sidebarMinWidth;
+  final double sidebarMaxWidth;
+  final double nowPlayingWidth;
+  final double nowPlayingWidthRatio;
+  final double nowPlayingMinWidth;
+  final double nowPlayingMaxWidth;
+  final double panelGap;
+  final double panelRadius;
+  final double topBarHeight;
+  final double libraryRowHeight;
+  final double libraryThumbnailSize;
+  final double libraryThumbnailRadius;
+  final double homeCardSize;
+  final double homeCardGap;
+  final double sectionGap;
+  final double cardRadius;
+  final double lyricsCardRadius;
+  final double searchHeight;
+  final double searchRadius;
+  final double playButtonSize;
+  final double homeCardPlayButtonSize;
+  final double progressTrackHeight;
+  final double progressRowPadding;
+  final double playerBarHeight;
+  final double playerControlsHeight;
+  final double dailyMixBadgeOpacity;
+  final Color? dailyMixBadgeBackground;
+  final Color? dailyMixBadgeForeground;
+  final bool squareNowPlayingArt;
+
+  const AppLayoutTokens({
+    required this.sidebarWidth,
+    required this.sidebarWidthRatio,
+    required this.sidebarMinWidth,
+    required this.sidebarMaxWidth,
+    required this.nowPlayingWidth,
+    required this.nowPlayingWidthRatio,
+    required this.nowPlayingMinWidth,
+    required this.nowPlayingMaxWidth,
+    required this.panelGap,
+    required this.panelRadius,
+    required this.topBarHeight,
+    required this.libraryRowHeight,
+    required this.libraryThumbnailSize,
+    required this.libraryThumbnailRadius,
+    required this.homeCardSize,
+    required this.homeCardGap,
+    required this.sectionGap,
+    required this.cardRadius,
+    required this.lyricsCardRadius,
+    required this.searchHeight,
+    required this.searchRadius,
+    required this.playButtonSize,
+    required this.homeCardPlayButtonSize,
+    required this.progressTrackHeight,
+    required this.progressRowPadding,
+    required this.playerBarHeight,
+    required this.playerControlsHeight,
+    required this.dailyMixBadgeOpacity,
+    this.dailyMixBadgeBackground,
+    this.dailyMixBadgeForeground,
+    required this.squareNowPlayingArt,
+  });
+
+  static const defaults = AppLayoutTokens(
+    sidebarWidth: 300,
+    sidebarWidthRatio: 0,
+    sidebarMinWidth: 300,
+    sidebarMaxWidth: 300,
+    nowPlayingWidth: 380,
+    nowPlayingWidthRatio: 0,
+    nowPlayingMinWidth: 380,
+    nowPlayingMaxWidth: 380,
+    panelGap: 8,
+    panelRadius: 12,
+    topBarHeight: 64,
+    libraryRowHeight: 60,
+    libraryThumbnailSize: 48,
+    libraryThumbnailRadius: 6,
+    homeCardSize: 172,
+    homeCardGap: 16,
+    sectionGap: 24,
+    cardRadius: 8,
+    lyricsCardRadius: 12,
+    searchHeight: 40,
+    searchRadius: 999,
+    playButtonSize: 52,
+    homeCardPlayButtonSize: 46,
+    progressTrackHeight: 3,
+    progressRowPadding: 16,
+    playerBarHeight: 92,
+    playerControlsHeight: 76,
+    dailyMixBadgeOpacity: 1,
+    squareNowPlayingArt: false,
+  );
+
+  static const verdantNight = AppLayoutTokens(
+    sidebarWidth: 0,
+    sidebarWidthRatio: 0.22,
+    sidebarMinWidth: 360,
+    sidebarMaxWidth: 430,
+    nowPlayingWidth: 0,
+    nowPlayingWidthRatio: 0.22,
+    nowPlayingMinWidth: 360,
+    nowPlayingMaxWidth: 430,
+    panelGap: 8,
+    panelRadius: 8,
+    topBarHeight: 62,
+    libraryRowHeight: 64,
+    libraryThumbnailSize: 48,
+    libraryThumbnailRadius: 4,
+    homeCardSize: 172,
+    homeCardGap: 24,
+    sectionGap: 32,
+    cardRadius: 8,
+    lyricsCardRadius: 12,
+    searchHeight: 40,
+    searchRadius: 999,
+    playButtonSize: 44,
+    homeCardPlayButtonSize: 48,
+    progressTrackHeight: 4,
+    progressRowPadding: 16,
+    playerBarHeight: 88,
+    playerControlsHeight: 72,
+    dailyMixBadgeOpacity: 0.7,
+    dailyMixBadgeBackground: Color(0xB3000000),
+    dailyMixBadgeForeground: Color(0xFFFFFFFF),
+    squareNowPlayingArt: false,
+  );
+
+  double sidebarWidthFor(double screenWidth) => sidebarWidthRatio == 0
+      ? sidebarWidth
+      : (screenWidth * sidebarWidthRatio)
+          .clamp(sidebarMinWidth, sidebarMaxWidth)
+          .toDouble();
+
+  double nowPlayingWidthFor(double screenWidth) => nowPlayingWidthRatio == 0
+      ? nowPlayingWidth
+      : (screenWidth * nowPlayingWidthRatio)
+          .clamp(nowPlayingMinWidth, nowPlayingMaxWidth)
+          .toDouble();
+}
 
 class AppThemeData {
   final String name;
@@ -19,6 +172,11 @@ class AppThemeData {
   final Color notificationError;
   final Color tabActive;
   final Color misc;
+  final Color? lyricsCard;
+  final Color? dividerToken;
+  final Color? scrollbarToken;
+  final Color? headerGradientToken;
+  final AppLayoutTokens layoutTokens;
 
   const AppThemeData({
     required this.name,
@@ -38,17 +196,62 @@ class AppThemeData {
     required this.notificationError,
     required this.tabActive,
     required this.misc,
+    this.lyricsCard,
+    this.dividerToken,
+    this.scrollbarToken,
+    this.headerGradientToken,
+    this.layoutTokens = AppLayoutTokens.defaults,
   });
 
   Color get border => shadow;
   Color get bgColor => main;
-  Color get panelColor => main;
+  Color get panelColor => isVerdantNightDesktop ? sidebar : main;
+  Color get panelSurfaceColor => isVerdantNightDesktop ? sidebar : main;
   Color get panelLight => card;
   Color get cardColor => card;
   Color get textPrimary => text;
   Color get textSecondary => subtext;
   Color get accent => button;
+
+  /// Accent for "something is playing / active right now" — the playing song
+  /// title, the play/pause glyph and the equalizer bars.
+  ///
+  /// Same colour as [accent] in Green and Red. Verdant Night has moved its
+  /// accent to [text] (lime) and demoted [button] to a darker green used for
+  /// filled surfaces, so reading [accent] there would give the wrong hue.
+  Color get nowPlayingAccent => isVerdantNightDesktop ? text : button;
+
   Brightness get brightness => ThemeData.estimateBrightnessForColor(main);
+  Color get lyricsCardColor => lyricsCard ?? card;
+  Color get dividerColor => dividerToken ?? shadow;
+  Color get scrollbarThumbColor => scrollbarToken ?? subtext;
+  Color get headerGradientColor => headerGradientToken ?? shadow;
+  Color get iconDefault => isVerdantNightDesktop ? subtext : text;
+  Color get iconHover => isVerdantNightDesktop ? const Color(0xFFFFFFFF) : text;
+  ButtonStyle get iconButtonStyle => ButtonStyle(
+        foregroundColor: WidgetStateProperty.resolveWith((states) => states.any(
+                (state) =>
+                    state == WidgetState.hovered ||
+                    state == WidgetState.focused ||
+                    state == WidgetState.pressed)
+            ? iconHover
+            : iconDefault),
+      );
+  Color get lyricsLabelColor =>
+      isVerdantNightDesktop ? const Color(0xB3FFFFFF) : button;
+  Color get lyricsActiveLineColor =>
+      isVerdantNightDesktop ? const Color(0xFFFFFFFF) : text;
+  Color get lyricsInactiveLineColor => isVerdantNightDesktop
+      ? const Color(0x8CFFFFFF)
+      : text.withValues(alpha: 0.38);
+  Color get playIconColor =>
+      isVerdantNightDesktop ? const Color(0xFF121212) : text;
+  Color iconColor(Color legacy, {bool hovered = false}) =>
+      isVerdantNightDesktop ? (hovered ? iconHover : iconDefault) : legacy;
+  AppLayoutTokens get layout =>
+      isDesktopLayout ? layoutTokens : AppLayoutTokens.defaults;
+  bool get isVerdantNightDesktop =>
+      isDesktopLayout && identical(layoutTokens, AppLayoutTokens.verdantNight);
 
   static const green = AppThemeData(
     name: 'Green',
@@ -90,177 +293,35 @@ class AppThemeData {
     misc: Color(0xFFE08A3E),
   );
 
-  static const dribbblishWhite = AppThemeData(
-    name: 'Dribbblish White',
-    main: Color(0xFFF5F7FA),
-    sidebar: Color(0xFFE9EDF2),
-    player: Color(0xFFFFFFFF),
-    card: Color(0xFFFFFFFF),
-    text: Color(0xFF17202A),
-    subtext: Color(0xFF5D6B78),
-    button: Color(0xFF2E7DDE),
-    buttonActive: Color(0xFF1F63B5),
-    selectedRow: Color(0xFFDCEBFA),
-    highlight: Color(0xFFE8EEF5),
-    highlightElevated: Color(0xFFD7E0EA),
-    shadow: Color(0xFFB9C5D1),
-    notification: Color(0xFF2E7DDE),
-    notificationError: Color(0xFFD64545),
-    tabActive: Color(0xFFD9E9FA),
-    misc: Color(0xFF7A56C2),
-  );
-
-  static const catppuccinLatte = AppThemeData(
-    name: 'Catppuccin Latte',
-    main: Color(0xFFEFF1F5),
-    sidebar: Color(0xFFE6E9EF),
-    player: Color(0xFFDCE0E8),
-    card: Color(0xFFFFFFFF),
-    text: Color(0xFF4C4F69),
-    subtext: Color(0xFF6C6F85),
-    button: Color(0xFF1E66F5),
-    buttonActive: Color(0xFF1554D1),
-    selectedRow: Color(0xFFD9E5FF),
-    highlight: Color(0xFFE1E5EC),
-    highlightElevated: Color(0xFFCCD2DC),
-    shadow: Color(0xFFBCC3D0),
-    notification: Color(0xFF1E66F5),
-    notificationError: Color(0xFFD20F39),
-    tabActive: Color(0xFFDCE7FF),
-    misc: Color(0xFF8839EF),
-  );
-
-  static const nord = AppThemeData(
-    name: 'Nord',
-    main: Color(0xFF2E3440),
-    sidebar: Color(0xFF272C36),
-    player: Color(0xFF242933),
-    card: Color(0xFF3B4252),
-    text: Color(0xFFECEFF4),
-    subtext: Color(0xFFD8DEE9),
-    button: Color(0xFF88C0D0),
-    buttonActive: Color(0xFF8FBCBB),
-    selectedRow: Color(0xFF3D5664),
-    highlight: Color(0xFF434C5E),
-    highlightElevated: Color(0xFF4C566A),
-    shadow: Color(0xFF596579),
-    notification: Color(0xFF88C0D0),
-    notificationError: Color(0xFFBF616A),
-    tabActive: Color(0xFF3C5965),
-    misc: Color(0xFFB48EAD),
-  );
-
-  static const dracula = AppThemeData(
-    name: 'Dracula',
-    main: Color(0xFF282A36),
-    sidebar: Color(0xFF21222C),
-    player: Color(0xFF191A21),
-    card: Color(0xFF44475A),
-    text: Color(0xFFF8F8F2),
-    subtext: Color(0xFFBFBFB2),
-    button: Color(0xFFBD93F9),
-    buttonActive: Color(0xFFFF79C6),
-    selectedRow: Color(0xFF493F62),
-    highlight: Color(0xFF3B3D4B),
-    highlightElevated: Color(0xFF505365),
-    shadow: Color(0xFF6272A4),
-    notification: Color(0xFF50FA7B),
-    notificationError: Color(0xFFFF5555),
-    tabActive: Color(0xFF443C5B),
-    misc: Color(0xFF8BE9FD),
-  );
-
-  static const drearyBib = AppThemeData(
-    name: 'Dreary BIB',
-    main: Color(0xFF202020),
-    sidebar: Color(0xFF202020),
-    player: Color(0xFF242424),
-    card: Color(0xFF242424),
-    text: Color(0xFF8BC34A),
-    subtext: Color(0xFFB4B4B4),
-    button: Color(0xFF537B25),
-    buttonActive: Color(0xFF98DA4B),
-    selectedRow: Color(0xFF2A3C17),
-    highlight: Color(0xFF303030),
-    highlightElevated: Color(0xFF353535),
-    shadow: Color(0xFF000000),
-    notification: Color(0xFF242424),
-    notificationError: Color(0xFF242424),
-    tabActive: Color(0xFF303030),
-    misc: Color(0xFF8BC34A),
-  );
-
-  static const drearyDeeper = AppThemeData(
-    name: 'Dreary Deeper',
-    main: Color(0xFF040614),
-    sidebar: Color(0xFF0F111A),
-    player: Color(0xFF0F111A),
-    card: Color(0xFF0F1118),
-    text: Color(0xFF4F9A87),
-    subtext: Color(0xFF406560),
-    button: Color(0xFF0D3A2E),
-    buttonActive: Color(0xFF106165),
-    selectedRow: Color(0xFF040614),
-    highlight: Color(0xFF0A1527),
-    highlightElevated: Color(0xFF0F1118),
-    shadow: Color(0xFF406560),
-    notification: Color(0xFF051024),
-    notificationError: Color(0xFF051024),
-    tabActive: Color(0xFF0A1527),
-    misc: Color(0xFF406560),
-  );
-
-  static const gruvboxMaterialDark = AppThemeData(
-    name: 'Gruvbox Material Dark',
-    main: Color(0xFF1D2021),
-    sidebar: Color(0xFF282828),
-    player: Color(0xFF282828),
-    card: Color(0xFF504945),
-    text: Color(0xFFFFDAB9),
-    subtext: Color(0xFFB8BBC2),
-    button: Color(0xFF98971A),
-    buttonActive: Color(0xFFB8BB26),
-    selectedRow: Color(0xFF7C6F64),
-    highlight: Color(0xFF3C3836),
-    highlightElevated: Color(0xFF665C54),
-    shadow: Color(0xFF3C3836),
-    notification: Color(0xFF282828),
-    notificationError: Color(0xFFCC241D),
-    tabActive: Color(0xFF504945),
-    misc: Color(0xFFD8A657),
-  );
-
-  static const onepunchDark = AppThemeData(
-    name: 'Onepunch Dark',
-    main: Color(0xFF1D2021),
-    sidebar: Color(0xFF1D2021),
-    player: Color(0xFF1D2021),
-    card: Color(0xFF32302F),
-    text: Color(0xFFD5C4A1),
-    subtext: Color(0xFFB8BB26),
-    button: Color(0xFF8EC07C),
-    buttonActive: Color(0xFF8EC07C),
-    selectedRow: Color(0xFFD3869B),
-    highlight: Color(0xFF32302F),
-    highlightElevated: Color(0xFF32302F),
-    shadow: Color(0xFF1D2021),
-    notification: Color(0xFFFB4934),
-    notificationError: Color(0xFFCC2418),
-    tabActive: Color(0xFFFB4934),
-    misc: Color(0xFF83A598),
+  static const verdantNight = AppThemeData(
+    name: 'Verdant Night',
+    main: Color(0xFF121212),
+    sidebar: Color(0xFF1C1C1C),
+    player: Color(0xFF1C1C1C),
+    card: Color(0xFF262626),
+    text: Color(0xFF7FD13B),
+    subtext: Color(0xFFB3B3B3),
+    button: Color(0xFF1ED760),
+    buttonActive: Color(0xFF1ED760),
+    selectedRow: Color(0xFF2A3D22),
+    highlight: Color(0xFF2A2A2A),
+    highlightElevated: Color(0xFF262626),
+    shadow: Color(0xFF333333),
+    notification: Color(0xFF1ED760),
+    notificationError: Color(0xFFE8173A),
+    tabActive: Color(0xFF2A3D22),
+    misc: Color(0xFF6B1A24),
+    lyricsCard: Color(0xFF5A1520),
+    dividerToken: Color(0x14FFFFFF),
+    scrollbarToken: Color(0xFF5A5A5A),
+    headerGradientToken: Color(0x995A1520),
+    layoutTokens: AppLayoutTokens.verdantNight,
   );
 
   static const all = [
     green,
     red,
-    dribbblishWhite,
-    catppuccinLatte,
-    nord,
-    dracula,
-    drearyBib,
-    drearyDeeper,
-    gruvboxMaterialDark,
-    onepunchDark,
+    verdantNight,
   ];
 }
 

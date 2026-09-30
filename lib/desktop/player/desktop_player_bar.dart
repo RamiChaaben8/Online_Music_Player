@@ -86,14 +86,26 @@ class _DesktopPlayerBarState extends ConsumerState<DesktopPlayerBar> {
     final progressFraction = (duration.inMilliseconds > 0 && !_draggingProgress)
         ? (position.inMilliseconds / duration.inMilliseconds).clamp(0.0, 1.0)
         : (_draggingProgress ? _dragProgress : 0.0);
+    final layout = context.appTheme.layout;
+    final skin = _PlayerBarSkin.of(context);
 
     return Container(
-      color: context.appTheme.player,
+      height: skin.barHeight,
+      decoration: BoxDecoration(
+        color: skin.barBackground,
+        borderRadius: context.appTheme.isVerdantNightDesktop
+            ? BorderRadius.only(
+                topLeft: Radius.circular(layout.panelRadius),
+                topRight: Radius.circular(layout.panelRadius),
+              )
+            : null,
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           // ── Progress bar ──────────────────────────────────────────────
           _ProgressBar(
+            skin: skin,
             fraction: progressFraction,
             position: position,
             duration: duration,
@@ -117,7 +129,7 @@ class _DesktopPlayerBarState extends ConsumerState<DesktopPlayerBar> {
 
           // ── Controls row ──────────────────────────────────────────────
           SizedBox(
-            height: 76,
+            height: skin.controlsHeight,
             child: Padding(
               padding: EdgeInsets.symmetric(horizontal: 16),
               child: Row(
@@ -128,6 +140,7 @@ class _DesktopPlayerBarState extends ConsumerState<DesktopPlayerBar> {
                   // Center: transport controls
                   Expanded(
                     child: _TransportControls(
+                      skin: skin,
                       isPlaying: ps.isPlaying,
                       isLoading: ps.isLoading,
                       shuffle: ps.shuffle,
@@ -148,6 +161,7 @@ class _DesktopPlayerBarState extends ConsumerState<DesktopPlayerBar> {
                   // Right: volume + panel controls
                   Expanded(
                     child: _VolumeControls(
+                      skin: skin,
                       volume: _muted ? 0.0 : _volume,
                       muted: _muted,
                       panelMode: panelMode,
@@ -164,7 +178,9 @@ class _DesktopPlayerBarState extends ConsumerState<DesktopPlayerBar> {
                       onQueueToggle: () => _togglePanel(PanelMode.queue),
                     ),
                   ),
-                  const ListenPartyControls(),
+                  // The listen-party entry point is a headphones icon, which
+                  // the reference layout does not have.
+                  if (skin.showListenParty) const ListenPartyControls(),
                 ],
               ),
             ),
@@ -175,9 +191,179 @@ class _DesktopPlayerBarState extends ConsumerState<DesktopPlayerBar> {
   }
 }
 
+// ─── Player bar skin ───────────────────────────────────────────────────────────
+
+/// Narrowest the volume slider is allowed to get before it is dropped entirely
+/// and only the speaker icon remains.
+const double kMinSliderWidth = 64;
+
+/// Visual configuration for the player bar.
+///
+/// [classic] reproduces the original look used by every theme, while [verdant]
+/// is the flatter, Spotify-like treatment. Only Verdant Night uses it for now —
+/// the rest of the bar reads from here so there is a single layout code path.
+class _PlayerBarSkin {
+  final Color barBackground;
+  final Color accent;
+  final Color onAccent;
+
+  /// Prev / next glyphs, which read brighter than the secondary glyphs.
+  final Color primaryIcon;
+  final Color secondaryIcon;
+  final Color sideIcon;
+  final Color activeIcon;
+  final Color hoverIcon;
+
+  final Color sliderTrack;
+
+  final double barHeight;
+  final double controlsHeight;
+  final double playSize;
+  final double playGlyphSize;
+  final double transportIconSize;
+  final double transportGap;
+  final double sideIconSize;
+  final double sideGap;
+
+  /// Padding around each bare icon. Keeps a usable click target without
+  /// drawing a plate, and controls how wide the right-hand cluster ends up.
+  final double iconPadding;
+  final double sliderWidth;
+  final double sliderTrackHeight;
+
+  /// 0 keeps the thumb hidden until the slider is hovered.
+  final double sliderThumbRadius;
+
+  final IconData lyricsIcon;
+  final IconData queueIcon;
+  final IconData deviceIcon;
+  final IconData miniPlayerIcon;
+  final IconData fullscreenIcon;
+  final bool showListenParty;
+
+  /// The mini-player and fullscreen glyphs are Verdant Night additions; the
+  /// reference layout for this skin leaves them out.
+  final bool showMiniPlayer;
+  final bool showFullscreen;
+
+  const _PlayerBarSkin({
+    required this.barBackground,
+    required this.accent,
+    required this.onAccent,
+    required this.primaryIcon,
+    required this.secondaryIcon,
+    required this.sideIcon,
+    required this.activeIcon,
+    required this.hoverIcon,
+    required this.sliderTrack,
+    required this.barHeight,
+    required this.controlsHeight,
+    required this.playSize,
+    required this.playGlyphSize,
+    required this.transportIconSize,
+    required this.transportGap,
+    required this.sideIconSize,
+    required this.sideGap,
+    required this.iconPadding,
+    required this.sliderWidth,
+    required this.sliderTrackHeight,
+    required this.sliderThumbRadius,
+    required this.lyricsIcon,
+    required this.queueIcon,
+    required this.deviceIcon,
+    required this.miniPlayerIcon,
+    required this.fullscreenIcon,
+    required this.showListenParty,
+    required this.showMiniPlayer,
+    required this.showFullscreen,
+  });
+
+  factory _PlayerBarSkin.of(BuildContext context) {
+    final t = context.appTheme;
+    return t.isVerdantNightDesktop
+        ? _PlayerBarSkin.verdant(t)
+        : _PlayerBarSkin.classic(t);
+  }
+
+  /// Flat dark bar, small filled play button, slim outline glyphs.
+  factory _PlayerBarSkin.verdant(AppThemeData t) {
+    const lime = Color(0xFF7DC143);
+    const idle = Color(0xFFB3B3B3);
+    final layout = t.layout;
+    return _PlayerBarSkin(
+      barBackground: const Color(0xFF202020),
+      accent: lime,
+      onAccent: const Color(0xFF121212),
+      primaryIcon: idle,
+      secondaryIcon: idle,
+      sideIcon: idle,
+      activeIcon: const Color(0xFFFFFFFF),
+      hoverIcon: const Color(0xFFFFFFFF),
+      sliderTrack: const Color(0xFF4D4D4D),
+      barHeight: layout.playerBarHeight,
+      controlsHeight: layout.playerControlsHeight,
+      playSize: layout.playButtonSize,
+      playGlyphSize: 30,
+      transportIconSize: 22,
+      transportGap: 18,
+      sideIconSize: 22,
+      sideGap: 4,
+      iconPadding: 5,
+      sliderWidth: 110,
+      sliderTrackHeight: 4,
+      sliderThumbRadius: 8,
+      lyricsIcon: Icons.mic_none,
+      queueIcon: Icons.format_list_bulleted,
+      deviceIcon: Icons.smartphone_outlined,
+      miniPlayerIcon: Icons.picture_in_picture_alt_outlined,
+      fullscreenIcon: Icons.fullscreen_outlined,
+      showListenParty: false,
+      showMiniPlayer: false,
+      showFullscreen: false,
+    );
+  }
+
+  /// The original look, driven entirely by the active theme's tokens.
+  factory _PlayerBarSkin.classic(AppThemeData t) {
+    final layout = t.layout;
+    return _PlayerBarSkin(
+      barBackground: t.player,
+      accent: t.button,
+      onAccent: t.playIconColor,
+      primaryIcon: t.iconColor(t.text),
+      secondaryIcon: t.iconColor(t.subtext),
+      sideIcon: t.iconColor(t.subtext),
+      activeIcon: t.iconColor(t.button, hovered: true),
+      hoverIcon: t.iconColor(t.text),
+      sliderTrack: t.shadow,
+      barHeight: layout.playerBarHeight,
+      controlsHeight: layout.playerControlsHeight,
+      playSize: layout.playButtonSize,
+      playGlyphSize: 28,
+      transportIconSize: 20,
+      transportGap: 4,
+      sideIconSize: 20,
+      sideGap: 0,
+      iconPadding: 6,
+      sliderWidth: 80,
+      sliderTrackHeight: 3,
+      sliderThumbRadius: 5,
+      lyricsIcon: Icons.lyrics_outlined,
+      queueIcon: Icons.queue_music_outlined,
+      deviceIcon: Icons.cast,
+      miniPlayerIcon: Icons.picture_in_picture_alt_outlined,
+      fullscreenIcon: Icons.fullscreen_outlined,
+      showListenParty: true,
+      showMiniPlayer: false,
+      showFullscreen: true,
+    );
+  }
+}
+
 // ─── Progress bar ─────────────────────────────────────────────────────────────
 
 class _ProgressBar extends StatelessWidget {
+  final _PlayerBarSkin skin;
   final double fraction;
   final Duration position;
   final Duration duration;
@@ -187,6 +373,7 @@ class _ProgressBar extends StatelessWidget {
   final void Function(double) onDragEnd;
 
   const _ProgressBar({
+    required this.skin,
     required this.fraction,
     required this.position,
     required this.duration,
@@ -204,8 +391,9 @@ class _ProgressBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final layout = context.appTheme.layout;
     return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 16),
+      padding: EdgeInsets.symmetric(horizontal: layout.progressRowPadding),
       child: Row(
         children: [
           Text(
@@ -241,31 +429,19 @@ class _ProgressBar extends StatelessWidget {
                         alignment: Alignment.centerLeft,
                         children: [
                           Container(
-                            height: 3,
+                            height: layout.progressTrackHeight,
                             decoration: BoxDecoration(
-                              color: context.appTheme.shadow,
+                              color: skin.sliderTrack,
                               borderRadius: BorderRadius.circular(2),
                             ),
                           ),
                           FractionallySizedBox(
                             widthFactor: fraction,
                             child: Container(
-                              height: 3,
+                              height: layout.progressTrackHeight,
                               decoration: BoxDecoration(
-                                color: context.appTheme.button,
+                                color: skin.accent,
                                 borderRadius: BorderRadius.circular(2),
-                              ),
-                            ),
-                          ),
-                          Positioned(
-                            left: (fraction * constraints.maxWidth - 5)
-                                .clamp(0.0, constraints.maxWidth - 10),
-                            child: Container(
-                              width: 10,
-                              height: 10,
-                              decoration: BoxDecoration(
-                                color: context.appTheme.text,
-                                shape: BoxShape.circle,
                               ),
                             ),
                           ),
@@ -368,7 +544,8 @@ class _SongInfo extends ConsumerWidget {
           SongMenuButton(song: s, size: 16),
           if (next != null) ...[
             SizedBox(width: 8),
-            Container(width: 1, height: 36, color: context.appTheme.shadow),
+            Container(
+                width: 1, height: 36, color: context.appTheme.dividerColor),
             SizedBox(width: 10),
             ClipRRect(
               borderRadius: BorderRadius.circular(3),
@@ -409,7 +586,9 @@ class _SongInfo extends ConsumerWidget {
                   Text(
                     'Next',
                     style: TextStyle(
-                      color: context.appTheme.button,
+                      color: context.appTheme.isVerdantNightDesktop
+                          ? context.appTheme.text
+                          : context.appTheme.button,
                       fontSize: 9,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 0.5,
@@ -445,6 +624,7 @@ class _SongInfo extends ConsumerWidget {
 // ─── Transport controls (center 1/3) ─────────────────────────────────────────
 
 class _TransportControls extends StatelessWidget {
+  final _PlayerBarSkin skin;
   final bool isPlaying;
   final bool isLoading;
   final bool shuffle;
@@ -456,6 +636,7 @@ class _TransportControls extends StatelessWidget {
   final VoidCallback onRepeat;
 
   const _TransportControls({
+    required this.skin,
     required this.isPlaying,
     required this.isLoading,
     required this.shuffle,
@@ -471,76 +652,148 @@ class _TransportControls extends StatelessWidget {
   Widget build(BuildContext context) {
     final repeatIcon =
         loopMode == LoopMode.one ? Icons.repeat_one : Icons.repeat;
-    final repeatColor = loopMode != LoopMode.off
-        ? context.appTheme.button
-        : context.appTheme.subtext;
+    final repeatColor =
+        loopMode != LoopMode.off ? skin.activeIcon : skin.secondaryIcon;
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        IconButton(
-          onPressed: onShuffle,
-          icon: Icon(Icons.shuffle,
-              color:
-                  shuffle ? context.appTheme.button : context.appTheme.subtext,
-              size: 20),
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-        ),
-        IconButton(
-          onPressed: onPrev,
-          icon:
-              Icon(Icons.skip_previous, color: context.appTheme.text, size: 28),
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-        ),
-        SizedBox(width: 4),
-        Material(
-          color: context.appTheme.button,
-          shape: const CircleBorder(),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: onPlayPause,
-            child: SizedBox(
-              width: 52,
-              height: 52,
-              child: Center(
-                child: isLoading
-                    ? Padding(
-                        padding: EdgeInsets.all(14),
-                        child: CircularProgressIndicator(
-                            color: context.appTheme.text, strokeWidth: 2.5),
-                      )
-                    : Icon(
-                        isPlaying ? Icons.pause : Icons.play_arrow,
-                        color: context.appTheme.text,
-                        size: 28,
-                      ),
-              ),
-            ),
+    final playButton = Material(
+      color: skin.accent,
+      shape: const CircleBorder(),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onPlayPause,
+        child: SizedBox(
+          width: skin.playSize,
+          height: skin.playSize,
+          child: Center(
+            child: isLoading
+                ? Padding(
+                    padding: const EdgeInsets.all(9),
+                    child: CircularProgressIndicator(
+                        color: skin.onAccent, strokeWidth: 2),
+                  )
+                : Icon(
+                    isPlaying ? Icons.pause : Icons.play_arrow,
+                    color: skin.onAccent,
+                    size: skin.playGlyphSize,
+                  ),
           ),
         ),
-        SizedBox(width: 4),
-        IconButton(
-          onPressed: onNext,
-          icon: Icon(Icons.skip_next, color: context.appTheme.text, size: 28),
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-        ),
-        IconButton(
-          onPressed: onRepeat,
-          icon: Icon(repeatIcon, color: repeatColor, size: 20),
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-        ),
-      ],
+      ),
     );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // The five buttons keep their size; the spacing around them absorbs
+        // any shortfall so a narrow center slot never overflows.
+        final iconBox = skin.transportIconSize + skin.iconPadding * 2;
+        final buttons = 4 * iconBox + skin.playSize;
+        final gap = ((constraints.maxWidth - buttons) / 4)
+            .clamp(0.0, skin.transportGap);
+
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _SkinIconButton(
+              icon: Icons.shuffle,
+              padding: skin.iconPadding,
+              size: skin.transportIconSize,
+              color: shuffle ? skin.activeIcon : skin.secondaryIcon,
+              hoverColor: skin.hoverIcon,
+              onPressed: onShuffle,
+            ),
+            SizedBox(width: gap),
+            _SkinIconButton(
+              icon: Icons.skip_previous,
+              padding: skin.iconPadding,
+              size: skin.transportIconSize,
+              color: skin.primaryIcon,
+              hoverColor: skin.hoverIcon,
+              onPressed: onPrev,
+            ),
+            SizedBox(width: gap),
+            playButton,
+            SizedBox(width: gap),
+            _SkinIconButton(
+              icon: Icons.skip_next,
+              padding: skin.iconPadding,
+              size: skin.transportIconSize,
+              color: skin.primaryIcon,
+              hoverColor: skin.hoverIcon,
+              onPressed: onNext,
+            ),
+            SizedBox(width: gap),
+            _SkinIconButton(
+              icon: repeatIcon,
+              padding: skin.iconPadding,
+              size: skin.transportIconSize,
+              color: repeatColor,
+              hoverColor: skin.hoverIcon,
+              onPressed: onRepeat,
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// Borderless transport glyph that lightens to [hoverColor] on hover.
+class _SkinIconButton extends StatefulWidget {
+  final IconData icon;
+  final double size;
+  final double padding;
+  final Color color;
+  final Color hoverColor;
+  final VoidCallback onPressed;
+  final String? tooltip;
+
+  const _SkinIconButton({
+    required this.icon,
+    required this.size,
+    required this.padding,
+    required this.color,
+    required this.hoverColor,
+    required this.onPressed,
+    this.tooltip,
+  });
+
+  @override
+  State<_SkinIconButton> createState() => _SkinIconButtonState();
+}
+
+class _SkinIconButtonState extends State<_SkinIconButton> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final button = MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onPressed,
+        child: Padding(
+          // Keeps a comfortable click target without adding a visible plate.
+          padding: EdgeInsets.all(widget.padding),
+          child: Icon(
+            widget.icon,
+            size: widget.size,
+            color: _hovered ? widget.hoverColor : widget.color,
+          ),
+        ),
+      ),
+    );
+
+    if (widget.tooltip == null) return button;
+    return Tooltip(message: widget.tooltip!, child: button);
   }
 }
 
 // ─── Volume controls (right 1/3) ─────────────────────────────────────────────
 
 class _VolumeControls extends StatelessWidget {
+  final _PlayerBarSkin skin;
   final double volume;
   final bool muted;
   final PanelMode panelMode;
@@ -550,6 +803,7 @@ class _VolumeControls extends StatelessWidget {
   final VoidCallback onQueueToggle;
 
   const _VolumeControls({
+    required this.skin,
     required this.volume,
     required this.muted,
     required this.panelMode,
@@ -562,96 +816,190 @@ class _VolumeControls extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final IconData volIcon = muted || volume < 0.01
-        ? Icons.volume_off
+        ? Icons.volume_off_outlined
         : volume < 0.5
             ? Icons.volume_down_outlined
             : Icons.volume_up_outlined;
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: [
-        const DevicePickerButton(size: 20),
+    // Lyrics, queue, device, volume, mini player, fullscreen.
+    final gap = SizedBox(width: skin.sideGap);
 
-        // Lyrics button — opens fullscreen lyrics overlay
-        Tooltip(
-          message: panelMode == PanelMode.lyrics
-              ? 'Close Fullscreen Lyrics'
-              : 'Fullscreen Lyrics',
-          child: IconButton(
-            icon: Icon(
-              panelMode == PanelMode.lyrics
-                  ? Icons.lyrics // filled when active
-                  : Icons.lyrics_outlined,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // The glyphs have a fixed cost; the slider absorbs whatever is left so
+        // a narrow window shrinks the slider instead of overflowing the row.
+        final slot = constraints.maxWidth;
+        final iconCount =
+            3 + (skin.showMiniPlayer ? 1 : 0) + (skin.showFullscreen ? 1 : 0);
+        final iconBox = skin.sideIconSize + skin.iconPadding * 2;
+        final deviceBox = skin.sideIconSize + 16;
+        // Gaps: one after the device button, one between each glyph, plus one
+        // more when the slider is squeezed in.
+        final fixed =
+            deviceBox + iconCount * iconBox + iconCount * skin.sideGap;
+        final room = slot - fixed;
+        final showSlider = room >= kMinSliderWidth;
+        final sliderWidth = room.clamp(kMinSliderWidth, skin.sliderWidth);
+
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            Tooltip(
+              message: 'Connect to a device',
+              child: DevicePickerButton(
+                  size: skin.sideIconSize, icon: skin.deviceIcon),
+            ),
+
+            gap,
+
+            // Lyrics button — opens fullscreen lyrics overlay
+            _SkinIconButton(
+              icon: skin.lyricsIcon,
+              padding: skin.iconPadding,
+              size: skin.sideIconSize,
               color: panelMode == PanelMode.lyrics
-                  ? context.appTheme.button
-                  : context.appTheme.subtext,
-              size: 20,
+                  ? skin.activeIcon
+                  : skin.sideIcon,
+              hoverColor: skin.hoverIcon,
+              tooltip: panelMode == PanelMode.lyrics
+                  ? 'Close Fullscreen Lyrics'
+                  : 'Fullscreen Lyrics',
+              onPressed: onLyricsToggle,
             ),
-            onPressed: onLyricsToggle,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-          ),
-        ),
 
-        // Queue button
-        Tooltip(
-          message: panelMode == PanelMode.queue ? 'Close Queue' : 'Queue',
-          child: IconButton(
-            icon: Icon(
-              Icons.queue_music_outlined,
+            gap,
+
+            // Queue button
+            _SkinIconButton(
+              icon: skin.queueIcon,
+              padding: skin.iconPadding,
+              size: skin.sideIconSize,
               color: panelMode == PanelMode.queue
-                  ? context.appTheme.button
-                  : context.appTheme.subtext,
-              size: 20,
+                  ? skin.activeIcon
+                  : skin.sideIcon,
+              hoverColor: skin.hoverIcon,
+              tooltip: panelMode == PanelMode.queue ? 'Close Queue' : 'Queue',
+              onPressed: onQueueToggle,
             ),
-            onPressed: onQueueToggle,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+
+            gap,
+
+            // Mute button
+            _SkinIconButton(
+              icon: volIcon,
+              padding: skin.iconPadding,
+              size: skin.sideIconSize,
+              color: skin.sideIcon,
+              hoverColor: skin.hoverIcon,
+              tooltip: muted ? 'Unmute' : 'Mute',
+              onPressed: onMuteToggle,
+            ),
+
+            if (showSlider) ...[
+              gap,
+
+              // Volume slider — thumb only appears while hovered.
+              _HoverRevealSlider(
+                width: sliderWidth,
+                trackHeight: skin.sliderTrackHeight,
+                thumbRadius: skin.sliderThumbRadius,
+                activeColor: skin.accent,
+                inactiveColor: skin.sliderTrack,
+                value: volume,
+                onChanged: onVolumeChanged,
+              ),
+            ],
+
+            // Mini player / picture-in-picture.
+            if (skin.showMiniPlayer) ...[
+              gap,
+              _SkinIconButton(
+                icon: skin.miniPlayerIcon,
+                padding: skin.iconPadding,
+                size: skin.sideIconSize,
+                color: skin.sideIcon,
+                hoverColor: skin.hoverIcon,
+                tooltip: 'Mini player',
+                onPressed: () {},
+              ),
+            ],
+
+            // Fullscreen placeholder
+            if (skin.showFullscreen) ...[
+              gap,
+              _SkinIconButton(
+                icon: skin.fullscreenIcon,
+                padding: skin.iconPadding,
+                size: skin.sideIconSize,
+                color: skin.sideIcon,
+                hoverColor: skin.hoverIcon,
+                onPressed: () {},
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// Slider whose thumb is invisible until the pointer is over it.
+class _HoverRevealSlider extends StatefulWidget {
+  final double width;
+  final double trackHeight;
+  final double thumbRadius;
+  final Color activeColor;
+  final Color inactiveColor;
+  final double value;
+  final ValueChanged<double> onChanged;
+
+  const _HoverRevealSlider({
+    required this.width,
+    required this.trackHeight,
+    required this.thumbRadius,
+    required this.activeColor,
+    required this.inactiveColor,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  State<_HoverRevealSlider> createState() => _HoverRevealSliderState();
+}
+
+class _HoverRevealSliderState extends State<_HoverRevealSlider> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: SizedBox(
+        width: widget.width,
+        child: SliderTheme(
+          data: SliderTheme.of(context).copyWith(
+            activeTrackColor: widget.activeColor,
+            inactiveTrackColor: widget.inactiveColor,
+            trackHeight: widget.trackHeight,
+            // Collapsing the radius to zero hides the thumb entirely.
+            thumbShape: RoundSliderThumbShape(
+              enabledThumbRadius: _hovered ? widget.thumbRadius : 0,
+              elevation: 0,
+              pressedElevation: 0,
+            ),
+            overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+            overlayColor: widget.activeColor.withValues(alpha: 0.18),
+            trackShape: const RoundedRectSliderTrackShape(),
+          ),
+          child: Slider(
+            value: widget.value,
+            min: 0.0,
+            max: 1.0,
+            onChanged: widget.onChanged,
           ),
         ),
-
-        // Mute button
-        Tooltip(
-          message: muted ? 'Unmute' : 'Mute',
-          child: IconButton(
-            icon: Icon(volIcon, color: context.appTheme.subtext, size: 20),
-            onPressed: onMuteToggle,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-          ),
-        ),
-
-        // Volume slider
-        SizedBox(
-          width: 80,
-          child: SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              activeTrackColor: context.appTheme.button,
-              inactiveTrackColor: context.appTheme.shadow,
-              thumbColor: context.appTheme.text,
-              overlayColor: context.appTheme.button.withValues(alpha: 0.2),
-              trackHeight: 3,
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
-              overlayShape: const RoundSliderOverlayShape(overlayRadius: 10),
-            ),
-            child: Slider(
-              value: volume,
-              min: 0.0,
-              max: 1.0,
-              onChanged: onVolumeChanged,
-            ),
-          ),
-        ),
-
-        // Fullscreen placeholder
-        IconButton(
-          icon: Icon(Icons.fullscreen_outlined,
-              color: context.appTheme.subtext, size: 20),
-          onPressed: () {},
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-        ),
-      ],
+      ),
     );
   }
 }
