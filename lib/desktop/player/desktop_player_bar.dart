@@ -286,20 +286,23 @@ class _PlayerBarSkin {
   }
 
   /// Flat dark bar, small filled play button, slim outline glyphs.
+  ///
+  /// Every colour is read from the theme instead of being a literal: the old
+  /// literals were near-misses (`#7DC143` vs the theme's `#7FD13B`, `#202020`
+  /// vs `#1C1C1C`), which split the lime down the middle of the screen and left
+  /// the bar matching no panel in the app.
   factory _PlayerBarSkin.verdant(AppThemeData t) {
-    const lime = Color(0xFF7DC143);
-    const idle = Color(0xFFB3B3B3);
     final layout = t.layout;
     return _PlayerBarSkin(
-      barBackground: const Color(0xFF202020),
-      accent: lime,
-      onAccent: const Color(0xFF121212),
-      primaryIcon: idle,
-      secondaryIcon: idle,
-      sideIcon: idle,
-      activeIcon: const Color(0xFFFFFFFF),
-      hoverIcon: const Color(0xFFFFFFFF),
-      sliderTrack: const Color(0xFF4D4D4D),
+      barBackground: t.player,
+      accent: t.nowPlayingAccent,
+      onAccent: t.onButtonFill,
+      primaryIcon: t.subtext,
+      secondaryIcon: t.subtext,
+      sideIcon: t.subtext,
+      activeIcon: t.iconHover,
+      hoverIcon: t.iconHover,
+      sliderTrack: t.shadow,
       barHeight: layout.playerBarHeight,
       controlsHeight: layout.playerControlsHeight,
       playSize: layout.playButtonSize,
@@ -598,8 +601,10 @@ class _SongInfo extends ConsumerWidget {
                     next.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
+                    // Secondary copy — the `Next` label above it already owns
+                    // the accent, so this was the second lime line in a row.
                     style: TextStyle(
-                      color: context.appTheme.text,
+                      color: context.appTheme.subtext,
                       fontSize: 11,
                       fontWeight: FontWeight.w500,
                     ),
@@ -905,6 +910,7 @@ class _VolumeControls extends StatelessWidget {
                 thumbRadius: skin.sliderThumbRadius,
                 activeColor: skin.accent,
                 inactiveColor: skin.sliderTrack,
+                thumbColor: skin.onAccent,
                 value: volume,
                 onChanged: onVolumeChanged,
               ),
@@ -950,6 +956,11 @@ class _HoverRevealSlider extends StatefulWidget {
   final double thumbRadius;
   final Color activeColor;
   final Color inactiveColor;
+
+  /// Colour of the revealed thumb. Defaults to the inherited
+  /// `SliderThemeData.thumbColor`, which is `theme.text` — the same lime as
+  /// the active track in Verdant Night, i.e. an invisible thumb on hover.
+  final Color? thumbColor;
   final double value;
   final ValueChanged<double> onChanged;
 
@@ -959,6 +970,7 @@ class _HoverRevealSlider extends StatefulWidget {
     required this.thumbRadius,
     required this.activeColor,
     required this.inactiveColor,
+    this.thumbColor,
     required this.value,
     required this.onChanged,
   });
@@ -981,6 +993,7 @@ class _HoverRevealSliderState extends State<_HoverRevealSlider> {
           data: SliderTheme.of(context).copyWith(
             activeTrackColor: widget.activeColor,
             inactiveTrackColor: widget.inactiveColor,
+            thumbColor: widget.thumbColor,
             trackHeight: widget.trackHeight,
             // Collapsing the radius to zero hides the thumb entirely.
             thumbShape: RoundSliderThumbShape(
@@ -988,8 +1001,8 @@ class _HoverRevealSliderState extends State<_HoverRevealSlider> {
               elevation: 0,
               pressedElevation: 0,
             ),
-            overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
-            overlayColor: widget.activeColor.withValues(alpha: 0.18),
+            overlayShape: const RoundSliderOverlayShape(overlayRadius: 0),
+            overlayColor: Colors.transparent,
             trackShape: const RoundedRectSliderTrackShape(),
           ),
           child: Slider(

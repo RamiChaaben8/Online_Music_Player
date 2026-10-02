@@ -2,15 +2,12 @@
 ; Inno Setup script for Utify Windows installer.
 ;
 ; Compiles to a single Setup.exe that:
+;   - Silently uninstalls any existing Utify before installing (clean upgrade)
 ;   - Installs to %LocalAppData%\Utify by default (no admin rights needed)
 ;   - Creates a Start Menu shortcut
 ;   - Creates a Desktop shortcut (optional, user can uncheck)
 ;   - Registers an uninstaller in Add/Remove Programs
 ;   - Supports silent install: Setup.exe /VERYSILENT /SUPPRESSMSGBOXES
-;
-; The GitHub Actions workflow compiles this with:
-;   iscc installer\utify.iss
-; and the output is installer\Output\utify-setup.exe
 
 #define MyAppName      "Utify"
 #define MyAppPublisher "Rami Chaaben"
@@ -18,9 +15,8 @@
 #define MyAppExeName   "utify.exe"
 
 ; Version is injected by the workflow via /DMyAppVersion=x.y.z
-; Falls back to 1.0.0 if not provided.
 #ifndef MyAppVersion
-  #define MyAppVersion "1.0.0"
+  #define MyAppVersion "1.4.0"
 #endif
 
 [Setup]
@@ -37,22 +33,19 @@ DefaultDirName={localappdata}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 
-; Allow upgrade over existing install silently
+; Close the running app before copying files
 CloseApplications=yes
 CloseApplicationsFilter=*.exe
 
 ; Output
 OutputDir={#SourcePath}\Output
 OutputBaseFilename=utify-setup
-; Compress well but keep reasonable build time
 Compression=lzma2/max
 SolidCompression=yes
 
 ; Visuals
 WizardStyle=modern
 SetupIconFile={#SourcePath}\..\windows\runner\resources\app_icon.ico
-
-; Minimum Windows version: Windows 10
 MinVersion=10.0.17763
 
 [Languages]
@@ -61,19 +54,36 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
+[Code]
+// Silently uninstall the previous version before copying new files.
+// This gives a clean upgrade: old DLLs/assets are removed first.
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  UninstallString: String;
+  ResultCode: Integer;
+begin
+  if CurStep = ssInstall then begin
+    if RegQueryStringValue(HKCU,
+        'Software\Microsoft\Windows\CurrentVersion\Uninstall\{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}_is1',
+        'UninstallString', UninstallString) then
+    begin
+      Exec(RemoveQuotes(UninstallString),
+          '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART',
+          '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    end;
+  end;
+end;
+
 [Files]
-; Copy the entire Flutter Windows build output
 Source: "{#SourcePath}\..\build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\{#MyAppName}";        Filename: "{app}\{#MyAppExeName}"
+Name: "{group}\{#MyAppName}";           Filename: "{app}\{#MyAppExeName}"
 Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
-Name: "{commondesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{commondesktop}\{#MyAppName}";   Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
-; Offer to launch the app after install
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
-; Clean up any leftover files on uninstall
 Type: filesandordirs; Name: "{app}"
