@@ -19,6 +19,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 
 import '../providers/player_provider.dart';
 import '../screens/now_playing_screen.dart';
+import '../desktop/theme/desktop_theme.dart';
 import 'device_picker.dart';
 
 class MiniPlayer extends ConsumerWidget {
@@ -43,15 +44,16 @@ class MiniPlayer extends ConsumerWidget {
             .clamp(0.0, 1.0)
         : 0.0;
 
+    final theme = context.appTheme;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => _openPlayer(context),
       child: Container(
         // No extra margin — sits flush above the nav bar like Spotify
-        decoration: const BoxDecoration(
-          color: Color(0xFF1A1A1A),
+        decoration: BoxDecoration(
+          color: theme.player,
           border: Border(
-            top: BorderSide(color: Color(0xFF282828), width: 0.5),
+            top: BorderSide(color: theme.dividerColor, width: 0.5),
           ),
         ),
         child: Column(
@@ -62,9 +64,8 @@ class MiniPlayer extends ConsumerWidget {
               height: 2,
               child: LinearProgressIndicator(
                 value: progress,
-                backgroundColor: const Color(0xFF333333),
-                valueColor: const AlwaysStoppedAnimation<Color>(
-                    Color(0xFF1DB954)),
+                backgroundColor: theme.shadow,
+                valueColor: AlwaysStoppedAnimation<Color>(theme.button),
               ),
             ),
 
@@ -86,14 +87,15 @@ class MiniPlayer extends ConsumerWidget {
                       placeholder: (_, __) => Container(
                         width: 48,
                         height: 48,
-                        color: const Color(0xFF282828),
+                        color: theme.card,
                       ),
                       errorWidget: (_, __, ___) => Container(
                         width: 48,
                         height: 48,
-                        color: const Color(0xFF282828),
-                        child: const Icon(Icons.music_note,
-                            color: Color(0xFF3A3A3A), size: 22),
+                        color: theme.card,
+                        child: Icon(Icons.music_note,
+                            color: theme.subtext.withValues(alpha: 0.3),
+                            size: 22),
                       ),
                     ),
                   ),
@@ -114,16 +116,16 @@ class MiniPlayer extends ConsumerWidget {
                             children: [
                               TextSpan(
                                 text: song.title,
-                                style: const TextStyle(
-                                  color: Colors.white,
+                                style: TextStyle(
+                                  color: theme.text,
                                   fontWeight: FontWeight.w600,
                                   fontSize: 13,
                                 ),
                               ),
                               TextSpan(
                                 text: ' • ${song.channelName}',
-                                style: const TextStyle(
-                                  color: Color(0xFFB3B3B3),
+                                style: TextStyle(
+                                  color: theme.subtext,
                                   fontSize: 12,
                                 ),
                               ),
@@ -134,10 +136,10 @@ class MiniPlayer extends ConsumerWidget {
                           const SizedBox(height: 2),
                           Row(
                             children: [
-                              const Text(
+                              Text(
                                 'Next: ',
                                 style: TextStyle(
-                                  color: Color(0xFF1DB954),
+                                  color: theme.nowPlayingAccent,
                                   fontSize: 11,
                                   fontWeight: FontWeight.w500,
                                 ),
@@ -147,8 +149,8 @@ class MiniPlayer extends ConsumerWidget {
                                   nextSong.title,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: Color(0xFFB3B3B3),
+                                  style: TextStyle(
+                                    color: theme.subtext,
                                     fontSize: 11,
                                   ),
                                 ),
@@ -162,14 +164,14 @@ class MiniPlayer extends ConsumerWidget {
 
                   // ── Controls ───────────────────────────────────────
                   if (playerState.isLoading)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 16),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: SizedBox(
                         width: 20,
                         height: 20,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          color: Color(0xFF1DB954),
+                          color: theme.button,
                         ),
                       ),
                     )
@@ -253,7 +255,7 @@ class _MiniButton extends StatelessWidget {
       child: SizedBox(
         width: 36,
         height: 48,
-        child: Icon(icon, color: Colors.white, size: size),
+        child: Icon(icon, color: context.appTheme.iconDefault, size: size),
       ),
     );
   }

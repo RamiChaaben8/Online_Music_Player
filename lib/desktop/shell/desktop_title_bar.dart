@@ -17,15 +17,43 @@ import '../../providers/youtube_provider.dart';
 import '../theme/desktop_theme.dart';
 import '../../widgets/listen_party_controls.dart';
 
+// ── Centre-view indices, mirroring the shell's own constants. Only the two
+// ── the title bar needs an active state for are declared; search and playlists
+// ── are shown by the centre column itself. ───────────────────────────────────
+const int _kViewHome = 0;
+const int _kViewSettings = 3;
+
+/// Active-state colour for a title-bar icon: the accent when its destination is
+/// showing, the resting colour otherwise. Works in every theme because the
+/// accent is lime in Verdant Night and green elsewhere.
+Color _iconActiveColor(AppThemeData theme, bool active) {
+  if (!active) {
+    return theme.isVerdantNightDesktop ? theme.iconDefault : theme.textSecondary;
+  }
+  return theme.accent;
+}
+
 class DesktopTitleBar extends ConsumerStatefulWidget {
-  final int currentView; // 0=home, 1=search, 2=playlist, 3=friends
+  // Matches the shell's centre-view constants. Friends is not among them: it
+  // is a side panel now, tracked by [friendsPanelOpen] instead.
+  final int currentView; // 0=home, 1=search, 2=playlist, 3=settings, 4=friend
   final VoidCallback? onSearchTap; // kept for compatibility (unused internally)
   final void Function(String query)? onSearch;
   final VoidCallback? onHome;
   final VoidCallback? onBack;
   final VoidCallback? onForward;
-  final VoidCallback? onProfileTap;
+
+  /// Opens the account dropdown. Receives the avatar's bottom-right corner in
+  /// global coordinates so the shell can anchor the menu under it.
+  final void Function(Offset avatarBottomRight)? onProfileTap;
+
   final VoidCallback? onFriendsTap;
+
+  /// Whether the friend activity panel is currently showing in the right-hand
+  /// column — the friends icon highlights while it is open.
+  final bool friendsPanelOpen;
+
+  final VoidCallback? onSettingsTap;
   final bool canGoBack;
   final bool canGoForward;
 
@@ -43,6 +71,8 @@ class DesktopTitleBar extends ConsumerStatefulWidget {
     this.onForward,
     this.onProfileTap,
     this.onFriendsTap,
+    this.friendsPanelOpen = false,
+    this.onSettingsTap,
     this.canGoBack = false,
     this.canGoForward = false,
     this.onNavigateToSearch,
@@ -58,6 +88,10 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
   final LayerLink _searchLink = LayerLink();
   final OverlayPortalController _searchOverlayController =
       OverlayPortalController();
+
+  /// Locates the account avatar so the menu can be anchored under it.
+  final GlobalKey _avatarKey = GlobalKey();
+
   Timer? _suggestionTimer;
   bool _searchExpanded = false;
 
@@ -221,11 +255,8 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
               children: [
                 _iconBtn(
                   Icons.home,
-                  color: theme.isVerdantNightDesktop
-                      ? theme.iconDefault
-                      : widget.currentView == 0
-                          ? theme.accent
-                          : theme.textSecondary,
+                  color: _iconActiveColor(
+                      theme, widget.currentView == _kViewHome),
                   onPressed: widget.onHome,
                   tooltip: 'Home',
                 ),
@@ -235,19 +266,28 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
             ),
           ),
 
-          // ── Right: party invite + friends + avatar ─────────────────────
+          // ── Right: party invite + friends + settings + avatar ─────────
           if (!guestMode) ...[
             const PartyInviteButton(),
             SizedBox(width: 4),
+            // Toggles the friend activity panel in the right-hand column, so
+            // its "active" state is the panel being open, not a centre view.
             _iconBtn(
               Icons.people_outline,
-              color: theme.isVerdantNightDesktop
-                  ? theme.iconDefault
-                  : widget.currentView == 3
-                      ? theme.accent
-                      : theme.textSecondary,
+              color: _iconActiveColor(theme, widget.friendsPanelOpen),
               onPressed: widget.onFriendsTap,
-              tooltip: 'Friends',
+              tooltip: widget.friendsPanelOpen ? 'Close friends' : 'Friends',
+            ),
+            SizedBox(width: 4),
+            // Available in guest mode too — Appearance has nothing that needs an
+            // account, and burying the only theme picker behind a sign-in gate
+            // was worse than a dead greyed-out gear.
+            _iconBtn(
+              Icons.settings_outlined,
+              color: _iconActiveColor(
+                  theme, widget.currentView == _kViewSettings),
+              onPressed: widget.onSettingsTap,
+              tooltip: 'Settings',
             ),
             SizedBox(width: 8),
           ],
@@ -255,8 +295,19 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
             message: 'Edit profile and account',
             child: InkWell(
               borderRadius: BorderRadius.circular(24),
-              onTap: widget.onProfileTap,
+              onTap: () {
+                // Hand the shell the avatar's bottom-right corner so it can hang
+                // the account menu directly under it. A GlobalKey rather than
+                // the surrounding context, which would measure the whole bar.
+                final box = _avatarKey.currentContext?.findRenderObject()
+                    as RenderBox?;
+                final anchor = box == null
+                    ? Offset.zero
+                    : box.localToGlobal(box.size.bottomRight(Offset.zero));
+                widget.onProfileTap?.call(anchor);
+              },
               child: Padding(
+                key: _avatarKey,
                 padding: EdgeInsets.all(2),
                 child: CircleAvatar(
                   radius: 16,
@@ -401,7 +452,9 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
             height: 24,
             child: CircularProgressIndicator(
               strokeWidth: 2,
-              color: theme.accent,
+              // Every other spinner in the desktop tree drops to subtext in
+              // Verdant Night; this was the last one on the bright accent.
+              color: theme.isVerdantNightDesktop ? theme.subtext : theme.accent,
             ),
           ),
         ),
@@ -586,11 +639,11 @@ class _DesktopTitleBarState extends ConsumerState<DesktopTitleBar> {
     final theme = context.appTheme;
     return IconButton(
       onPressed: onPressed ?? () {},
-      icon: Icon(icon,
-          color: theme.isVerdantNightDesktop
-              ? theme.iconDefault
-              : color ?? theme.textSecondary,
-          size: size),
+      // Explicit colour always wins. Callers pass iconDefault in Verdant Night
+      // when they want the resting look, which is what this used to hardcode —
+      // but that also meant an "active" accent could never be shown in that
+      // theme. Same result for every caller that passes a colour today.
+      icon: Icon(icon, color: color ?? theme.iconDefault, size: size),
       splashRadius: 18,
       padding: EdgeInsets.zero,
       constraints: const BoxConstraints(minWidth: 32, minHeight: 32),

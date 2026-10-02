@@ -236,7 +236,7 @@ class _PanelResizeHandleState extends State<PanelResizeHandle> {
             width: _barW,
             height: _barH,
             decoration: BoxDecoration(
-              color: active ? theme.button : theme.dividerColor,
+              color: active ? theme.nowPlayingAccent : theme.dividerColor,
               borderRadius: BorderRadius.circular(_barW / 2),
             ),
           ),

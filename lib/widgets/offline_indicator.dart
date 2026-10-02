@@ -61,7 +61,10 @@ class OfflineIndicator extends ConsumerWidget {
     final isOffline = ref.watch(offlineProvider);
     if (!isOffline) return const SizedBox.shrink();
     final theme = AppThemeScope.maybeOf(context);
-    final warning = theme?.notificationError ?? Colors.orange;
+    // Being offline is a warning, not an error — this used to borrow
+    // notificationError, which is red in Green/Verdant and amber in Red, so
+    // the same banner meant two different things across themes.
+    final warning = theme?.warning ?? Colors.orange;
 
     return Material(
       color: theme?.main.withValues(alpha: 0) ?? Colors.transparent,

@@ -8,6 +8,7 @@ import '../providers/player_provider.dart';
 import '../providers/guest_session_provider.dart';
 import '../screens/privacy_settings_screen.dart';
 import '../services/firestore_service.dart';
+import '../desktop/theme/desktop_theme.dart';
 import 'update_dialog.dart';
 
 class ProfileAvatar extends ConsumerWidget {
@@ -18,15 +19,16 @@ class ProfileAvatar extends ConsumerWidget {
     final authState = ref.watch(authStateProvider);
     final user = authState.asData?.value ??
         ref.read(authServiceProvider).currentUser;
+    final theme = context.appTheme;
     return GestureDetector(
       onTap: () => showAccountMenu(context, ref),
       child: CircleAvatar(
         radius: 18,
-        backgroundColor: const Color(0xFF535353),
+        backgroundColor: theme.highlightElevated,
         backgroundImage:
             user?.photoURL != null ? NetworkImage(user!.photoURL!) : null,
         child: user?.photoURL == null
-            ? const Icon(Icons.person_outline, color: Colors.white, size: 22)
+            ? Icon(Icons.person_outline, color: theme.iconDefault, size: 22)
             : null,
       ),
     );
@@ -69,10 +71,11 @@ void showAccountMenu(BuildContext context, WidgetRef ref) {
       final user = ref.read(authServiceProvider).currentUser;
       final screenWidth = MediaQuery.sizeOf(dialogContext).width;
       final panelWidth = (screenWidth * 0.84).clamp(0.0, 360.0).toDouble();
+      final theme = dialogContext.appTheme;
       return Align(
         alignment: Alignment.centerLeft,
         child: Material(
-          color: const Color(0xFF181818),
+          color: dialogContext.appTheme.card,
           elevation: 20,
           child: SizedBox(
             width: panelWidth,
@@ -91,7 +94,7 @@ void showAccountMenu(BuildContext context, WidgetRef ref) {
                             : null,
                         child: user?.photoURL?.isNotEmpty == true
                             ? null
-                            : const Icon(Icons.person_outline, color: Colors.white70),
+                            : Icon(Icons.person_outline, color: theme.iconDefault),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -101,35 +104,35 @@ void showAccountMenu(BuildContext context, WidgetRef ref) {
                             Text(user?.displayName?.isNotEmpty == true
                                 ? user!.displayName!
                                 : 'Utify account',
-                                style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600),
+                                style: TextStyle(color: theme.text, fontSize: 16, fontWeight: FontWeight.w600),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis),
                             if (user?.email != null)
-                              Text(user!.email!, style: const TextStyle(color: Colors.white60, fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis),
+                              Text(user!.email!, style: TextStyle(color: theme.subtext, fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis),
                           ],
                         ),
                       ),
                       IconButton(
                         tooltip: 'Close',
                         onPressed: () => Navigator.pop(dialogContext),
-                        icon: const Icon(Icons.close, color: Colors.white70),
+                        icon: Icon(Icons.close, color: theme.iconDefault),
                       ),
                     ]),
                   ),
-                  const Divider(height: 1, color: Color(0xFF303030)),
+                  Divider(height: 1, color: theme.dividerColor),
                   Expanded(child: ListView(padding: const EdgeInsets.symmetric(vertical: 8), children: [
           if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android)
             ListTile(
-              leading: const Icon(Icons.system_update_alt, color: Colors.white70),
-              title: const Text('Check for Updates', style: TextStyle(color: Colors.white)),
+              leading: Icon(Icons.system_update_alt, color: theme.iconDefault),
+              title: Text('Check for Updates', style: TextStyle(color: theme.text)),
               onTap: () {
                 Navigator.pop(dialogContext);
                 showUpdateDialog(context, ref);
               },
             ),
           ListTile(
-            leading: const Icon(Icons.edit_outlined, color: Colors.white70),
-            title: const Text('Edit Profile', style: TextStyle(color: Colors.white)),
+            leading: Icon(Icons.edit_outlined, color: theme.iconDefault),
+            title: Text('Edit Profile', style: TextStyle(color: theme.text)),
             onTap: () async {
               Navigator.pop(dialogContext);
               final user = ref.read(authServiceProvider).currentUser;
@@ -163,8 +166,8 @@ void showAccountMenu(BuildContext context, WidgetRef ref) {
             },
           ),
           ListTile(
-            leading: const Icon(Icons.lock_outline, color: Colors.white70),
-            title: const Text('Privacy', style: TextStyle(color: Colors.white)),
+            leading: Icon(Icons.lock_outline, color: theme.iconDefault),
+            title: Text('Privacy', style: TextStyle(color: theme.text)),
             onTap: () {
               Navigator.pop(dialogContext);
               final user = ref.read(authServiceProvider).currentUser;
@@ -179,13 +182,13 @@ void showAccountMenu(BuildContext context, WidgetRef ref) {
             },
           ),
                   ])),
-                  const Divider(height: 1, color: Color(0xFF303030)),
+                  Divider(height: 1, color: theme.dividerColor),
                   ListTile(
-                    leading: const Icon(Icons.logout, color: Colors.redAccent),
-                    title: const Text(
+                    leading: Icon(Icons.logout, color: theme.notificationError),
+                    title: Text(
                       'Sign Out',
                       style: TextStyle(
-                        color: Colors.redAccent,
+                        color: theme.notificationError,
                         fontWeight: FontWeight.w600,
                       ),
                     ),

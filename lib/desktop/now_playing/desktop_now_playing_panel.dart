@@ -476,7 +476,7 @@ class _DesktopNowPlayingPanelState
                     ? 'Lyrics provided by LRCLIB'
                     : 'Lyrics provided by YouTube',
                 textAlign: isRtl ? TextAlign.right : TextAlign.left,
-                style: TextStyle(color: context.appTheme.shadow, fontSize: 11),
+                style: TextStyle(color: context.appTheme.subtext, fontSize: 11),
               ),
             );
           }
@@ -609,8 +609,7 @@ class _TrackSelectorButton extends ConsumerWidget {
               child: isSelected
                   ? Icon(
                       Icons.check,
-                      color:
-                          context.appTheme.iconColor(context.appTheme.button),
+                      color: context.appTheme.nowPlayingAccent,
                       size: 14,
                     )
                   : null,
@@ -619,10 +618,12 @@ class _TrackSelectorButton extends ConsumerWidget {
             Expanded(
               child: Text(
                 track.label,
+                // iconColor() demotes to grey in Verdant Night, which inverted
+                // the emphasis: the *selected* track became the dimmest one.
                 style: TextStyle(
                   color: isSelected
-                      ? context.appTheme.iconColor(context.appTheme.button)
-                      : context.appTheme.text,
+                      ? context.appTheme.nowPlayingAccent
+                      : context.appTheme.subtext,
                   fontSize: 13,
                   fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
                 ),
@@ -946,7 +947,9 @@ class _DragBarState extends State<_DragBar> {
                   height: _kThumbH,
                   decoration: BoxDecoration(
                     color: _hovering || widget.isDragging
-                        ? context.appTheme.buttonActive
+                        // button == buttonActive in Verdant Night, so the hover
+                        // state produced no visual change at all.
+                        ? context.appTheme.nowPlayingAccent
                         : context.appTheme.button,
                     borderRadius: BorderRadius.circular(_kThumbW / 2),
                   ),
@@ -977,7 +980,10 @@ class _VideoCard extends StatelessWidget {
       fit: StackFit.expand,
       children: [
         ColoredBox(
-          color: context.appTheme.text,
+          // This is the letterbox backdrop behind the video. `text` is lime in
+          // Verdant Night, so a lime rectangle flashed behind every video —
+          // and the title below (lime, with a lime glow) sat on top of it.
+          color: context.appTheme.card,
           child: VideoPreviewWidget(
             imageUrl: song.thumbnailUrl,
             fit: BoxFit.cover,
@@ -1018,11 +1024,13 @@ class _VideoCard extends StatelessWidget {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: context.appTheme.text,
+                        color: context.appTheme.lyricsActiveLineColor,
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
                         shadows: [
-                          Shadow(blurRadius: 10, color: context.appTheme.text)
+                          Shadow(
+                              blurRadius: 10,
+                              color: context.appTheme.main.withValues(alpha: 0.9))
                         ],
                       ),
                     ),
@@ -1035,7 +1043,10 @@ class _VideoCard extends StatelessWidget {
                         color: context.appTheme.subtext,
                         fontSize: 12,
                         shadows: [
-                          Shadow(blurRadius: 8, color: context.appTheme.text)
+                          Shadow(
+                              blurRadius: 8,
+                              color:
+                                  context.appTheme.main.withValues(alpha: 0.9))
                         ],
                       ),
                     ),

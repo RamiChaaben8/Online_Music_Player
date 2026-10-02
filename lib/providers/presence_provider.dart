@@ -36,7 +36,7 @@ class PresenceNotifier extends StateNotifier<bool> {
     await _writePresence(writeActivity: true);
     _heartbeat?.cancel();
     _heartbeat = Timer.periodic(const Duration(seconds: 60), (_) {
-      _writePresence();
+      _heartbeatTick();
     });
   }
 
@@ -98,6 +98,10 @@ class PresenceNotifier extends StateNotifier<bool> {
   Map<String, dynamic>? _activityFor(PlayerState? player) {
     final song = player?.currentSong;
     if (song == null) return null;
+    // Publishing `isPlaying: true` for a track that is merely loaded but paused
+    // is what made peers show the "now playing" equalizer for someone who was
+    // not actually listening. Nothing to publish unless we are really playing.
+    if (player?.isPlaying != true) return null;
     return {
       'trackId': song.id,
       'title': song.title,
@@ -108,6 +112,33 @@ class PresenceNotifier extends StateNotifier<bool> {
       'updatedAt': FieldValue.serverTimestamp(),
       'partyId': null,
     };
+  }
+
+  /// Heartbeat tick. Rewrites the activity block on every tick rather than only
+  /// on track changes.
+  ///
+  /// The old path passed `writeActivity: false` here, which left the remote copy
+  /// of our activity frozen at whatever it was when we last changed tracks. A
+  /// peer that paused, or whose playback ended without a track change, kept
+  /// advertising `isPlaying: true` until their next track change — or forever, if
+  /// they closed the app. One extra small write per minute is worth not lying
+  /// about what we are doing.
+  Future<void> _heartbeatTick() async {
+    if (!_privacy['showOnlineStatus']! && !_privacy['showActivity']!) {
+      // Both off: there is nothing truthful to publish, so just expire the
+      // online flag rather than re-sending the same fields every minute.
+      await _firestore.updatePresence(
+        uid: _uid!,
+        deviceName: _sync.service.deviceName ?? 'Unknown device',
+        online: false,
+        showOnlineStatus: true,
+        showActivity: false,
+        activity: null,
+        writeActivity: true,
+      );
+      return;
+    }
+    await _writePresence(writeActivity: true);
   }
 
   @override
@@ -124,3 +155,15 @@ final presenceProvider =
     ref.watch(syncProvider.notifier),
   );
 });
+
+/// Live presence for one *other* user, keyed by uid.
+///
+/// Exists so the friend rows stop building a throwaway `Stream` inside their
+/// `build` method. `StreamBuilder` compares `oldWidget.stream != widget.stream`
+/// by identity, so a stream created during build made every parent rebuild
+/// cancel and re-listen, briefly painting the previous friend's data into the
+/// new friend's row. A family provider creates the stream once per uid and
+/// keeps it subscribed, so rows only re-render when that friend's data changes.
+final friendPresenceProvider =
+    StreamProvider.autoDispose.family<PresenceInfo?, String>(
+        (ref, uid) => ref.watch(firestoreServiceProvider).presenceStream(uid));

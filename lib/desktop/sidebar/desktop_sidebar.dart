@@ -141,7 +141,10 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
             message: 'Liked Songs',
             child: _IconOnlyTile(
               icon: Icons.favorite,
-              color: context.appTheme.misc,
+              // `misc` was a dark red on a dark red tile in Verdant Night
+              // (~1.4:1) — effectively invisible. Neutral grey matches the
+              // fallback every other thumbnail-less playlist tile uses.
+              color: context.appTheme.subtext,
               bgColor: context.appTheme.misc.withValues(alpha: 0.35),
               isActive: widget.selectedPlaylist?.name == 'Liked Songs',
               onTap: () {
@@ -547,8 +550,9 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
                 Navigator.pop(ctx, (name, collaborative));
               }
             },
-            child:
-                Text('Create', style: TextStyle(color: context.appTheme.text)),
+            // No explicit TextStyle: the child's colour would override the
+            // button's foregroundColor, which is already dark-on-lime here.
+            child: const Text('Create'),
           ),
         ],
       ),
@@ -631,6 +635,13 @@ class _DesktopSidebarState extends ConsumerState<DesktopSidebar> {
       context: context,
       position: RelativeRect.fromLTRB(
           position.dx, position.dy, position.dx + 1, position.dy + 1),
+      // Matches the playlist menu right next to it — without these the folder
+      // menu fell back to `surface` == `main`, invisible against the sidebar.
+      color: context.appTheme.card,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: BorderSide(color: context.appTheme.dividerColor),
+      ),
       items: const [
         PopupMenuItem(value: 'rename', child: Text('Rename folder')),
         PopupMenuItem(value: 'delete', child: Text('Delete folder')),
@@ -880,9 +891,9 @@ class _IconOnlyTileState extends State<_IconOnlyTile> {
             borderRadius: BorderRadius.circular(8),
             border: widget.isActive
                 ? Border.all(
-                    color: context.appTheme
-                        .iconColor(context.appTheme.text)
-                        .withValues(alpha: 0.5),
+                    // iconColor(text) demotes to plain grey in Verdant Night,
+                    // so the selected-playlist ring lost its accent there.
+                    color: context.appTheme.nowPlayingAccent.withValues(alpha: 0.5),
                     width: 1)
                 : null,
           ),
@@ -947,8 +958,10 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
         child: SizedBox(
           width: 260,
           child: ListTile(
-            leading: const Icon(Icons.queue_music),
-            title: Text(widget.playlist.name),
+            leading: Icon(Icons.queue_music,
+                color: context.appTheme.iconDefault),
+            title: Text(widget.playlist.name,
+                style: TextStyle(color: context.appTheme.text)),
           ),
         ),
       ),
@@ -1030,9 +1043,8 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            color: widget.isActive &&
-                                    !context.appTheme.isVerdantNightDesktop
-                                ? context.appTheme.button
+                            color: widget.isActive
+                                ? context.appTheme.nowPlayingAccent
                                 : context.appTheme.text,
                             fontSize: PlaylistSizes.libraryTitle,
                             fontWeight: FontWeight.w500,
@@ -1214,11 +1226,11 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
     }
     ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(
+      // Colours come from ThemeData.snackBarTheme. This one used to override
+      // the background only, so its text fell back to onInverseSurface ==
+      // `main` — near-black on near-black in Verdant Night.
       SnackBar(
         content: Text('${widget.playlist.songs.length} songs added to queue'),
-        backgroundColor: context.appTheme.isVerdantNightDesktop
-            ? context.appTheme.highlightElevated
-            : context.appTheme.button,
         duration: const Duration(seconds: 2),
       ),
     );
@@ -1263,7 +1275,9 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
                     ? context.appTheme.main
                     : context.appTheme.text),
             onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: Text('Save', style: TextStyle(color: context.appTheme.text)),
+            // The child's TextStyle would beat foregroundColor — that painted a
+            // lime 'Save' on the lime fill in Verdant Night.
+            child: const Text('Save'),
           ),
         ],
       ),
@@ -1477,10 +1491,10 @@ class _PlaylistTileState extends ConsumerState<_PlaylistTile> {
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-                backgroundColor: context.appTheme.notificationError),
+                backgroundColor: context.appTheme.notificationError,
+                foregroundColor: context.appTheme.onErrorFill),
             onPressed: () => Navigator.pop(ctx, true),
-            child:
-                Text('Remove', style: TextStyle(color: context.appTheme.text)),
+            child: const Text('Remove'),
           ),
         ],
       ),

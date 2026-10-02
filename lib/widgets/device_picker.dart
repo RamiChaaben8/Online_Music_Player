@@ -39,12 +39,12 @@ class DevicePickerButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final isActive = ref.watch(playerProvider.select((s) => s.isActiveDevice));
     final theme = AppThemeScope.maybeOf(context);
-    // Green = another device owns playback; white = we own it (or no active device)
-    final color = theme?.isVerdantNightDesktop == true
-        ? theme!.iconDefault
-        : isActive
-            ? theme?.text ?? Colors.white
-            : theme?.button ?? const Color(0xFF1DB954);
+    // Accent = another device owns playback; muted = we own it (or none active).
+    // The old `isVerdantNightDesktop ? iconDefault : …` branch collapsed both
+    // states to the same grey under Verdant Night, silently losing the warning.
+    final color = isActive
+        ? theme?.iconDefault ?? Colors.white
+        : theme?.nowPlayingAccent ?? const Color(0xFF1DB954);
 
     return IconButton(
       icon: Icon(icon, color: color, size: size),
@@ -59,8 +59,10 @@ class DevicePickerButton extends ConsumerWidget {
     final container = ProviderScope.containerOf(context);
     showModalBottomSheet(
       context: context,
+      // panelColor, not main: under Verdant Night `main` is byte-identical to
+      // the shell background, so the sheet had no surface of its own.
       backgroundColor:
-          AppThemeScope.maybeOf(context)?.main ?? const Color(0xFF121212),
+          AppThemeScope.maybeOf(context)?.panelColor ?? const Color(0xFF121212),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -128,7 +130,7 @@ class DevicePickerSheet extends ConsumerWidget {
                 child: Text(
                   'Playing on ${activeDevice.deviceName}',
                   style: TextStyle(
-                    color: theme?.button ?? const Color(0xFF1DB954),
+                    color: theme?.nowPlayingAccent ?? const Color(0xFF1DB954),
                     fontSize: 13,
                   ),
                 ),
@@ -208,7 +210,7 @@ class DevicePickerSheet extends ConsumerWidget {
                   child: FilledButton.icon(
                     style: FilledButton.styleFrom(
                       backgroundColor: theme?.button ?? const Color(0xFF1DB954),
-                      foregroundColor: theme?.text ?? Colors.black,
+                      foregroundColor: theme?.onButtonFill ?? Colors.black,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(32)),
@@ -269,7 +271,7 @@ class _DeviceTile extends StatelessWidget {
     final theme = AppThemeScope.maybeOf(context);
     final nameStyle = TextStyle(
       color: isActive
-          ? theme?.button ?? const Color(0xFF1DB954)
+          ? theme?.nowPlayingAccent ?? const Color(0xFF1DB954)
           : theme?.text ?? Colors.white,
       fontSize: 15,
       fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
@@ -279,8 +281,8 @@ class _DeviceTile extends StatelessWidget {
       leading: Icon(
         _iconFor(device.platform),
         color: isActive
-            ? theme?.button ?? const Color(0xFF1DB954)
-            : theme?.subtext ?? const Color(0xFFB3B3B3),
+            ? theme?.nowPlayingAccent ?? const Color(0xFF1DB954)
+            : theme?.iconDefault ?? const Color(0xFFB3B3B3),
         size: 28,
       ),
       title: Text(
@@ -290,20 +292,23 @@ class _DeviceTile extends StatelessWidget {
       subtitle: isActive
           ? Text('Now playing',
               style: TextStyle(
-                  color: theme?.button ?? const Color(0xFF1DB954),
+                  color: theme?.nowPlayingAccent ?? const Color(0xFF1DB954),
                   fontSize: 12))
+          // `shadow` is the divider/border token — at 12px on the sheet
+          // background it was effectively invisible in every theme.
           : (isThisDevice
               ? Text('Tap to listen here',
                   style: TextStyle(
-                      color: theme?.shadow ?? const Color(0xFF777777),
+                      color: theme?.subtext ?? const Color(0xFFB3B3B3),
                       fontSize: 12))
               : Text('Tap to transfer here',
                   style: TextStyle(
-                      color: theme?.shadow ?? const Color(0xFF777777),
+                      color: theme?.subtext ?? const Color(0xFFB3B3B3),
                       fontSize: 12))),
       trailing: isActive
           ? Icon(Icons.volume_up,
-              color: theme?.button ?? const Color(0xFF1DB954), size: 20)
+              color: theme?.nowPlayingAccent ?? const Color(0xFF1DB954),
+              size: 20)
           : null,
       onTap: onTap,
     );

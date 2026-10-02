@@ -250,8 +250,8 @@ class _LyricsPanelState extends ConsumerState<LyricsPanel> {
                   color: context.appTheme.shadow.withValues(alpha: 0.54),
                   shape: BoxShape.circle,
                 ),
-                child:
-                    Icon(Icons.close, color: context.appTheme.text, size: 18),
+                child: Icon(Icons.close,
+                    color: context.appTheme.iconDefault, size: 18),
               ),
             ),
           ),
@@ -292,8 +292,11 @@ class _LyricsPanelState extends ConsumerState<LyricsPanel> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // `misc` is a dark red in Verdant Night (~1.4:1 at 48px) — the
+                // empty-state icon was effectively invisible.
                 Icon(Icons.lyrics_outlined,
-                    color: context.appTheme.misc, size: 48),
+                    color: context.appTheme.subtext.withValues(alpha: 0.5),
+                    size: 48),
                 SizedBox(height: 14),
                 Text(
                   lyrics.error ?? 'No lyrics available for this song.',
@@ -322,7 +325,7 @@ class _LyricsPanelState extends ConsumerState<LyricsPanel> {
                       ? 'Lyrics provided by LRCLIB'
                       : 'Lyrics provided by YouTube',
                   style:
-                      TextStyle(color: context.appTheme.shadow, fontSize: 12),
+                      TextStyle(color: context.appTheme.subtext, fontSize: 12),
                 ),
               );
             }
@@ -375,9 +378,11 @@ class _DividerState extends State<_Divider> {
               duration: const Duration(milliseconds: 150),
               width: 2,
               height: double.infinity,
+              // `text` was used as a fill here; that is lime in Verdant Night,
+              // so the idle divider was invisible. dividerColor is the token.
               color: _hovered
-                  ? context.appTheme.button.withValues(alpha: 0.6)
-                  : context.appTheme.text.withValues(alpha: 0.08),
+                  ? context.appTheme.accent.withValues(alpha: 0.6)
+                  : context.appTheme.dividerColor,
             ),
           ),
         ),
@@ -530,13 +535,21 @@ class _LyricLineState extends State<_LyricLine> {
           child: AnimatedDefaultTextStyle(
             duration: const Duration(milliseconds: 220),
             style: TextStyle(
-              color: _hovered && isSynced
-                  ? context.appTheme.text
-                  : widget.isActive
+              // `text` is lime in Verdant Night and `shadow` is ~1.6:1 on the
+              // panel, so the plain (non-karaoke) lines rendered lime when
+              // active and vanished once sung — while the karaoke branch of
+              // this very widget used the lyrics* tokens. Match it.
+              color: context.appTheme.isVerdantNightDesktop
+                  ? (_hovered && isSynced || widget.isActive
+                      ? context.appTheme.lyricsActiveLineColor
+                      : context.appTheme.lyricsInactiveLineColor)
+                  : (_hovered && isSynced
                       ? context.appTheme.text
-                      : widget.isPast
-                          ? context.appTheme.shadow
-                          : context.appTheme.subtext,
+                      : widget.isActive
+                          ? context.appTheme.text
+                          : widget.isPast
+                              ? context.appTheme.shadow
+                              : context.appTheme.subtext),
               fontSize: widget.isActive ? 22 : 18,
               fontWeight: widget.isActive ? FontWeight.w800 : FontWeight.w500,
               height: 1.3,

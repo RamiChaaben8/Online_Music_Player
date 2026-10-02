@@ -17,7 +17,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shimmer/shimmer.dart';
 
 import '../models/song.dart';
-import '../providers/home_provider.dart';
+import '../models/ytmusic_models.dart';
+import '../providers/ytmusic_home_provider.dart';
 import '../providers/library_provider.dart';
 import '../providers/player_provider.dart';
 import '../providers/guest_session_provider.dart';
@@ -30,10 +31,22 @@ class HomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final homeState = ref.watch(homeProvider);
+    final feed = ref.watch(homeFeedProvider);
     final isGuest = ref.watch(guestSessionProvider);
     final library = ref.watch(libraryProvider);
     final recent = library.recentlyPlayed;
+
+    // Collect all sections as generic (label, title, songs) tuples for mobile
+    final sections = <({String label, String title, List<YtSong> songs})>[
+      if (feed.effectiveQuickPicks.isNotEmpty)
+        (label: 'QUICK PICKS', title: 'Songs you might like', songs: feed.effectiveQuickPicks),
+      if (feed.mixedForYou.isNotEmpty)
+        (label: 'MIXED FOR YOU', title: 'A blend of your favorites', songs: feed.mixedForYou),
+      if (feed.becauseYouListenedTo.isNotEmpty)
+        (label: 'BECAUSE YOU LISTENED TO', title: feed.becauseArtistName ?? 'Your top artist', songs: feed.becauseYouListenedTo),
+      if (feed.trending.isNotEmpty)
+        (label: 'TRENDING', title: "What's hot right now", songs: feed.trending),
+    ];
 
     return Scaffold(
       backgroundColor: const Color(0xFF0A0A0A),
@@ -41,7 +54,7 @@ class HomeScreen extends ConsumerWidget {
         child: RefreshIndicator(
           color: const Color(0xFF1DB954),
           backgroundColor: const Color(0xFF1A1A1A),
-          onRefresh: () => ref.read(homeProvider.notifier).refresh(),
+          onRefresh: () => ref.read(homeFeedProvider.notifier).refresh(),
           child: CustomScrollView(
             physics: const BouncingScrollPhysics(
               parent: AlwaysScrollableScrollPhysics(),
@@ -80,29 +93,24 @@ class HomeScreen extends ConsumerWidget {
                 ),
 
               // ── Dynamic feed sections ────────────────────────────────────
-              if (homeState.initialLoading)
+              if (feed.isLoading)
                 SliverToBoxAdapter(child: _buildFullSkeleton())
               else
                 SliverList(
                   delegate: SliverChildBuilderDelegate(
                     (context, i) {
-                      final section = homeState.sections[i];
+                      final sec = sections[i];
                       return _SectionRow(
-                        section: section,
+                        label: sec.label,
+                        title: sec.title,
+                        songs: sec.songs,
                         onSongTap: (song) {
-                          if (ref.read(playerProvider).currentSong?.id ==
-                              song.id) {
-                            _openPlayer(context);
-                          } else {
-                            ref
-                                .read(playerProvider.notifier)
-                                .playSong(song, queue: section.songs);
-                            _openPlayer(context);
-                          }
+                          ref.read(playerProvider.notifier).playSong(song);
+                          _openPlayer(context);
                         },
                       );
                     },
-                    childCount: homeState.sections.length,
+                    childCount: sections.length,
                   ),
                 ),
 
@@ -249,11 +257,15 @@ class _QuickPlayChip extends StatelessWidget {
 // ─── Section row ─────────────────────────────────────────────────────────────
 
 class _SectionRow extends StatelessWidget {
-  final HomeSection section;
+  final String label;
+  final String title;
+  final List<YtSong> songs;
   final void Function(Song) onSongTap;
 
   const _SectionRow({
-    required this.section,
+    required this.label,
+    required this.title,
+    required this.songs,
     required this.onSongTap,
   });
 
@@ -267,42 +279,33 @@ class _SectionRow extends StatelessWidget {
           // Section header
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-            child: Row(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        section.title,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      if (section.subtitle.isNotEmpty) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          section.subtitle,
-                          style: const TextStyle(
-                            color: Color(0xFFB3B3B3),
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ],
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: Color(0xFFB3B3B3),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.1,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Color(0xFF1DB954),
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ],
             ),
           ),
 
-          // Cards or skeleton
-          if (section.isLoading)
-            _SectionSkeleton()
-          else if (section.songs.isEmpty)
+          // Cards
+          if (songs.isEmpty)
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 16),
               child: Text(
@@ -318,12 +321,12 @@ class _SectionRow extends StatelessWidget {
                 primary: false,
                 physics: const ClampingScrollPhysics(),
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: section.songs.length,
+                itemCount: songs.length,
                 itemBuilder: (_, i) {
-                  final song = section.songs[i];
+                  final ytSong = songs[i];
                   return _SongCard(
-                    song: song,
-                    onTap: () => onSongTap(song),
+                    song: ytSong.toSong(),
+                    onTap: () => onSongTap(ytSong.toSong()),
                   );
                 },
               ),

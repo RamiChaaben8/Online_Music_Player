@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../desktop/theme/desktop_theme.dart';
 import '../models/song.dart';
 import '../providers/library_provider.dart';
 
@@ -12,41 +13,42 @@ class AddToPlaylistSheet extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final library = ref.watch(libraryProvider);
     final playlists = library.playlists;
+    final theme = context.appTheme;
 
     return Container(
-      color: const Color(0xFF1A1A1A),
+      color: theme.card,
       padding: const EdgeInsets.only(top: 16, bottom: 32),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text('Add to Playlist',
+          Text('Add to Playlist',
               style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
-                  color: Colors.white)),
+                  color: theme.text)),
           const SizedBox(height: 16),
           ListTile(
-            leading: const Icon(Icons.add, color: Colors.white),
-            title: const Text('Create New Playlist',
-                style: TextStyle(color: Colors.white)),
+            leading: Icon(Icons.add, color: theme.iconDefault),
+            title: Text('Create New Playlist',
+                style: TextStyle(color: theme.text)),
             onTap: () {
               Navigator.pop(context);
               _showCreatePlaylistDialog(context, ref);
             },
           ),
-          const Divider(color: Colors.grey),
+          Divider(color: theme.dividerColor),
           if (playlists.isEmpty)
-            const Padding(
-                padding: EdgeInsets.all(16),
+            Padding(
+                padding: const EdgeInsets.all(16),
                 child: Text('No playlists yet',
-                    style: TextStyle(color: Colors.grey)))
+                    style: TextStyle(color: theme.subtext)))
           else
             // Use the Playlist object directly — not a list index
             ...playlists.map((pl) => ListTile(
                   leading:
-                      const Icon(Icons.queue_music, color: Colors.white),
-                  title: Text(pl.name,
-                      style: const TextStyle(color: Colors.white)),
+                      Icon(Icons.queue_music, color: theme.iconDefault),
+                  title:
+                      Text(pl.name, style: TextStyle(color: theme.text)),
                   onTap: () {
                     ref
                         .read(libraryProvider.notifier)
@@ -63,19 +65,19 @@ class AddToPlaylistSheet extends ConsumerWidget {
 
   void _showCreatePlaylistDialog(BuildContext context, WidgetRef ref) {
     final controller = TextEditingController();
+    final theme = context.appTheme;
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF282828),
-        title: const Text('New Playlist',
-            style: TextStyle(color: Colors.white)),
+        backgroundColor: theme.card,
+        title: Text('New Playlist', style: TextStyle(color: theme.text)),
         content: TextField(
           controller: controller,
           autofocus: true,
-          style: const TextStyle(color: Colors.white),
-          decoration: const InputDecoration(
+          style: TextStyle(color: theme.text),
+          decoration: InputDecoration(
             hintText: 'Playlist name',
-            hintStyle: TextStyle(color: Colors.grey),
+            hintStyle: TextStyle(color: theme.subtext),
           ),
           onSubmitted: (v) {
             if (v.trim().isNotEmpty) {
@@ -89,8 +91,7 @@ class AddToPlaylistSheet extends ConsumerWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel',
-                style: TextStyle(color: Colors.grey)),
+            child: Text('Cancel', style: TextStyle(color: theme.subtext)),
           ),
           TextButton(
             onPressed: () {
@@ -101,8 +102,7 @@ class AddToPlaylistSheet extends ConsumerWidget {
               }
               Navigator.pop(ctx);
             },
-            child: const Text('Create',
-                style: TextStyle(color: Color(0xFF1DB954))),
+            child: Text('Create', style: TextStyle(color: theme.button)),
           ),
         ],
       ),

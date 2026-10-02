@@ -51,7 +51,8 @@ class _UpdateDialogShell extends ConsumerWidget {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       title: Row(
         children: [
-          Icon(Icons.system_update_alt, color: theme.button, size: 22),
+          Icon(Icons.system_update_alt,
+              color: theme.nowPlayingAccent, size: 22),
           const SizedBox(width: 10),
           Text(
             'Check for Updates',
@@ -101,7 +102,7 @@ class _UpdateDialogShell extends ConsumerWidget {
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
                 backgroundColor: theme.button,
-                foregroundColor: Colors.black,
+                foregroundColor: theme.onButtonFill,
               ),
               icon: const Icon(Icons.open_in_new, size: 16),
               label: const Text('Download from GitHub'),
@@ -116,7 +117,7 @@ class _UpdateDialogShell extends ConsumerWidget {
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
                 backgroundColor: theme.button,
-                foregroundColor: Colors.black,
+                foregroundColor: theme.onButtonFill,
               ),
               icon: const Icon(Icons.download_rounded, size: 16),
               label: Text(Platform.isAndroid ? 'Download & Install' : 'Update Now'),
@@ -146,7 +147,7 @@ class _UpdateDialogShell extends ConsumerWidget {
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: theme.button,
-              foregroundColor: Colors.black,
+              foregroundColor: theme.onButtonFill,
             ),
             onPressed: notifier.checkForUpdate,
             child: const Text('Retry'),
@@ -207,7 +208,7 @@ class _UpdateDialogBody extends StatelessWidget {
           child: Row(
             children: [
               Icon(Icons.check_circle_outline,
-                  color: theme.button, size: 28),
+                  color: theme.nowPlayingAccent, size: 28),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -242,7 +243,7 @@ class _UpdateDialogBody extends StatelessWidget {
             Row(
               children: [
                 Icon(Icons.new_releases_outlined,
-                    color: theme.button, size: 22),
+                    color: theme.nowPlayingAccent, size: 22),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(

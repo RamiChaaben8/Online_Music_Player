@@ -188,8 +188,10 @@ class _SearchResultRowState extends ConsumerState<_SearchResultRow> {
                   child: isCurrent
                       ? Icon(
                           isPlaying ? Icons.volume_up : Icons.volume_mute,
-                          color: context.appTheme
-                              .iconColor(context.appTheme.button),
+                          // This is the "currently playing" marker, not a
+                          // decorative icon — iconColor() demotes it to grey in
+                          // Verdant Night and the row highlight disappeared.
+                          color: context.appTheme.nowPlayingAccent,
                           size: 16,
                         )
                       : Text(
@@ -298,7 +300,7 @@ class _SearchResultRowState extends ConsumerState<_SearchResultRow> {
                     isPlaying
                         ? Icons.pause_circle_filled
                         : Icons.play_circle_fill,
-                    color: context.appTheme.button,
+                    color: context.appTheme.nowPlayingAccent,
                     size: 32,
                   ),
                   onPressed: () {

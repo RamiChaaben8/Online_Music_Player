@@ -69,18 +69,26 @@ class _ListenPartyControlsState extends ConsumerState<ListenPartyControls> {
     await showDialog<void>(
       context: context,
       builder: (context) => StatefulBuilder(builder: (context, setDialogState) {
+        final theme = AppThemeScope.maybeOf(context);
         final partyState = ref.watch(listenPartyProvider);
         final friends = ref.watch(friendsProvider).accepted;
         return AlertDialog(
-          title: Text(partyState.party == null ? 'Listen Together' : 'Party'),
+          backgroundColor: theme?.card,
+          title: Text(
+            partyState.party == null ? 'Listen Together' : 'Party',
+            style: TextStyle(color: theme?.text),
+          ),
           content: partyState.party == null
               ? Column(mainAxisSize: MainAxisSize.min, children: [
                   const Text('Create a party or join with an ID.'),
                   TextField(
                     controller: controller,
                     onChanged: (_) => setDialogState(() {}),
-                    decoration: const InputDecoration(
+                    style: TextStyle(color: theme?.text ?? Colors.white),
+                    decoration: InputDecoration(
                       labelText: 'Party ID (to join)',
+                      labelStyle: TextStyle(color: theme?.subtext),
+                      hintStyle: TextStyle(color: theme?.subtext),
                     ),
                   ),
                 ])
@@ -195,7 +203,7 @@ class _ListenPartyControlsState extends ConsumerState<ListenPartyControls> {
         : 'Party (${party.memberUids.length}/8)';
     final icon = Icon(
       party == null ? Icons.headphones_outlined : Icons.headphones,
-      color: party == null ? null : theme?.button ?? const Color(0xFF1DB954),
+      color: party == null ? null : theme?.nowPlayingAccent ?? const Color(0xFF1DB954),
     );
     if (widget.showLabel) {
       return OutlinedButton.icon(
@@ -243,7 +251,9 @@ class _PartyInviteButtonState extends ConsumerState<PartyInviteButton> {
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Invitations'),
+        backgroundColor: dialogContext.appTheme.card,
+        title: Text('Invitations',
+            style: TextStyle(color: dialogContext.appTheme.text)),
         content: SizedBox(
           width: 460,
           child: ListView(
@@ -344,14 +354,18 @@ class _PartyInviteButtonState extends ConsumerState<PartyInviteButton> {
             child: Container(
               padding: const EdgeInsets.all(3),
               decoration: BoxDecoration(
-                color: theme?.notification ?? const Color(0xFF1DB954),
+                // `notification` is the same bright green as `button` in
+                // Verdant Night, so there was no hue left to read the count
+                // against. Amber marks it as an alert and clears the accent.
+                color: theme?.warning ?? const Color(0xFFFFA000),
                 shape: BoxShape.circle,
               ),
               child: Text(
                 count > 9 ? '9+' : '$count',
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 9,
-                  color: theme?.text ?? Colors.black,
+                  // Amber takes near-black in every theme (white is ~2:1).
+                  color: Colors.black,
                 ),
               ),
             ),

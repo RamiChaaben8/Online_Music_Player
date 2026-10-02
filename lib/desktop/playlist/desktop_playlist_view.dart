@@ -443,14 +443,27 @@ class _PlaylistHeader extends ConsumerWidget {
     final name = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Name & details'),
-        content: TextField(controller: controller, autofocus: true),
+        backgroundColor: context.appTheme.card,
+        title: Text('Name & details',
+            style: TextStyle(color: context.appTheme.text)),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          style: TextStyle(color: context.appTheme.text),
+          decoration: InputDecoration(
+            hintText: 'Playlist name',
+            hintStyle: TextStyle(color: context.appTheme.subtext),
+          ),
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+              onPressed: () => Navigator.pop(ctx),
+              child: Text('Cancel',
+                  style: TextStyle(color: context.appTheme.subtext))),
           TextButton(
               onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-              child: const Text('Save')),
+              child: Text('Save',
+                  style: TextStyle(color: context.appTheme.text))),
         ],
       ),
     );

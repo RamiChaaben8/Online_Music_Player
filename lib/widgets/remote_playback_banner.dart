@@ -37,7 +37,7 @@ class RemotePlaybackBanner extends ConsumerWidget {
           color: theme?.selectedRow ?? const Color(0xFF1A2A1A),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: (theme?.button ?? const Color(0xFF1DB954))
+            color: (theme?.nowPlayingAccent ?? const Color(0xFF1DB954))
                 .withValues(alpha: 0.45),
           ),
         ),
@@ -47,7 +47,9 @@ class RemotePlaybackBanner extends ConsumerWidget {
             children: [
               Icon(
                 isPlaying ? Icons.cast_connected : Icons.cast,
-                color: theme?.button ?? const Color(0xFF1DB954),
+                // `button` and `text` are two different greens in Verdant
+                // Night, so this strip carried two accent hues at once.
+                color: theme?.nowPlayingAccent ?? const Color(0xFF1DB954),
                 size: 18,
               ),
 

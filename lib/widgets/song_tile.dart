@@ -17,6 +17,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../desktop/theme/desktop_theme.dart';
 import '../models/song.dart';
 import '../models/playlist.dart';
 import '../providers/download_provider.dart';
@@ -59,11 +60,13 @@ class SongTile extends ConsumerWidget {
     final isDownloading = dlState.isDownloading(song.id);
     final progress = dlState.progressFor(song.id);
 
+    final theme = context.appTheme;
+
     final titleColor = isSelected
-        ? const Color(0xFF1DB954)
+        ? theme.nowPlayingAccent
         : isPlaying
-            ? const Color(0xFF1DB954)
-            : Colors.white;
+            ? theme.nowPlayingAccent
+            : theme.text;
 
     Widget? trailingWidget;
     if (trailing != null) {
@@ -87,7 +90,7 @@ class SongTile extends ConsumerWidget {
           children: [
             ClipRRect(
               borderRadius: BorderRadius.circular(6),
-              child: _thumbnail(),
+              child: _thumbnail(context),
             ),
             // Playing overlay
             if (isPlaying)
@@ -98,9 +101,9 @@ class SongTile extends ConsumerWidget {
                   color: Colors.black45,
                   borderRadius: BorderRadius.circular(6),
                 ),
-                child: const Center(
+                child: Center(
                   child: Icon(Icons.graphic_eq,
-                      color: Color(0xFF1DB954), size: 22),
+                      color: theme.nowPlayingAccent, size: 22),
                 ),
               ),
             // Downloaded tick badge (bottom-right corner)
@@ -112,11 +115,13 @@ class SongTile extends ConsumerWidget {
                   width: 18,
                   height: 18,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF1DB954),
+                    color: theme.button,
                     shape: BoxShape.circle,
-                    border: Border.all(color: const Color(0xFF0A0A0A), width: 1.5),
+                    border:
+                        Border.all(color: theme.main, width: 1.5),
                   ),
-                  child: const Icon(Icons.check, color: Colors.white, size: 11),
+                  child: Icon(Icons.check,
+                      color: theme.onButtonFill, size: 11),
                 ),
               ),
             // Downloading spinner badge (bottom-right corner)
@@ -128,16 +133,16 @@ class SongTile extends ConsumerWidget {
                   width: 18,
                   height: 18,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF0A0A0A),
+                    color: theme.main,
                     shape: BoxShape.circle,
-                    border: Border.all(color: const Color(0xFF1DB954), width: 1.5),
+                    border: Border.all(color: theme.button, width: 1.5),
                   ),
                   child: Padding(
                     padding: const EdgeInsets.all(2),
                     child: CircularProgressIndicator(
                       strokeWidth: 1.5,
                       value: progress > 0 ? progress : null,
-                      color: const Color(0xFF1DB954),
+                      color: theme.button,
                     ),
                   ),
                 ),
@@ -158,22 +163,23 @@ class SongTile extends ConsumerWidget {
           '${song.channelName} • ${_formatDuration(song.duration)}',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(color: Color(0xFFB3B3B3), fontSize: 12),
+          style: TextStyle(color: theme.subtext, fontSize: 12),
         ),
         trailing: trailingWidget,
       ),
     );
   }
 
-  Widget _thumbnail() {
+  Widget _thumbnail(BuildContext context) {
+    final theme = context.appTheme;
     if (song.isLocal || song.thumbnailUrl.isEmpty) {
       return SizedBox(
         width: 52,
         height: 52,
         child: Container(
-          color: const Color(0xFF1A2A1A),
-          child: const Center(
-            child: Icon(Icons.audio_file, color: Color(0xFF1DB954), size: 32),
+          color: theme.selectedRow,
+          child: Center(
+            child: Icon(Icons.audio_file, color: theme.button, size: 32),
           ),
         ),
       );
@@ -186,20 +192,22 @@ class SongTile extends ConsumerWidget {
         width: 52,
         height: 52,
         fit: BoxFit.cover,
-        placeholder: (_, __) => _placeholder(),
-        errorWidget: (_, __, ___) => _placeholder(),
+        placeholder: (_, __) => _placeholder(context),
+        errorWidget: (_, __, ___) => _placeholder(context),
       ),
     );
   }
 
-  Widget _placeholder() {
+  Widget _placeholder(BuildContext context) {
+    final theme = context.appTheme;
     return SizedBox(
       width: 52,
       height: 52,
       child: Container(
-        color: const Color(0xFF282828),
-        child: const Center(
-          child: Icon(Icons.music_note, color: Color(0xFF555555), size: 28),
+        color: theme.card,
+        child: Center(
+          child: Icon(Icons.music_note,
+              color: theme.subtext.withValues(alpha: 0.35), size: 28),
         ),
       ),
     );

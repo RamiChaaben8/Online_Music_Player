@@ -187,7 +187,9 @@ class _Empty extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.queue_music, color: context.appTheme.shadow, size: 48),
+          // `shadow` (the divider token) is ~1.6:1 on the sidebar surface —
+          // these empty-state glyphs and helper lines were invisible.
+          Icon(Icons.queue_music, color: context.appTheme.iconDefault, size: 48),
           SizedBox(height: 12),
           Text('Queue is empty',
               style: TextStyle(
@@ -196,7 +198,7 @@ class _Empty extends StatelessWidget {
                   fontWeight: FontWeight.w600)),
           SizedBox(height: 6),
           Text('Add songs to start playing',
-              style: TextStyle(color: context.appTheme.shadow, fontSize: 12)),
+              style: TextStyle(color: context.appTheme.subtext, fontSize: 12)),
         ],
       ),
     );
@@ -238,8 +240,10 @@ class _Body extends ConsumerWidget {
               final qNew = currentIndex + 1 + newIndex;
               ref.read(playerProvider.notifier).reorderQueue(qOld, qNew);
             },
+            // Match the panel surface, not `main` — otherwise the lifted
+            // card is a near-black hole floating over the sidebar.
             proxyDecorator: (child, index, animation) => Material(
-              color: context.appTheme.main,
+              color: context.appTheme.panelSurfaceColor,
               borderRadius: BorderRadius.circular(8),
               elevation: 6,
               child: child,
@@ -264,7 +268,7 @@ class _Body extends ConsumerWidget {
                 child: Text(
                   'Nothing queued after this',
                   style:
-                      TextStyle(color: context.appTheme.shadow, fontSize: 12),
+                      TextStyle(color: context.appTheme.subtext, fontSize: 12),
                 ),
               ),
             ),
@@ -302,7 +306,10 @@ class _SectionHeaderDelegate extends SliverPersistentHeaderDelegate {
   @override
   Widget build(BuildContext ctx, double shrinkOffset, bool overlaps) {
     return Container(
-      color: ctx.appTheme.main,
+      // Must be the panel surface: `main` is darker than `sidebar`, so the
+      // pinned "NOW PLAYING"/"NEXT UP" header showed as a dark seam with rows
+      // sliding under a differently coloured strip.
+      color: ctx.appTheme.panelSurfaceColor,
       padding: EdgeInsets.symmetric(horizontal: 14),
       alignment: Alignment.centerLeft,
       child: Text(
@@ -415,8 +422,10 @@ class _UpNextTileState extends ConsumerState<_UpNextTile> {
           duration: Duration(milliseconds: 120),
           decoration: BoxDecoration(
             color: _hovered
-                ? context.appTheme.text.withValues(alpha: 0.05)
-                : context.appTheme.main.withValues(alpha: 0),
+                // Lime @5% tinted the row green; every other list uses the
+                // neutral highlight wash.
+                ? context.appTheme.highlight
+                : context.appTheme.panelSurfaceColor.withValues(alpha: 0),
             borderRadius: BorderRadius.circular(6),
           ),
           child: ListTile(
@@ -484,7 +493,7 @@ class _UpNextTileState extends ConsumerState<_UpNextTile> {
                   child: Padding(
                     padding: EdgeInsets.only(left: 2),
                     child: Icon(Icons.drag_handle,
-                        color: context.appTheme.shadow, size: s.dragHandle),
+                        color: context.appTheme.iconDefault, size: s.dragHandle),
                   ),
                 ),
               ],
@@ -619,6 +628,7 @@ class _Thumb extends StatelessWidget {
         height: size,
         color: context.appTheme.card,
         child: Icon(Icons.music_note,
-            color: context.appTheme.shadow, size: size * 0.42),
+            color: context.appTheme.subtext.withValues(alpha: 0.45),
+            size: size * 0.42),
       );
 }

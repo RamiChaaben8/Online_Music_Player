@@ -67,13 +67,55 @@ class TuneifyApp extends StatelessWidget {
       colorScheme: ColorScheme(
         brightness: t.brightness,
         primary: t.button,
-        onPrimary: t.text,
+        onPrimary: t.onButtonFill,
         secondary: t.buttonActive,
-        onSecondary: t.text,
+        onSecondary: t.onButtonFill,
         error: t.notificationError,
-        onError: t.text,
+        onError: t.onErrorFill,
         surface: t.main,
         onSurface: t.text,
+        // Without these, ColorScheme falls back to onSurface — which is LIME in
+        // Verdant Night. That turned every ListTile subtitle, every Switch
+        // off-thumb and every SnackBar slab into the accent colour.
+        onSurfaceVariant: t.subtext,
+        outline: t.subtext,
+        inverseSurface: t.card,
+        onInverseSurface: t.subtext,
+      ),
+      appBarTheme: AppBarTheme(
+        backgroundColor: t.card,
+        foregroundColor: t.text,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        titleTextStyle: TextStyle(
+          color: t.text,
+          fontSize: 20,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: t.card,
+        surfaceTintColor: Colors.transparent,
+        titleTextStyle: TextStyle(
+          color: t.text,
+          fontSize: 20,
+          fontWeight: FontWeight.w600,
+        ),
+        contentTextStyle: TextStyle(color: t.subtext, fontSize: 14),
+      ),
+      snackBarTheme: SnackBarThemeData(
+        backgroundColor: t.card,
+        contentTextStyle: TextStyle(color: t.subtext),
+        actionTextColor: t.nowPlayingAccent,
+        elevation: 6,
+      ),
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith((states) =>
+            states.contains(WidgetState.selected) ? t.onButtonFill : t.subtext),
+        trackColor: WidgetStateProperty.resolveWith((states) =>
+            states.contains(WidgetState.selected) ? t.button : t.highlight),
+        trackOutlineColor: WidgetStatePropertyAll(t.dividerColor),
       ),
       cardColor: t.card,
       dividerColor: t.dividerColor,

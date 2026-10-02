@@ -170,8 +170,18 @@ class AppThemeData {
   final Color shadow;
   final Color notification;
   final Color notificationError;
+  final Color warning;
   final Color tabActive;
   final Color misc;
+
+  /// Foreground for [button]/[buttonActive] fills — i.e. the colour of a
+  /// label sitting on the accent pill. Never use [text] here: under Verdant
+  /// Night `text` is lime, so lime-on-lime would be the result.
+  final Color onButtonFill;
+
+  /// Foreground for [notificationError] fills (destructive confirm buttons).
+  final Color onErrorFill;
+
   final Color? lyricsCard;
   final Color? dividerToken;
   final Color? scrollbarToken;
@@ -194,6 +204,9 @@ class AppThemeData {
     required this.shadow,
     required this.notification,
     required this.notificationError,
+    required this.warning,
+    required this.onButtonFill,
+    required this.onErrorFill,
     required this.tabActive,
     required this.misc,
     this.lyricsCard,
@@ -246,6 +259,11 @@ class AppThemeData {
       : text.withValues(alpha: 0.38);
   Color get playIconColor =>
       isVerdantNightDesktop ? const Color(0xFF121212) : text;
+
+  /// Label/icon colour for anything painted onto a [button]-coloured fill.
+  /// Alias of [onButtonFill] kept for call sites that read better as
+  /// "the colour that goes on the accent".
+  Color get onAccent => onButtonFill;
   Color iconColor(Color legacy, {bool hovered = false}) =>
       isVerdantNightDesktop ? (hovered ? iconHover : iconDefault) : legacy;
   AppLayoutTokens get layout =>
@@ -269,6 +287,9 @@ class AppThemeData {
     shadow: Color(0xFF333333),
     notification: Color(0xFF1DB954),
     notificationError: Color(0xFFE8173A),
+    warning: Color(0xFFFFA000),
+    onButtonFill: Color(0xFF0F0F0F),
+    onErrorFill: Color(0xFFFFFFFF),
     tabActive: Color(0xFF1A3321),
     misc: Color(0xFF7B4FE9),
   );
@@ -289,6 +310,9 @@ class AppThemeData {
     shadow: Color(0xFF3D2020),
     notification: Color(0xFFE8173A),
     notificationError: Color(0xFFFFA000),
+    warning: Color(0xFFFFA000),
+    onButtonFill: Color(0xFFFFFFFF),
+    onErrorFill: Color(0xFF1A0A00),
     tabActive: Color(0xFF4A1C27),
     misc: Color(0xFFE08A3E),
   );
@@ -309,6 +333,9 @@ class AppThemeData {
     shadow: Color(0xFF333333),
     notification: Color(0xFF1ED760),
     notificationError: Color(0xFFE8173A),
+    warning: Color(0xFFFFA000),
+    onButtonFill: Color(0xFF121212),
+    onErrorFill: Color(0xFFFFFFFF),
     tabActive: Color(0xFF2A3D22),
     misc: Color(0xFF6B1A24),
     lyricsCard: Color(0xFF5A1520),

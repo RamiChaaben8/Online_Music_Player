@@ -1387,6 +1387,17 @@ class PresenceInfo {
       online &&
       lastActiveAt != null &&
       DateTime.now().difference(lastActiveAt!) < const Duration(seconds: 150);
+
+  /// True only when this user is online right now *and* actively playing.
+  ///
+  /// Deliberately gated on [isOnline]. A presence document keeps its last
+  /// `activity` map when a client is killed before it can write an offline
+  /// update, so `activity['isPlaying']` can outlive the session by hours.
+  /// The heartbeat freshness window in [isOnline] is what makes it
+  /// trustworthy, so any "now playing" indicator must go through here rather
+  /// than reading `activity` directly.
+  bool get isListening =>
+      isOnline && activity != null && activity!['isPlaying'] == true;
 }
 
 class Friendship {

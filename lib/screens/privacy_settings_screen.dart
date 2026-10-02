@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../services/firestore_service.dart';
 import '../providers/presence_provider.dart';
+import '../desktop/theme/desktop_theme.dart';
 
 class PrivacySettingsScreen extends ConsumerStatefulWidget {
   final User user;
@@ -25,6 +26,9 @@ class _PrivacySettingsScreenState
   };
   bool _loading = true;
 
+  /// Keys with an in-flight write, so a row can't be tapped twice.
+  final Set<String> _pending = {};
+
   @override
   void initState() {
     super.initState();
@@ -40,10 +44,15 @@ class _PrivacySettingsScreenState
     });
   }
 
+  /// Each toggle writes straight through to Firestore and presence, so there
+  /// is no unsaved state and nothing for a "Save" button to do.
   Future<void> _set(String key, bool value) async {
     final old = _privacy;
     final next = {...old, key: value};
-    setState(() => _privacy = next);
+    setState(() {
+      _privacy = next;
+      _pending.add(key);
+    });
     try {
       await _service.updatePrivacy(widget.user.uid, next);
       await ref.read(presenceProvider.notifier).updatePrivacy(next);
@@ -54,41 +63,37 @@ class _PrivacySettingsScreenState
           const SnackBar(content: Text('Could not update privacy settings.')),
         );
       }
-    }
-  }
-
-  Future<void> _saveAll() async {
-    try {
-      await _service.updatePrivacy(widget.user.uid, _privacy);
-      await ref.read(presenceProvider.notifier).updatePrivacy(_privacy);
+    } finally {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Privacy settings saved.')),
-        );
-      }
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not save privacy settings: $error')),
-        );
+        setState(() => _pending.remove(key));
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = context.appTheme;
+
+    // The AppBar itself is themed by ThemeData.appBarTheme; without it the bar
+    // sat on `surface` == `main` (invisible against the desktop shell) with a
+    // lime title inherited from onSurface.
     return Scaffold(
       appBar: AppBar(title: const Text('Privacy')),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? Center(
+              child: CircularProgressIndicator(
+                color: theme.isVerdantNightDesktop
+                    ? theme.subtext
+                    : theme.button,
+              ),
+            )
           : ListView(
               children: [
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-                  child: FilledButton.icon(
-                    onPressed: _saveAll,
-                    icon: const Icon(Icons.save_outlined),
-                    label: const Text('Save privacy settings'),
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  child: Text(
+                    'Changes are saved as you make them.',
+                    style: TextStyle(color: theme.subtext, fontSize: 13),
                   ),
                 ),
                 _toggle(
@@ -112,11 +117,12 @@ class _PrivacySettingsScreenState
   }
 
   Widget _toggle(String title, String subtitle, String key) {
+    final theme = context.appTheme;
     return SwitchListTile(
-      title: Text(title),
-      subtitle: Text(subtitle),
+      title: Text(title, style: TextStyle(color: theme.text)),
+      subtitle: Text(subtitle, style: TextStyle(color: theme.subtext)),
       value: _privacy[key] ?? true,
-      onChanged: (value) => _set(key, value),
+      onChanged: _pending.contains(key) ? null : (value) => _set(key, value),
     );
   }
 }

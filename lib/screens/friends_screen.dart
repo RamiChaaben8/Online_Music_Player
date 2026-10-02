@@ -196,13 +196,16 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen>
       stream: FirestoreService().presenceStream(friendship.otherUid!),
       builder: (context, snapshot) {
         final presence = snapshot.data;
-        final activity = presence?.activity;
         final title = profile.displayName.isNotEmpty
             ? profile.displayName
             : '@${profile.username}';
-        final subtitle = presence?.isOnline == true
-            ? activity != null
-                ? '${activity['title'] ?? 'Listening'} • ${activity['artist'] ?? ''}'
+        final online = presence?.isOnline == true;
+        // PresenceInfo.isListening gates on isOnline, so an offline friend's
+        // stale activity block can no longer show the equalizer.
+        final listening = presence?.isListening == true;
+        final subtitle = online
+            ? presence!.activity != null
+                ? '${presence.activity!['title'] ?? 'Listening'} • ${presence.activity!['artist'] ?? ''}'
                 : 'Online'
             : 'Offline${_lastSeen(presence?.lastActiveAt)}';
         return ListTile(
@@ -218,8 +221,8 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen>
                   height: 13,
                   decoration: BoxDecoration(
                     color: presence?.isOnline == true
-                        ? const Color(0xFF1DB954)
-                        : const Color(0xFF777777),
+                        ? context.appTheme.nowPlayingAccent
+                        : context.appTheme.subtext.withValues(alpha: 0.5),
                     shape: BoxShape.circle,
                     border: Border.all(
                         color: Theme.of(context).scaffoldBackgroundColor,
@@ -232,8 +235,9 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen>
           title: Text(title),
           subtitle: Row(
             children: [
-              if (activity?['isPlaying'] == true) ...[
-                const Icon(Icons.equalizer, size: 16, color: Color(0xFF1DB954)),
+              if (listening) ...[
+                Icon(Icons.equalizer,
+                    size: 16, color: context.appTheme.nowPlayingAccent),
                 const SizedBox(width: 4),
               ],
               Expanded(
@@ -284,7 +288,7 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen>
         children: [
           IconButton(
             tooltip: 'Accept',
-            icon: const Icon(Icons.check, color: Color(0xFF1DB954)),
+            icon: Icon(Icons.check, color: context.appTheme.button),
             onPressed: () => ref.read(friendsProvider.notifier).accept(request),
           ),
           IconButton(
@@ -338,10 +342,15 @@ class _FriendsScreenState extends ConsumerState<FriendsScreen>
                 }
               },
         child: _sendingRequestUid == profile.uid
-            ? const SizedBox(
+            ? SizedBox(
                 width: 18,
                 height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
+                // Sits on the accent-filled 'Add' button; the default spinner
+                // colour is that same accent, so it was invisible.
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: context.appTheme.onButtonFill,
+                ),
               )
             : const Text('Add'),
       ),
@@ -399,7 +408,9 @@ class _EmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 56, color: const Color(0xFF4A4A4A)),
+            Icon(icon,
+                size: 56,
+                color: context.appTheme.subtext.withValues(alpha: 0.5)),
             const SizedBox(height: 12),
             Text(message, textAlign: TextAlign.center),
           ],

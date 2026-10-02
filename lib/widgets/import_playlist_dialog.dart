@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/library_provider.dart';
 import '../providers/youtube_provider.dart';
+import '../desktop/theme/desktop_theme.dart';
 
 Future<void> showImportPlaylistDialog(
     BuildContext context, WidgetRef ref) async {
@@ -130,6 +131,7 @@ class _ImportPlaylistPanelState extends State<_ImportPlaylistPanel> {
   }
 
   Widget _buildMinimized() {
+    final theme = context.appTheme;
     return GestureDetector(
       onPanUpdate: _move,
       child: Container(
@@ -139,7 +141,7 @@ class _ImportPlaylistPanelState extends State<_ImportPlaylistPanel> {
         child: Row(
           children: [
             const SizedBox(width: 14),
-            const Icon(Icons.download, color: Color(0xFF1DB954), size: 18),
+            Icon(Icons.download, color: theme.button, size: 18),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
@@ -147,21 +149,21 @@ class _ImportPlaylistPanelState extends State<_ImportPlaylistPanel> {
                     ? 'Importing ${_progressTotal == null ? '' : '$_progressCurrent/$_progressTotal'}'
                     : 'Import playlist',
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Colors.white, fontSize: 13),
+                style: TextStyle(color: theme.text, fontSize: 13),
               ),
             ),
             IconButton(
               tooltip: 'Restore',
               onPressed: () => setState(() => _minimized = false),
               icon: const Icon(Icons.open_in_full, size: 17),
-              color: Colors.white70,
+              color: theme.iconDefault,
               splashRadius: 18,
             ),
             IconButton(
               tooltip: 'Close',
               onPressed: widget.onClose,
               icon: const Icon(Icons.close, size: 17),
-              color: Colors.white70,
+              color: theme.iconDefault,
               splashRadius: 18,
             ),
           ],
@@ -171,6 +173,7 @@ class _ImportPlaylistPanelState extends State<_ImportPlaylistPanel> {
   }
 
   Widget _buildExpanded() {
+    final theme = context.appTheme;
     final progress = _progressTotal == null || _progressTotal! <= 0
         ? null
         : (_progressCurrent / _progressTotal!).clamp(0.0, 1.0);
@@ -187,33 +190,33 @@ class _ImportPlaylistPanelState extends State<_ImportPlaylistPanel> {
             onPanUpdate: _move,
             child: Row(
               children: [
-                const Expanded(
+                Expanded(
                   child: Text(
                     'Import playlist',
-                    style: TextStyle(color: Colors.white, fontSize: 22),
+                    style: TextStyle(color: theme.text, fontSize: 22),
                   ),
                 ),
                 IconButton(
                   tooltip: 'Minimize',
                   onPressed: () => setState(() => _minimized = true),
                   icon: const Icon(Icons.minimize, size: 19),
-                  color: Colors.white70,
+                  color: theme.iconDefault,
                   splashRadius: 18,
                 ),
                 IconButton(
                   tooltip: 'Close',
                   onPressed: widget.onClose,
                   icon: const Icon(Icons.close, size: 19),
-                  color: Colors.white70,
+                  color: theme.iconDefault,
                   splashRadius: 18,
                 ),
               ],
             ),
           ),
           const SizedBox(height: 12),
-          const Text(
+          Text(
             'Paste a public Spotify or YouTube playlist link.',
-            style: TextStyle(color: Colors.white70, fontSize: 14),
+            style: TextStyle(color: theme.subtext, fontSize: 14),
           ),
           if (_importing && _progressCurrent > 0) ...[
             const SizedBox(height: 14),
@@ -222,13 +225,13 @@ class _ImportPlaylistPanelState extends State<_ImportPlaylistPanel> {
                   ? '$_progressSource: $_progressCurrent songs processed'
                   : '$_progressSource: $_progressCurrent/$_progressTotal songs processed '
                       '(${(_progressCurrent / _progressTotal! * 100).round()}%)',
-              style: const TextStyle(color: Colors.white70, fontSize: 13),
+              style: TextStyle(color: theme.subtext, fontSize: 13),
             ),
             const SizedBox(height: 8),
             LinearProgressIndicator(
               value: progress,
-              color: const Color(0xFF1DB954),
-              backgroundColor: Colors.white12,
+              color: theme.button,
+              backgroundColor: theme.shadow,
             ),
           ],
           const SizedBox(height: 12),
@@ -236,8 +239,10 @@ class _ImportPlaylistPanelState extends State<_ImportPlaylistPanel> {
             controller: _controller,
             autofocus: true,
             keyboardType: TextInputType.url,
+            style: TextStyle(color: theme.text),
             decoration: InputDecoration(
               hintText: 'https://...',
+              hintStyle: TextStyle(color: theme.subtext),
               errorText: _error,
               border: const OutlineInputBorder(),
               isDense: true,
@@ -249,16 +254,23 @@ class _ImportPlaylistPanelState extends State<_ImportPlaylistPanel> {
             children: [
               TextButton(
                 onPressed: _importing ? null : widget.onClose,
-                child: const Text('Cancel'),
+                child: Text('Cancel', style: TextStyle(color: theme.subtext)),
               ),
               const SizedBox(width: 12),
               FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: theme.button,
+                  foregroundColor: theme.onButtonFill,
+                ),
                 onPressed: _importing ? null : _import,
                 icon: _importing
-                    ? const SizedBox(
+                    ? SizedBox(
                         width: 16,
                         height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: theme.onButtonFill,
+                        ),
                       )
                     : const Icon(Icons.download),
                 label: Text(_importing ? 'Importing…' : 'Import'),
@@ -269,12 +281,12 @@ class _ImportPlaylistPanelState extends State<_ImportPlaylistPanel> {
             alignment: Alignment.bottomRight,
             child: GestureDetector(
               onPanUpdate: _resize,
-              child: const SizedBox(
+              child: SizedBox(
                 width: 18,
                 height: 18,
                 child: Icon(
                   Icons.drag_handle,
-                  color: Colors.white38,
+                  color: theme.subtext.withValues(alpha: 0.38),
                   size: 16,
                 ),
               ),
@@ -286,10 +298,12 @@ class _ImportPlaylistPanelState extends State<_ImportPlaylistPanel> {
   }
 
   BoxDecoration _decoration() {
+    // Was a literal #151515, which matches no panel in any theme.
+    final theme = context.appTheme;
     return BoxDecoration(
-      color: const Color(0xFF151515),
+      color: theme.card,
       borderRadius: BorderRadius.circular(10),
-      border: Border.all(color: Colors.white12),
+      border: Border.all(color: theme.dividerColor),
       boxShadow: const [
         BoxShadow(
           color: Colors.black54,

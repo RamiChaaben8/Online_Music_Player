@@ -17,6 +17,7 @@ import '../models/playlist.dart';
 import '../providers/library_provider.dart';
 import '../providers/player_provider.dart';
 import '../providers/download_provider.dart';
+import '../providers/panel_provider.dart';
 import '../screens/queue_screen.dart';
 import '../desktop/theme/desktop_theme.dart';
 
@@ -94,7 +95,7 @@ Future<void> showSongContextMenu({
           child: _row(
             isLiked ? Icons.favorite : Icons.favorite_border,
             isLiked ? 'Remove from Liked Songs' : 'Save to your Liked Songs',
-            color: isLiked ? theme?.button ?? const Color(0xFF1DB954) : null,
+            color: isLiked ? theme?.nowPlayingAccent ?? const Color(0xFF1DB954) : null,
             theme: theme,
           ),
         ),
@@ -107,19 +108,21 @@ Future<void> showSongContextMenu({
         PopupMenuItem(
           value: _Action.downloadSong,
           child: _row(Icons.download_outlined, 'Download',
-              color: theme?.button ?? const Color(0xFF1DB954), theme: theme),
+              color: theme?.nowPlayingAccent ?? const Color(0xFF1DB954),
+              theme: theme),
         ),
       if (isDownloading)
         PopupMenuItem(
           value: _Action.cancelDownload,
           child: _row(Icons.cancel_outlined, 'Cancel download',
-              color: Colors.orange, theme: theme),
+              color: theme?.warning ?? Colors.orange, theme: theme),
         ),
       if (isDownloaded)
         PopupMenuItem(
           value: _Action.deleteDownload,
           child: _row(Icons.delete_outline, 'Delete downloaded file',
-              color: Colors.redAccent, theme: theme),
+              color: theme?.notificationError ?? Colors.redAccent,
+              theme: theme),
         ),
       if (currentPlaylist != null)
         PopupMenuItem(
@@ -160,7 +163,12 @@ Future<void> showSongContextMenu({
       ref.read(downloadProvider.notifier).cancelDownload(song.id);
       if (context.mounted) _snack(context, 'Cancelled download');
     case _Action.goToQueue:
-      if (context.mounted) {
+      if (isDesktopLayout) {
+        // On desktop the queue is a side panel, not a screen. Pushing the
+        // mobile QueueScreen stacked a hardcoded mobile Scaffold (with its own
+        // #0A0A0A AppBar) on top of the desktop shell.
+        ref.read(panelModeProvider.notifier).state = PanelMode.queue;
+      } else if (context.mounted) {
         Navigator.of(context).push(
           MaterialPageRoute(builder: (_) => const QueueScreen()),
         );
