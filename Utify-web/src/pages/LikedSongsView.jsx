@@ -310,7 +310,7 @@ export default function LikedSongsView() {
               borderRadius: 50,
               border: 'none',
               background: 'var(--color-button)',
-              color: '#fff',
+              color: 'var(--color-on-button)',
               fontWeight: 700,
               fontSize: 15,
               cursor: 'pointer',

@@ -21,6 +21,13 @@
   --color-error: #E8173A;
   --color-tab-active: #1A3321;
   --color-misc: #1ED760;
+
+  /* Foreground for anything painted onto a --color-button fill. #1DB954 is
+     too light for white (2.6:1) — this is the only pairing that clears
+     large-text contrast. Mirrors AppThemeData.onButtonFill. */
+  --color-on-button: #0F0F0F;
+  /* Foreground for a --color-error fill (destructive buttons). */
+  --color-on-error: #FFFFFF;
 }
 
 [data-theme="red"] {
@@ -40,6 +47,10 @@
   --color-error: #FFA000;
   --color-tab-active: #4A1C27;
   --color-misc: #E08A3E;
+
+  /* Red on red takes white; the amber error fill takes near-black. */
+  --color-on-button: #FFFFFF;
+  --color-on-error: #1A0A00;
 }
 
 [data-theme="verdant-night"] {
@@ -59,6 +70,10 @@
   --color-error: #E8173A;
   --color-tab-active: #2A3D22;
   --color-misc: #6B1A24;
+
+  /* --color-text is lime here, so it must never sit on --color-button. */
+  --color-on-button: #121212;
+  --color-on-error: #FFFFFF;
 }
 
 /* ── Utility classes using theme variables ────────────────────────────────── */

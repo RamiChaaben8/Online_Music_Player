@@ -428,7 +428,7 @@ const styles = {
     left: 8,
     bottom: 8,
     background: 'var(--color-button)',
-    color: 'var(--color-text)',
+    color: 'var(--color-on-button)',
     fontSize: 11,
     fontWeight: 700,
     padding: '4px 8px',

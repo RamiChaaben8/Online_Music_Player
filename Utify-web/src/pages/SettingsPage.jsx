@@ -258,7 +258,7 @@ function ProfileSection({ user, onToast }) {
             borderRadius: 6,
             border: 'none',
             background: 'var(--color-button)',
-            color: '#fff',
+            color: 'var(--color-on-button)',
             fontWeight: 700,
             fontSize: 14,
             cursor: !dirty || saving ? 'default' : 'pointer',

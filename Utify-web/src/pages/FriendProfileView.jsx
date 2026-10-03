@@ -341,7 +341,7 @@ export default function FriendProfileView() {
             borderRadius: 20,
             border: 'none',
             background: 'var(--color-button)',
-            color: '#fff',
+            color: 'var(--color-on-button)',
             fontWeight: 700,
             cursor: 'pointer',
           }}
@@ -411,7 +411,7 @@ export default function FriendProfileView() {
                 borderRadius: 20,
                 border: 'none',
                 background: 'var(--color-button)',
-                color: '#fff',
+                color: 'var(--color-on-button)',
                 fontWeight: 700,
                 fontSize: 13,
                 cursor: 'pointer',

@@ -386,7 +386,7 @@ function InviteDialog({ playlist, onClose }) {
                   background: 'var(--color-button)',
                   border:     'none',
                   borderRadius: 6,
-                  color:      '#fff',
+                  color:      'var(--color-on-button)',
                   fontSize:   13,
                   fontWeight: 600,
                   cursor:     status === 'sending' || !uid.trim() ? 'not-allowed' : 'pointer',
